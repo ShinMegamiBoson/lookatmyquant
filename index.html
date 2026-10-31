@@ -1008,7 +1008,7 @@ function tnTable() {
       const e = document.createElementNS(NS, 'rect');
       e.setAttribute('x', r.x.toFixed(2)); e.setAttribute('y', r.y.toFixed(2)); e.setAttribute('width', r.w.toFixed(2)); e.setAttribute('height', r.h.toFixed(2));
       e.setAttribute('rx', r.w > 30 ? 3 : 1);
-      e.setAttribute('data-tip', esc(`<b>${nameOf(r.p)}</b><br>${r.p.w >= 1e8 ? (r.p.w / 1e9).toFixed(2) + 'B' : (r.p.w / 1e6).toFixed(1) + 'M'} weights · plan: ${r.p.t === 'BF16' ? '16-bit' : r.p.t}`));
+      e.setAttribute('data-tip', `<b>${esc(nameOf(r.p))}</b><br>${r.p.w >= 1e8 ? (r.p.w / 1e9).toFixed(2) + 'B' : (r.p.w / 1e6).toFixed(1) + 'M'} weights · plan: ${r.p.t === 'BF16' ? '16-bit' : esc(r.p.t)}`);
       svg.appendChild(e); return e;
     });
     const plab = document.createElementNS(NS, 'text');
