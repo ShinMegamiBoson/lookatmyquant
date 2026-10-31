@@ -120,6 +120,7 @@ tr.group td { font: 600 0.78rem var(--sans); letter-spacing: 0.06em; text-transf
   .flow, .flow.six { grid-template-columns: 1fr; }
   .flow > div + div { border-left: 0; border-top-width: 3px; }
 }
+#anim-map svg { min-width: 760px; }
 .anim-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font: 400 0.88rem var(--sans); color: var(--muted); }
 .anim-ctl button { font: 600 0.88rem var(--sans); color: var(--bg); background: var(--ink); border: 0; border-radius: 999px; padding: 6px 16px; cursor: pointer; }
 .anim-ctl button:focus-visible, .anim-ctl input:focus-visible { outline: 2px solid var(--gguf); outline-offset: 2px; }
@@ -232,14 +233,14 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <figure class="wide" id="fig4">
     <div class="legend" id="anim-legend"></div>
-    <div class="chart" id="anim-map"></div>
+    <div class="scroll-x"><div class="chart" id="anim-map"></div></div>
     <div class="anim-ctl">
       <button type="button" id="anim-play">Replay</button>
       <input type="range" id="anim-scrub" min="0" max="1" value="1" aria-label="Step through the compiled plan">
     </div>
     <p class="anim-status" id="anim-status" aria-live="polite"></p>
     <div class="chart" id="anim-curve"></div>
-    <figcaption><b>Figure 4.</b> The compiled 3.39 GB GGUF, built piece by piece from the 16-bit model. Each rectangle is one stored piece, with area proportional to its number of weights; the large block on the left is the per-layer lookup table, and each column on the right is one layer's matrices. Colour shows the llama.cpp type the plan gives the piece, and grey pieces stay at 16 bits. The compiler finds the whole plan at once. The animation applies its choices one piece at a time, those that save the most bytes per unit of KL first. Below, the file's size and predicted KL along the way.</figcaption>
+    <figcaption><b>Figure 4.</b> The compiled 3.39 GB GGUF, built piece by piece from the 16-bit model. The whole model is drawn as one tensor network. Each square is a stored piece, with area proportional to its number of weights. The 35 layers sit on the residual stream, with attention matrices above it and MLP matrices below. The per-layer lookup table along the bottom feeds each layer one slice. Layers 15 to 34 have no key or value matrices, because they reuse those of layers 13 and 14. Colour shows the llama.cpp type the plan gives the piece, and grey pieces stay at 16 bits. The compiler finds the whole plan at once. The animation applies its choices one piece at a time, those that save the most bytes per unit of KL first. Below, the file's size and predicted KL along the way.</figcaption>
   </figure>
 
   <section class="col">
@@ -952,36 +953,69 @@ function tnTable() {
     const used = ['BF16', 'Q8_0', 'Q6_K', 'Q5_K', 'IQ4_XS', 'Q2_K'];
     document.getElementById('anim-legend').innerHTML = used.map((ty) => `<span><i class="sq" style="background:${colorOf(ty)}"></i>${ty === 'BF16' ? '16-bit' : ty}</span>`).join('');
 
-    // area map: per-layer table on the left, embedding table on top right, one column of matrices per layer
-    const map = document.getElementById('anim-map'), w = 760, h = 300, gap = 2;
-    const ple = P.find((p) => p.kind === 'ple'), emb = P.find((p) => p.kind === 'emb'), mats = P.filter((p) => p.kind === 'mat');
-    const Wt = ple.w + emb.w + mats.reduce((a, p) => a + p.w, 0);
-    const xP = w * ple.w / Wt, x0 = xP + gap, Wr = w - x0, embH = h * emb.w / (Wt - ple.w);
-    const rects = [];
-    const rect = (p, x, y, rw, rh) => rects.push({ p, x, y, w: Math.max(0.5, rw - gap), h: Math.max(0.5, rh - gap) });
-    rect(ple, 0, 0, xP, h); rect(emb, x0, 0, Wr + gap, embH);
-    const layers = [...new Set(mats.map((p) => p.layer))].sort((a, b) => a - b), matW = mats.reduce((a, p) => a + p.w, 0);
-    let cx = x0;
-    layers.forEach((L) => {
-      const col = mats.filter((p) => p.layer === L).sort((a, b) => ORDER.indexOf(a.role) - ORDER.indexOf(b.role));
-      const cw = Wr * col.reduce((a, p) => a + p.w, 0) / matW, colW = col.reduce((a, p) => a + p.w, 0);
-      let cy = embH;
-      col.forEach((p) => { const ch = (h - embH) * p.w / colW; rect(p, cx, cy, cw + (cw > 4 ? 0 : gap - 0.6), ch); cy += ch; });
-      cx += cw;
+    // the whole model as a tensor network: node area proportional to weights
+    const map = document.getElementById('anim-map'), w = 1060, h = 352;
+    const ple = P.find((p) => p.kind === 'ple'), emb = P.find((p) => p.kind === 'emb'), other = P.find((p) => p.kind === 'other');
+    const mats = P.filter((p) => p.kind === 'mat');
+    const layers = [...new Set(mats.map((p) => p.layer))].sort((x, y) => x - y);
+    const maxW = Math.max(...mats.map((p) => p.w)), K = 19 * 19 / maxW;  // px² per weight: the largest matrix is a 19 px square
+    const side = (p) => Math.sqrt(p.w * K);
+    const RES = 118, X0 = 150, X1 = 942, step = (X1 - X0) / (layers.length - 1);
+    const ABOVE = ['self_attn.o_proj', 'self_attn.q_proj', 'self_attn.k_proj', 'self_attn.v_proj'];
+    const BELOW = ['mlp.gate_proj', 'mlp.up_proj', 'mlp.down_proj'];
+    const PER = ['per_layer_input_gate', 'per_layer_projection'];
+    const nodes = [], lines = [];
+    const plA = ple.w * K, pleW = X1 - X0 + 30, pleH = plA / pleW, pleY = 262;
+    const eA = emb.w * K, eW = 60, eH = eA / eW;
+    let s = '';
+    s += `<line x1="${20 + eW}" y1="${RES}" x2="${w - 20 - eW}" y2="${RES}" stroke="var(--ink)" stroke-width="1.8"/>`;
+    s += T(X0 - 16, RES - 6, 'residual', { anchor: 'end', size: 11 });
+    let perBottom = 0;
+    layers.forEach((L, i) => {
+      const x = X0 + i * step, col = mats.filter((p) => p.layer === L);
+      const get = (r) => col.find((p) => p.role === r);
+      let yU = RES - 4, yD = RES + 4;
+      const top = [], bot = [];
+      ABOVE.map(get).filter(Boolean).forEach((p) => { const sd = side(p); yU -= sd; nodes.push({ p, x: x - sd / 2, y: yU, s: sd }); top.push(yU); yU -= 2.5; });
+      BELOW.map(get).filter(Boolean).forEach((p) => { const sd = side(p); nodes.push({ p, x: x - sd / 2, y: yD, s: sd }); bot.push(yD + sd); yD += sd + 2.5; });
+      yD += 6;
+      PER.map(get).filter(Boolean).forEach((p) => { const sd = Math.max(side(p), 2.4); nodes.push({ p, x: x - sd / 2, y: yD, s: sd }); yD += sd + 2.5; });
+      perBottom = Math.max(perBottom, yD);
+      lines.push(`<line x1="${x}" y1="${Math.min(...top)}" x2="${x}" y2="${pleY}" stroke="var(--muted)" stroke-width="0.8" stroke-opacity="0.7"/>`);
     });
-    map.innerHTML = `<svg viewBox="0 0 ${w} ${h + 16}" role="img" aria-label="Area map of every stored piece of Gemma 4 E2B, coloured by the llama.cpp type the compiled plan gives it"></svg>`;
+    s += lines.join('');
+    // per-layer lookup table along the bottom, feeding every layer one 256-wide slice
+    nodes.push({ p: ple, x: X0 - 15, y: pleY, w: pleW, h: pleH });
+    // embedding table on the left; the output head is the same tensor, drawn dashed on the right
+    nodes.push({ p: emb, x: 20, y: RES - eH / 2, w: eW, h: eH });
+    const oth = Math.sqrt(other.w * K);
+    nodes.push({ p: other, x: 50 - oth / 2, y: pleY + pleH / 2 - oth / 2, s: oth });
+    s += `<path d="M50 ${RES + eH / 2} V${pleY + pleH / 2 - oth / 2}" stroke="var(--ink)" stroke-width="1.2" fill="none"/>`;
+    s += `<path d="M${50 + oth / 2} ${pleY + pleH / 2} H${X0 - 15}" stroke="var(--ink)" stroke-width="1.2" fill="none"/>`;
+    s += `<rect x="${w - 20 - eW}" y="${RES - eH / 2}" width="${eW}" height="${eH}" rx="3" fill="none" stroke="var(--muted)" stroke-width="1.4" stroke-dasharray="5 4" data-tip="${esc('<b>Output head</b><br>The same tensor as the embedding table (tied), so it is stored once')}"/>`;
+    // labels: only the parts big enough to carry one
+    s += T(20 + eW / 2, RES - eH / 2 - 8, 'embedding', { anchor: 'middle', size: 11.5, weight: 600, fill: 'var(--ink)' });
+    s += T(w - 20 - eW / 2, RES - eH / 2 - 8, 'output head', { anchor: 'middle', size: 11.5, weight: 600, fill: 'var(--ink)' });
+    s += T(w - 20 - eW / 2, RES + eH / 2 + 14, 'same tensor', { anchor: 'middle', size: 10, fill: 'var(--muted)' });
+    s += T(X0 - 16, RES - 34, 'attention', { anchor: 'end', size: 11, fill: 'var(--muted)' });
+    s += T(X0 - 16, RES + 34, 'MLP', { anchor: 'end', size: 11, fill: 'var(--muted)' });
+    s += T(X0 - 16, perBottom - 6, 'per-layer input', { anchor: 'end', size: 11, fill: 'var(--muted)' });
+    [0, 14, 34].forEach((L) => { s += T(X0 + layers.indexOf(L) * step, 30, `layer ${L}`, { anchor: 'middle', size: 10.5, fill: 'var(--muted)' }); });
+    map.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Gemma 4 E2B as one tensor network: an embedding table, 35 layers of matrices on the residual stream, and a per-layer lookup table feeding every layer, each node sized by its number of weights">${s}</svg>`;
     const svg = map.querySelector('svg');
+    const rects = nodes.map((n) => ({ p: n.p, x: n.x, y: n.y, w: n.w || n.s, h: n.h || n.s }));
     const els = rects.map((r) => {
       const e = document.createElementNS(NS, 'rect');
-      e.setAttribute('x', r.x); e.setAttribute('y', r.y); e.setAttribute('width', r.w); e.setAttribute('height', r.h);
-      e.setAttribute('data-tip', esc(`<b>${nameOf(r.p)}</b><br>${(r.p.w / 1e6).toFixed(1)}M weights · plan: ${r.p.t === 'BF16' ? '16-bit' : r.p.t}`));
+      e.setAttribute('x', r.x.toFixed(2)); e.setAttribute('y', r.y.toFixed(2)); e.setAttribute('width', r.w.toFixed(2)); e.setAttribute('height', r.h.toFixed(2));
+      e.setAttribute('rx', r.w > 30 ? 3 : 1);
+      e.setAttribute('data-tip', esc(`<b>${nameOf(r.p)}</b><br>${r.p.w >= 1e8 ? (r.p.w / 1e9).toFixed(2) + 'B' : (r.p.w / 1e6).toFixed(1) + 'M'} weights · plan: ${r.p.t === 'BF16' ? '16-bit' : r.p.t}`));
       svg.appendChild(e); return e;
     });
-    const label = (x, y, s, anchor = 'start') => { const e = document.createElementNS(NS, 'text'); e.setAttribute('x', x); e.setAttribute('y', y); e.setAttribute('text-anchor', anchor);
-      e.setAttribute('font-size', 12); e.setAttribute('font-family', 'var(--sans)'); e.setAttribute('font-weight', 600); e.setAttribute('fill', 'var(--ink)');
-      e.setAttribute('stroke', 'var(--bg)'); e.setAttribute('stroke-width', 3); e.setAttribute('paint-order', 'stroke'); e.setAttribute('pointer-events', 'none'); e.textContent = s; svg.appendChild(e); };
-    label(10, 20, 'Per-layer lookup table, 2.35B weights'); label(x0 + 8, 18, 'Embedding table'); label(x0 + 8, embH + 16, 'Matrices, one column per layer');
-    label(x0, h + 14, 'layer 0'); label(w, h + 14, 'layer 34', 'end');
+    const plab = document.createElementNS(NS, 'text');
+    plab.setAttribute('x', X0 - 5); plab.setAttribute('y', pleY + pleH / 2 + 4); plab.setAttribute('font-size', 12); plab.setAttribute('font-weight', 600);
+    plab.setAttribute('font-family', 'var(--sans)'); plab.setAttribute('fill', 'var(--ink)'); plab.setAttribute('stroke', 'var(--bg)'); plab.setAttribute('stroke-width', 3);
+    plab.setAttribute('paint-order', 'stroke'); plab.setAttribute('pointer-events', 'none'); plab.textContent = 'per-layer lookup table, 2.35B weights: one 256-wide slice per layer';
+    svg.appendChild(plab);
 
     // size and KL along the way
     const cv = document.getElementById('anim-curve');
