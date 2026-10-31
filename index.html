@@ -468,10 +468,22 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <ul class="contrib">
       <li><b>Decoding speed was not measured.</b> The compiled GGUF stores most matrices at Q8_0 or BF16, which decode with different kernels than Q4_K. File size, and so memory traffic per token, matches the public files, but tokens per second may differ.</li>
       <li><b>The trellis and Lloyd–Max codes have no inference kernel.</b> Plans that use them are evaluated by turning them back into full-precision weights.</li>
-      <li><b>One model so far against public files.</b> The public comparison covers Gemma 4 E2B only. The other Gemma 4 sizes are next.</li>
+      <li><b>One model so far against public files.</b> The public comparison covers Gemma 4 E2B only.</li>
       <li><b>Calibration text.</b> The compiler and our llama.cpp builds calibrate on a split of the same 13-source mix used for testing; the unsloth and bartowski files calibrate on their own text. WikiText-2 is in neither, and the gap there is as large.</li>
       <li><b>Small evaluation sets.</b> KL uses 104 held-out windows and 64 WikiText-2 windows of 512 tokens; GSM8K uses 250 problems.</li>
-      <li><b>No fine-tuning.</b> Every result here is post-training quantization. Fine-tuning after allocation would mostly help low-bit plans.</li>
+      <li><b>No fine-tuning.</b> Every result here is post-training quantization.</li>
+    </ul>
+
+    <h2 id="further">Further work</h2>
+    <p>Every plan here is post-training quantization, and the Gemma plans are priced by file size. Each step below either improves quality or prices a resource that file size misses.</p>
+    <ul class="contrib">
+      <li><b>Fine-tuning after allocation.</b> Fine-tuning helps most where bits are fewest. On Llama-2-7B, fine-tuning each layer after quantizing lowered the perplexity of the 2-bit trellis from 6.76 to 6.26, but moved the 4-bit trellis only from 5.177 to 5.167. QTIP adds end-to-end fine-tuning and reaches 5.86 at 2 bits. So we expect the largest gains for the smallest plans, such as the 1.5 GB and 2.0 GB files. The allocation can use this too. A low-bit code that fine-tuning repairs well does less damage than its measurement says. End-to-end fine-tuning against the original model also works on the whole plan at once, which targets the gap between predicted and measured KL.</li>
+      <li><b>GPU memory as the budget.</b> The plans here count every byte the same, which matches file size and the unified memory of Macs and phones. On a GPU, lookup tables and offloaded mixture-of-experts layers can stay in CPU memory, so only the pieces that live on the GPU use its memory. A GPU-memory target prices the other pieces at a cheaper host-memory rate. For Gemma 4 E2B, whose per-layer table is half the model, that plan would give the table more bits and the matrices fewer than the plans here.</li>
+      <li><b>Inference speed as the budget.</b> The compiler's decode costs are assumed for now: one operation per weight for 16-bit values, two for a scalar code and three for a trellis. Measuring tokens per second for each type on each device lets a plan target speed directly, for example the most accurate GGUF that decodes at least as fast as Q4_K_M on a given GPU.</li>
+      <li><b>Long contexts.</b> The cache is priced at the context length a plan targets, but plans have been evaluated at 512 and 2,048 tokens. The Qwen3.5-4B laptop plan, priced at 32,768 tokens, should be evaluated at that length, and the recurrent state of hybrid models like Qwen3.5 should be priced too.</li>
+      <li><b>Kernels for the compiler's own codes.</b> With trellis and Lloyd–Max codes, the 2.00 GB plan beats every public file under 3.5 GB, but no inference engine runs these codes yet. The plans ask for three things: rows of different widths in one table, trellis decoding inside llama.cpp, and keys and values cached at different widths.</li>
+      <li><b>More models.</b> The rest of Gemma 4 is next: E4B, 12B, 31B and the 26B-A4B mixture of experts, each compared with its public files on the same protocol. The compiler already treats experts as pieces, grouped by how often the router picks them.</li>
+      <li><b>Search around the plan.</b> Where the sum of per-piece KL misses the measured KL, trying small changes to the plan on the real model, as EvoPress does, would find plans the sum cannot.</li>
     </ul>
 
     <h2 id="related">Related work</h2>
