@@ -467,7 +467,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <h2 id="limits">Limitations</h2>
     <ul class="contrib">
       <li><b>Decoding speed was not measured.</b> The compiled GGUF stores most matrices at Q8_0 or BF16, which decode with different kernels than Q4_K. File size, and so memory traffic per token, matches the public files, but tokens per second may differ.</li>
-      <li><b>The trellis and Lloyd–Max codes have no inference kernel.</b> Plans that use them are evaluated by turning them back into full-precision weights.</li>
+      <li><b>The compiler's own codes don't run in any inference engine yet.</b> Their quality numbers still hold. Every file in this paper, public or ours, was scored the same way, by turning its stored values back into full-precision weights. Their speed is unknown until an engine runs them.</li>
       <li><b>One model so far against public files.</b> The public comparison covers Gemma 4 E2B only.</li>
       <li><b>Calibration text.</b> The compiler and our llama.cpp builds calibrate on a split of the same 13-source mix used for testing; the unsloth and bartowski files calibrate on their own text. WikiText-2 is in neither, and the gap there is as large.</li>
       <li><b>Small evaluation sets.</b> KL uses 104 held-out windows and 64 WikiText-2 windows of 512 tokens; GSM8K uses 250 problems.</li>
