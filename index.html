@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LookAtMyQuant</title>
+<meta name="description" content="LookAtMyQuant is a quantization compiler. It gives every stored piece of a model its own code, chosen by measuring what each piece costs the whole model.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: an academic project page. Centered title block, a teaser figure, then the paper in one reading column with wider figures. */
+:root {
+  --bg: #FFFFFF;
+  --ink: #1A1E24;
+  --muted: #5B6370;
+  --faint: #8C939E;
+  --line: #E2E5EA;
+  --soft: #F4F6F8;
+  --gguf: #1F56C4;
+  --own: #C27419;
+  --pub: #8D95A1;
+  --ple: #2A9071;
+  --mat: #3D4552;
+  --emb: #A7AEB8;
+  --exact: #237A5F;
+  --lossy: #B4581F;
+  --control: #5D4FB0;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24;
+    --gguf: #6E9BF0; --own: #D9963F; --pub: #7D8592; --ple: #3EB08B; --mat: #C9CED6; --emb: #6A717C;
+    --exact: #5CC19E; --lossy: #E59059; --control: #A99BF0; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24;
+  --gguf: #6E9BF0; --own: #D9963F; --pub: #7D8592; --ple: #3EB08B; --mat: #C9CED6; --emb: #6A717C;
+  --exact: #5CC19E; --lossy: #E59059; --control: #A99BF0; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.62 var(--serif); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 56px 96px; }
+.col { max-width: 44rem; margin: 0 auto; }
+.wide { max-width: 62rem; margin: 0 auto; }
+figure.wide { margin: 34px auto 38px; }
+section.wide { margin-top: 22px; margin-bottom: 26px; }
+header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
+h1 { font: 600 clamp(2.4rem, 6vw, 3.6rem)/1.05 var(--serif); letter-spacing: -0.015em; margin: 0; }
+.subtitle { font: 400 clamp(1.15rem, 2.6vw, 1.5rem)/1.3 var(--serif); color: var(--muted); margin: 0; max-width: 34ch; text-wrap: balance; }
+.authors { font: 500 1.05rem/1.4 var(--sans); margin: 6px 0 0; }
+.meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+.links a { font: 500 0.92rem var(--sans); color: var(--bg); background: var(--ink); text-decoration: none; padding: 7px 16px; border-radius: 999px; }
+.links a:focus-visible { outline: 2px solid var(--gguf); outline-offset: 2px; }
+h2 { font: 600 1.6rem/1.2 var(--serif); margin: 56px 0 14px; text-wrap: balance; letter-spacing: -0.005em; }
+h3 { font: 600 1.18rem/1.3 var(--serif); margin: 34px 0 10px; text-wrap: balance; }
+p { margin: 0 0 14px; }
+.lede-label { font: 600 0.78rem/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+.abstract { background: var(--soft); border-radius: 6px; padding: 22px 26px; margin: 8px 0 0; }
+.abstract p { margin: 0 0 10px; }
+.abstract p:last-child { margin: 0; }
+ul.contrib { padding-left: 1.2em; margin: 0 0 14px; }
+ul.contrib li { margin-bottom: 8px; }
+a { color: var(--gguf); text-underline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+b, strong { font-weight: 600; }
+.math { font-style: italic; white-space: nowrap; }
+.eq { display: block; text-align: center; font: italic 1.02rem/1.6 var(--serif); margin: 14px 0 18px; overflow-x: auto; }
+.eq .n { font-style: normal; color: var(--muted); float: right; font-size: 0.9rem; }
+
+figure { margin: 30px auto 34px; display: grid; gap: 10px; min-width: 0; }
+figcaption, .tcap { font: 400 0.95rem/1.5 var(--sans); color: var(--muted); }
+figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
+.chart { position: relative; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 0.9rem var(--sans); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.legend i.sq { border-radius: 2px; }
+.legend i.ring { background: transparent; border: 2px solid var(--pub); }
+.legend i.hatch { border-radius: 2px; background: repeating-linear-gradient(135deg, var(--emb) 0 2px, transparent 2px 4px); border: 1px solid var(--emb); }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+@media (max-width: 760px) { .grid3, .grid2 { grid-template-columns: 1fr; } }
+.panel-title { font: 600 0.92rem var(--sans); color: var(--ink); margin: 0 0 2px; }
+
+.scroll-x { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font: 400 0.9rem/1.4 var(--sans); font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-weight: 600; color: var(--ink); border-bottom: 1.5px solid var(--ink); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr.ours td { font-weight: 600; }
+tr.group td { font: 600 0.78rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 14px; border-bottom: 1px solid var(--line); }
+.tcap { margin: 0 0 8px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
+
+/* diagrams */
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.flow > div { padding: 14px 14px 16px; display: grid; gap: 6px; align-content: start; border-top: 3px solid var(--line); font: 400 0.88rem/1.45 var(--sans); color: var(--muted); }
+.flow > div + div { border-left: 1px solid var(--line); }
+.flow .d { display: block; }
+.flow .k { font: 600 0.7rem var(--sans); letter-spacing: 0.07em; text-transform: uppercase; }
+.flow .v { font: 500 0.92rem var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.flow .exact { border-top-color: var(--exact); } .flow .exact .k { color: var(--exact); }
+.flow .lossy { border-top-color: var(--lossy); } .flow .lossy .k { color: var(--lossy); }
+.flow .control { border-top-color: var(--control); } .flow .control .k { color: var(--control); }
+.flow .stage { border-top-color: var(--gguf); } .flow .stage .k { color: var(--gguf); }
+.flow.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 760px) {
+  .flow, .flow.six { grid-template-columns: 1fr; }
+  .flow > div + div { border-left: 0; border-top-width: 3px; }
+}
+pre.bib { font: 400 0.82rem/1.5 var(--mono); background: var(--soft); border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 0; }
+ol.refs { padding-left: 1.4em; font: 400 0.92rem/1.5 var(--sans); color: var(--muted); }
+ol.refs li { margin-bottom: 6px; }
+ol.refs li b { color: var(--ink); font-weight: 600; }
+.note { font: 400 0.92rem/1.5 var(--sans); color: var(--muted); }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 6px 18px rgba(0,0,0,.14); padding: 7px 10px; font: 400 0.84rem/1.4 var(--sans); max-width: 19rem; }
+.tip b { font-weight: 600; }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="title col">
+    <h1>LookAtMyQuant</h1>
+    <p class="subtitle">A quantization compiler that picks a code for every piece of a model</p>
+    <p class="authors">Shin Megami Boson</p>
+    <p class="meta">October 2026</p>
+    <nav class="links" aria-label="Sections">
+      <a href="#results">Results</a>
+      <a href="#method">Method</a>
+      <a href="#citation">Citation</a>
+    </nav>
+  </header>
+
+  <figure class="wide" id="fig1">
+    <div class="legend" id="fig1-legend"></div>
+    <div class="chart" id="teaser"></div>
+    <figcaption><b>Figure 1.</b> Gemma 4 E2B: how far each quantized file is from the original model, against its size. The blue files are made by the compiler from llama.cpp's own quantization types and load in llama.cpp. At every size where a public file exists, they have at least <span data-v="minRatio">6</span> times lower KL divergence. At the size of llama.cpp Q4_K_M, the KL is <span data-v="q4Ratio">12</span> times lower. KL is averaged over held-out text in 13 languages and domains; log scale.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p class="lede-label">Abstract</p>
+    <div class="abstract">
+      <p>Quantized language models are usually made by one recipe for every tensor: one format, one bit width and a few hand-written exceptions. LookAtMyQuant is a quantization compiler. It measures how much each stored piece of a model hurts the whole model when that piece alone is compressed. The pieces are every weight matrix, buckets of embedding rows grouped by token frequency, and each layer's key–value cache. The compiler predicts most options from a few measurements, prices every option for a target device and solves a knapsack for the plan with the least total damage within the budget.</p>
+      <p>The programs it chooses from are written in a grammar of tensor-network rewrites. Nine published quantization and pruning methods are short programs in this grammar, reproduced exactly.</p>
+      <p>On Gemma 4 E2B, the compiler restricted to llama.cpp's types makes ordinary GGUF files. At the size of llama.cpp's Q4_K_M, the compiled file has 12 times lower KL divergence from the original model, and it solves 59% of GSM8K problems against 50% for Q4_K_M and 61% for the original. Most of the gain comes from a choice a fixed recipe does not make. Gemma's 2.35-billion-weight per-layer lookup table is cheap to compress, so the compiler stores it at 4.25 bits instead of 6.56 and gives the saved bytes to the matrices. On Qwen3.5-4B and SmolLM2-360M, compared with 3-bit models that keep the embedding or the cache at 16 bits, the compiler's plans have 6 to 81 times lower KL at equal cost on each target device.</p>
+    </div>
+
+    <h2 id="intro">Every piece of a model costs something different to compress</h2>
+    <p>A quantization format applies one rule to a whole model. GGUF's Q4_K_M, for example, stores most matrices at about 4.5 bits per weight and a fixed list of tensors at Q6_K. The rule is the same for a 360-million-parameter model and a 70-billion-parameter one, for a model with a large vocabulary and one with a small one, and for a phone and a server.</p>
+    <p>But the damage each piece does to the model is not uniform. In Gemma 4 E2B, one 0.4-million-weight matrix costs nearly as much at 3 bits as twenty whole layers. Half of the model's weights are a lookup table that tolerates 4 bits well. The 256 most frequent tokens make up a third of all text, while the rarest half of the vocabulary makes up a fraction of a percent. A fixed recipe cannot see any of this.</p>
+    <p>LookAtMyQuant treats quantization as compilation. A plan names one program for every stored piece of the model. The compiler finds the plan that does the least damage for a given budget on a given device. We make four contributions:</p>
+    <ul class="contrib">
+      <li><b>A quantization compiler.</b> It allocates bits across weight matrices, frequency buckets of the embedding and per-layer tables, and the key–value cache, with prices that depend on the target device.</li>
+      <li><b>A cheap way to measure.</b> One forward pass with shaped noise predicts each matrix's damage at 3 bits, and the ratios between codes are the same on every model we tested. A few layers measured with real codes then predict every option.</li>
+      <li><b>Compiled GGUF files for Gemma 4 E2B</b> that beat every public quantization we measured, on one protocol, at every size where one exists.</li>
+      <li><b>A grammar of quantization programs</b> in which published methods are short programs, so the compiler's menu can mix code families.</li>
+    </ul>
+
+    <h2 id="results">A compiled Gemma 4 E2B file has 12 times lower KL than Q4_K_M at the same size</h2>
+    <p>We compared the compiler's files with every widely used quantization of Gemma 4 E2B that we could load. These are Google's quantization-aware-trained q4_0 GGUF, unsloth's UD-Q4_K_XL, bartowski's Q4_K_M and LM Studio's MLX 4-bit. We also built llama.cpp's stock recipes, Q2_K to Q8_0, with an importance matrix from the same calibration text the compiler uses.</p>
+    <p>Every file is turned back into full-precision weights inside the same Hugging Face model, so the same code scores every file on the same text. The text is 64 windows of WikiText-2 and 8 held-out windows from each of 13 sources: English, ten other languages, code and chat. Each window has 512 tokens and starts with the beginning-of-sequence token. KL divergence measures how far a file's next-token predictions are from the original model's; lower is closer. Sizes count the bytes of the text model's weights, for every file.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 1.</b> Each compiled GGUF against the public files within 0.06 GB of its size. Google's QAT file is left out here because Google trained it further after quantizing, so its KL includes that training; Table 2 compares it on benchmarks.</p>
+    <div class="scroll-x"><table id="t1"><thead><tr><th>Compiled GGUF</th><th class="num">KL</th><th>Public file</th><th class="num">Size (GB)</th><th class="num">KL</th><th class="num">KL ratio</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <p>The gap holds on every one of the 13 sources and on WikiText-2, which is not part of the calibration text. On WikiText-2 the 3.39 GB compiled file has a KL of <span data-v="wikiG">0.008</span>, and Q4_K_M has <span data-v="wikiQ">0.143</span>.</p>
+    <p>Benchmarks agree. Multiple-choice tasks barely separate the files: except for Q2_K and Google's QAT file, every file is within about two points of the original on MMLU, ARC-Challenge and HellaSwag. Multi-step math separates them (Figure 2). Public 4-bit files lose up to <span data-v="pubDrop">27</span> points on GSM8K, and compiled files at most <span data-v="ourDrop">6</span>. With 250 problems, each GSM8K figure is uncertain by about ±6 points.</p>
+  </section>
+
+  <figure class="wide" id="fig2">
+    <div class="legend" id="fig2-legend"></div>
+    <div class="chart" id="gsm"></div>
+    <figcaption><b>Figure 2.</b> Share of 250 GSM8K problems solved, with five worked examples and greedy decoding. Whiskers are 95% intervals. The dashed line is the original model.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>Most of the gain comes from the per-layer lookup table</h3>
+    <p>Gemma 4 E2B feeds each of its 35 layers a 256-wide vector looked up by token. Together these vectors form a table of 262,144 rows by 8,960 columns: 2.35 billion of the model's 4.63 billion text weights. The table is never multiplied, only read one row per token. The compiler measured it as cheap to compress: per weight, it costs less than a tenth as much as the least sensitive matrices.</p>
+    <p>llama.cpp's Q4_K_M recipe stores this table at Q6_K, 6.56 bits per weight. That is 1.93 GB, 56% of the file. The compiler, choosing among the same llama.cpp types, stores it at IQ4_XS, 4.25 bits, and gives the 0.68 GB it saves to the matrices, most of which it stores at Q8_0 or BF16 (Figure 3).</p>
+  </section>
+
+  <figure class="wide" id="fig3">
+    <div class="legend">
+      <span><i class="sq" style="background:var(--mat)"></i>Weight matrices</span>
+      <span><i class="sq" style="background:var(--emb)"></i>Embedding table</span>
+      <span><i class="sq" style="background:var(--ple)"></i>Per-layer lookup table</span>
+      <span><i class="hatch"></i>Kept at 16 bits</span>
+    </div>
+    <div class="chart" id="bytes"></div>
+    <figcaption><b>Figure 3.</b> Where three files of about 3.4 GB spend their bytes. Labels give bits per weight. The compiled GGUF uses only llama.cpp types; the compiler's own codes go further in the same direction.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>With its own codes, the compiler reaches the same quality at 2 GB</h3>
+    <p>The compiler's native menu has trellis codes and Lloyd–Max codes, described below, which have no inference kernel yet. With them, its 2.00 GB plan has a KL of <span data-v="own2kl">0.074</span>, lower than every public file under 3.5 GB, and solves <span data-v="own2gsm">60.4%</span> of GSM8K problems. At 3.41 GB its KL is <span data-v="own341kl">0.0057</span>. These plans show what the allocation can reach once such codes run.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 2.</b> Every Gemma 4 E2B file we measured. KL on the 13-source text mix and on WikiText-2; accuracy on MMLU (1,000 sampled questions, zero-shot), ARC-Challenge (all 1,172), HellaSwag (1,000 sampled) and GSM8K (the first 250, five-shot).</p>
+    <div class="scroll-x"><table id="t2"><thead><tr><th>File</th><th class="num">Size (GB)</th><th class="num">Bits / weight</th><th class="num">KL, mix</th><th class="num">KL, WikiText</th><th class="num">MMLU</th><th class="num">ARC-C</th><th class="num">HellaSwag</th><th class="num">GSM8K</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h3>On Qwen3.5-4B, the embedding table is the largest lever</h3>
+    <p>Qwen3.5-4B ties a 248,320-row embedding table to its output head. At 16 bits the table takes about as many bytes as all the matrices at 3 bits. At the bytes of "3-bit matrices with a 16-bit embedding", the compiler's plan stores the embedding at 3.1 bits on average and the matrices at 5.35. Perplexity rises 0.13% instead of 4.9%, with 12 times less KL (Table 3).</p>
+    <p>The plan gives the 256 most frequent rows 16 bits, the next 8,000 rows 8 bits, and the rarest 117,000 rows 2 bits. The rarest 183,000 rows never appear in WikiText's training split. Together they cost 0.0007 KL at 2 bits.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 3.</b> Qwen3.5-4B, 64 WikiText-2 test windows of 512 tokens. Original perplexity 12.283. Bits are given for matrices / embedding / cache.</p>
+    <div class="scroll-x"><table><thead><tr><th>Plan</th><th class="num">Bits</th><th class="num">Perplexity</th><th class="num">KL</th></tr></thead><tbody>
+      <tr><td>Uniform 3-bit trellis, 16-bit embedding</td><td class="num">3.06 / 16 / –</td><td class="num">12.884</td><td class="num">0.0614</td></tr>
+      <tr class="ours"><td>Compiler, matrices only, same bits</td><td class="num">3.05 / 16 / –</td><td class="num">12.848</td><td class="num">0.0592</td></tr>
+      <tr class="ours"><td>Compiler, matrices and embedding, same bytes</td><td class="num">5.35 / 3.10 / –</td><td class="num">12.299</td><td class="num">0.0050</td></tr>
+      <tr><td>Uniform 3-bit trellis, 3-bit embedding</td><td class="num">3.06 / 3.04 / –</td><td class="num">13.008</td><td class="num">0.0735</td></tr>
+      <tr class="ours"><td>Compiler, same bytes as that</td><td class="num">3.17 / 2.41 / –</td><td class="num">12.801</td><td class="num">0.0542</td></tr>
+      <tr class="ours"><td>Compiler for a laptop at 32k context, same bits read per token as the first row</td><td class="num">6.62 / 4.23 / 6.19</td><td class="num">12.298</td><td class="num">0.0015</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h3>Each device gets its own plan</h3>
+    <p>The price of an option depends on the device. On disk, only stored bits count. On a laptop generating one sequence, the weights and the key–value cache are both read for every token, so cache bits count too. On a server running 32 sequences, one read of the weights serves all of them, so weights become cheap and the cache dominates. On a device limited by compute, decode work counts. For SmolLM2-360M the compiler makes a different plan for each (Table 4). The server plan stores matrices at 7.4 bits because 32 sequences share each read, and the compute-limited plan avoids trellis codes, which take more work to decode.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 4.</b> SmolLM2-360M. Each compiler plan costs what the reference costs under that target's price. Cells are WikiText-2 perplexity / KL; the laptop, server and NPU rows use windows of 2,048 tokens.</p>
+    <div class="scroll-x"><table><thead><tr><th>Target</th><th>Reference</th><th class="num">Reference</th><th class="num">Compiler</th><th>What the compiler changed</th></tr></thead><tbody>
+      <tr><td>Disk</td><td>3-bit trellis matrices, 16-bit embedding</td><td class="num">16.72 / 0.0959</td><td class="num"><b>15.48 / 0.0128</b></td><td>Embedding from 16 to 4.8 bits; matrices from 3.0 to 4.7 bits</td></tr>
+      <tr><td>Disk</td><td>3-bit trellis matrices and embedding</td><td class="num">17.40 / 0.1376</td><td class="num"><b>16.81 / 0.1068</b></td><td>Embedding rows by frequency, 8 bits for the most frequent to 2 bits for the rarest</td></tr>
+      <tr><td>Laptop, batch 1, 2k context</td><td>3-bit trellis, 16-bit embedding and cache</td><td class="num">12.25 / 0.0979</td><td class="num"><b>11.22 / 0.0050</b></td><td>Cache keys 8 bits, values 5–6; matrices 5.8 bits; embedding 5.6 bits</td></tr>
+      <tr><td>Server, batch 32, 16k context</td><td>3-bit trellis, 16-bit embedding, 4-bit cache</td><td class="num">12.70 / 0.1323</td><td class="num"><b>11.44 / 0.0216</b></td><td>Matrices 7.4 bits; cache keys 4–5 bits, values 3</td></tr>
+      <tr><td>Compute-limited device</td><td>3-bit trellis, 16-bit embedding and cache</td><td class="num">12.25 / 0.0979</td><td class="num"><b>11.20 / 0.0012</b></td><td>No trellis codes: Lloyd–Max at 6–8 bits; cache 6–8 bits</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h3>A width per matrix alone gains only 3 to 5%</h3>
+    <p>The large gains come from pieces that uniform formats leave at 16 bits or treat as one block: the embedding table, the per-layer table and the cache. Choosing a width per matrix, and nothing else, helps little on top of a strong base quantizer. On SmolLM2-360M, at the uniform programs' own rates, per-matrix widths lower KL by 3% at 3.04 bits and 5% at 4.04 bits (Table 5). Layer matters more than role: keeping each role's widths but moving them to random layers is 21% worse than uniform.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 5.</b> SmolLM2-360M, matrices only; embedding and cache at 16 bits. Original perplexity 15.31. Cells are perplexity (KL).</p>
+    <div class="scroll-x"><table><thead><tr><th class="num">Bits per weight</th><th class="num">Uniform trellis</th><th class="num">Compiler</th><th class="num">Same widths, shuffled across layers</th></tr></thead><tbody>
+      <tr><td class="num">2.05</td><td class="num">23.46 (0.439)</td><td class="num">–</td><td class="num">–</td></tr>
+      <tr><td class="num">2.25</td><td class="num">–</td><td class="num">20.50 (0.308)</td><td class="num">–</td></tr>
+      <tr><td class="num">2.50</td><td class="num">–</td><td class="num">18.63 (0.213)</td><td class="num">19.82 (0.267)</td></tr>
+      <tr><td class="num">3.04</td><td class="num">16.72 (0.0959)</td><td class="num">16.64 (0.0926)</td><td class="num">16.98 (0.1163)</td></tr>
+      <tr><td class="num">3.50</td><td class="num">–</td><td class="num">15.95 (0.0484)</td><td class="num">–</td></tr>
+      <tr><td class="num">4.04</td><td class="num">15.64 (0.0237)</td><td class="num">15.61 (0.0226)</td><td class="num">–</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <section class="col" id="method">
+    <h2>Quantization methods are short programs in a grammar of rewrites</h2>
+    <p>LookAtMyQuant writes a model as a tensor network. Each weight matrix is a node with named indices, and nodes that share an index are joined. A quantization method is a sequence of rewrites of this network, written in five kinds of word:</p>
+    <ul class="contrib">
+      <li><b>Nouns</b> are the nodes and the indices between them.</li>
+      <li><b>Types</b> are the values a node may take: an integer grid, a finite set of levels, paths through a trellis, or a randomized Hadamard transform stored as its signs. The type sets the storage price.</li>
+      <li><b>Exact verbs</b> change how the network is written but keep its output the same: a change of basis on an index, splitting out a scale, splitting one index into several.</li>
+      <li><b>Lossy verbs</b> restrict values to a cheaper type. All error comes from these.</li>
+      <li><b>Control words</b> order the steps and choose the data each one is fitted to. One example is the sweep that settles columns one block at a time and re-solves the rest, as GPTQ does.</li>
+    </ul>
+    <p>Nine published methods are short programs in this grammar, each reproduced exactly, layer by layer, against its reference code: RTN, GPTQ, AWQ, SVD, SVD-LLM, SliceGPT, magnitude pruning, Wanda and SparseGPT. The same words also build MXFP4, NVFP4, QuIP#-style codebooks and QTIP-style trellis codes. Figure 4 takes apart the program the compiler uses most.</p>
+  </section>
+
+  <figure class="wide" id="fig4">
+    <div class="flow">
+      <div class="exact"><span class="k">Exact</span><span class="v">incoherence</span><span class="d">Randomized Hadamard transforms on both sides of the matrix spread outliers out, so every weight looks Gaussian. Stored as sign bits and applied at runtime.</span></div>
+      <div class="exact"><span class="k">Exact</span><span class="v">split_scale</span><span class="d">Each row is divided by its root-mean-square value, kept at 16 bits, so one code fits every row.</span></div>
+      <div class="control"><span class="k">Control</span><span class="v">sweep (LDLQ)</span><span class="d">Columns are settled a block at a time. After each block, the free columns are re-solved by least squares under <span class="math">H</span>, the second moment of the matrix's inputs.</span></div>
+      <div class="lossy"><span class="k">Lossy</span><span class="v">restrict_trellis</span><span class="d">Each run of 256 weights becomes a path through a 4,096-state bitshift trellis, found by Viterbi: 3 bits per weight plus 0.035 bits of overhead.</span></div>
+      <div class="control"><span class="k">Control</span><span class="v">sequential + cross term</span><span class="d">Layers are quantized in order on the already-quantized model. Each matrix aims at the original model's output, so it absorbs part of the earlier layers' error.</span></div>
+    </div>
+    <figcaption><b>Figure 4.</b> The program <span class="mono">tr3x</span>, a 3-bit trellis code with the cross term. Replacing the lossy step with a restriction to 64 Lloyd–Max levels, with a sweep one column wide, gives <span class="mono">lm6x</span>. For the per-layer table, which is only looked up, the sweep is dropped: its input second moment is the identity, so a sweep would change nothing.</figcaption>
+  </figure>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 6.</b> The compiler's menu for a weight matrix. Bits are for a matrix 1,536 columns wide. The last column is the median, over 32 Gemma 4 E2B matrices measured with every program, of KL divided by the 3-bit trellis's KL.</p>
+    <div class="scroll-x"><table id="t6"><thead><tr><th>Program</th><th>Lossy step</th><th class="num">Bits per weight</th><th class="num">KL relative to tr3</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h2>The compiler measures each piece alone, then solves a knapsack</h2>
+  </section>
+  <figure class="wide" id="fig5">
+    <div class="flow six">
+      <div class="stage"><span class="k">Pieces</span><span class="v">items</span><span class="d">Every weight matrix; the embedding and per-layer tables cut into buckets of rows by token frequency; each layer's key–value cache.</span></div>
+      <div class="stage"><span class="k">Measure</span><span class="v">KL, one piece at a time</span><span class="d">Compress one piece, run the model on held-out text, and record the KL divergence from the original model.</span></div>
+      <div class="stage"><span class="k">Predict</span><span class="v">code ratios</span><span class="d">Fill in unmeasured options from one cheap probe per matrix and the ratios between codes.</span></div>
+      <div class="stage"><span class="k">Price</span><span class="v">per device</span><span class="d">Stored bits, bits read per token, cache bits per token of context, and decode work.</span></div>
+      <div class="stage"><span class="k">Allocate</span><span class="v">knapsack</span><span class="d">Choose one option per piece: least total KL within the budget, solved exactly by dynamic programming.</span></div>
+      <div class="stage"><span class="k">Run</span><span class="v">plan</span><span class="d">Quantize in order with each piece's program and the cross term, then evaluate on the test split.</span></div>
+    </div>
+    <figcaption><b>Figure 5.</b> The compiler. The measurement is done once per model; each device or budget then needs only a new allocation, which takes seconds.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>Pieces</h3>
+    <p>The compiler finds the pieces by running the model once. Linear layers that read the same tensor form one stage and are quantized together. Embedding tables are cut into 11 buckets of rows ranked by how often their token appears in the calibration text: 256, 256, 512 and so on, doubling up to 131,072 rows. A tied table is read two ways, as the output head at every position and as a lookup of one row, so its error is weighted by the head's inputs plus the identity. A table that is only looked up is weighted by the identity alone. Small linear layers, routers and normalization weights stay at 16 bits, and their bytes are counted.</p>
+
+    <h3>Measure</h3>
+    <p>For each piece and option, the compiler quantizes that piece alone and measures the KL divergence of the model's next-token distribution from the original's, on 16 held-out windows of 512 tokens. The windows come from the calibration split, never the test split. On SmolLM2-360M we measured all 2,312 piece-option pairs this way.</p>
+    <p>For larger models, each matrix gets one cheap probe instead. The probe adds noise shaped like the error that LDLQ leaves behind: Gaussian noise multiplied by the square root of LDLQ's error variances and by the inverse of the triangular factor of <span class="math">H</span>, at a fixed level. This takes one forward pass and no code search. A few spot layers are measured with every real code. On Gemma 4 E2B, the 275 matrices got a probe each, four layers and all 22 table buckets got real codes, and measuring took about one H100-hour.</p>
+
+    <h3>Predict</h3>
+    <p>An option that was not measured is predicted from the probe and the code ratios:</p>
+    <p class="eq">KL<sub>i</sub>(c) = r<sub>probe</sub> · KL<sub>i</sub>(probe) · ρ(c), &nbsp; where ρ(c) = median over spot matrices of KL(c) / KL(tr3)</p>
+    <p>Here <span class="math">r</span><sub>probe</sub> is the median ratio of real 3-bit KL to probe KL on the spot layers. Both ratios turn out to be properties of the codes rather than of the model (Figures 6 and 7).</p>
+
+    <h3>Price</h3>
+    <p>Each option has a cost under a target, from three numbers: the bits it stores, the cache bits it adds per token of context, and the operations needed to decode it.</p>
+    <p class="eq">price = stored bits / batch + decode ops · c / batch + context · cache bits</p>
+    <p>The disk target counts stored bits only. The laptop target uses batch 1 and a 2,048-token context; the server target uses batch 32 and 16,384 tokens; the compute-limited target charges 2 bits per decode operation.</p>
+
+    <h3>Allocate</h3>
+    <p>The plan solves a multiple-choice knapsack: choose one option <span class="math">o<sub>i</sub></span> for every piece <span class="math">i</span> to</p>
+    <p class="eq">minimize Σ<sub>i</sub> KL<sub>i</sub>(o<sub>i</sub>) &nbsp; subject to &nbsp; Σ<sub>i</sub> price<sub>i</sub>(o<sub>i</sub>) ≤ B</p>
+    <p>Dynamic programming over 100,000 budget cells solves it in seconds, with each price rounded up to the cell size. Summing per-piece KL assumes that damage adds up; we test this below.</p>
+
+    <h3>Run</h3>
+    <p>The model is quantized layer by layer with each piece's program, on 64 calibration windows from a separate split of the same text. Each matrix is fitted with the cross term, so it targets the original model's output given the already-quantized inputs. For llama.cpp, the same plan becomes one <code>--tensor-type</code> override per tensor in <code>llama-quantize</code>, and we check that every tensor in the output file has the planned type.</p>
+
+    <h3>llama.cpp types as the menu</h3>
+    <p>To make files that run today, the menu can be llama.cpp's own types: Q2_K, Q3_K, IQ4_XS, Q4_K, Q5_K, Q6_K, Q8_0 and BF16. Each of Gemma 4 E2B's 278 tensors is measured alone in each type, inside real llama.cpp files, with the same KL measurement. The knapsack then picks one type per tensor.</p>
+
+    <h2 id="analysis">Analysis</h2>
+
+    <h3>One noisy forward pass predicts a matrix's 3-bit damage</h3>
+    <p>Across 224 matrices of SmolLM2-360M and 211 of Qwen3.5-4B, real 3-bit trellis KL is 1.33 times the probe's KL, with a log-scale correlation of 0.99 on both models. Eighty percent of matrices fall between 1.22 and 1.59 times. On Gemma 4 E2B's 32 spot matrices the median ratio is 1.35 with a wider spread (Figure 6).</p>
+  </section>
+
+  <figure class="wide" id="fig6">
+    <div class="grid3" id="probe"></div>
+    <figcaption><b>Figure 6.</b> Each point is one matrix: its KL with the noise probe (across) and with the real 3-bit trellis code (up), both log scale. The dashed line is 1.33 times the probe.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>Ratios between codes are the same on every model tested</h3>
+    <p>Each bit removed multiplies a matrix's KL by about four, as Gaussian rate–distortion theory predicts. The ratio of each code's KL to the 3-bit trellis's KL is nearly the same on SmolLM2-360M, Qwen3.5-4B and Gemma 4 E2B (Figure 7). So the spot layers of a new model mostly confirm ratios already known. On SmolLM2, a plan built from three spot layers has a true summed KL of 0.01333, against 0.0133 for a plan built from every measurement.</p>
+  </section>
+
+  <figure class="wide" id="fig7">
+    <div class="legend" id="fig7-legend"></div>
+    <div class="chart" id="ratios"></div>
+    <figcaption><b>Figure 7.</b> Median KL of each code divided by the median KL of the 3-bit trellis, over matrices measured with every code, on three models; log scale.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>Damage adds up, except where it is smallest</h3>
+    <p>The knapsack assumes that the KL of a plan is the sum of its pieces' KL. Measured KL is within 18% of the sum for every compiled plan on SmolLM2 and Qwen3.5 and for every Gemma GGUF plan (Figure 8). Uniform plans measure 10–14% below the sum, because the cross term repairs them better than predicted. Gemma plans with the compiler's own codes measure 36% to 93% above the sum from 2.5 GB up, where each piece's KL is smallest. Searching around the knapsack's plan with real evaluations, as EvoPress does, would target this gap.</p>
+  </section>
+
+  <figure class="wide" id="fig8">
+    <div class="legend" id="fig8-legend"></div>
+    <div class="chart" id="additivity"></div>
+    <figcaption><b>Figure 8.</b> Predicted KL (the sum over pieces) against measured KL for every compiled plan we evaluated, log scales. The diagonal is perfect prediction; the band is ±20%.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>In Gemma 4 E2B, a few pieces carry most of the sensitivity</h3>
+    <p>Layers 15 to 34 reuse the keys and values that layers 13 and 14 compute, and have no key or value projections of their own. They cost less than half as much per layer (Figure 9). One matrix, layer 13's per-layer projection, costs 0.106 KL at 3 bits, nearly as much as all twenty later layers together. Every plan keeps it at 16 bits.</p>
+    <p>Per weight, key and value projections cost 15 to 19 times as much as query projections. In both tables, KL per row falls 2,000 to 5,000 times from the most frequent bucket to the rarest, so the compiler gives frequent rows 8 or 16 bits, and the rarest half of the per-layer table gets 2 bits in every plan.</p>
+  </section>
+
+  <figure class="wide" id="fig9">
+    <div class="chart" id="layers"></div>
+    <figcaption><b>Figure 9.</b> Predicted KL of each layer's matrices at the 3-bit trellis, Gemma 4 E2B. The shaded layers reuse earlier keys and values. Layer 13's bar is cut off at 0.03; its value is 0.124.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h3>Two exact rewrites did not help</h3>
+    <p>Exact rewrites are free moves for a search: they change how the network is written without changing its output, so they can make it easier to quantize. We tried two on SmolLM2-360M.</p>
+    <ul class="contrib">
+      <li><b>Diagonal rescaling across a matrix pair</b> (value and output projections, up and down projections). Searching the rescaling strength per block, 63 of 64 blocks chose none, and the result was slightly worse: 16.735 perplexity against 16.721. The randomized Hadamard transform spreads quantization error evenly across channels, and rescaling makes some channels small, so the compensating factor amplifies their error.</li>
+      <li><b>Choosing Hadamard signs.</b> Keeping the best of four random sign seeds per matrix changed nothing: 16.76 against 16.72 at 3 bits. The per-matrix error picks among seeds that differ only by noise.</li>
+    </ul>
+    <p>On top of incoherence processing, these rewrites have nothing left to fix. The exact rewrites worth searching are those the code does not already perform.</p>
+
+    <h2 id="limits">Limitations</h2>
+    <ul class="contrib">
+      <li><b>Decoding speed was not measured.</b> The compiled GGUF stores most matrices at Q8_0 or BF16, which decode with different kernels than Q4_K. File size, and so memory traffic per token, matches the public files, but tokens per second may differ.</li>
+      <li><b>The trellis and Lloyd–Max codes have no inference kernel.</b> Plans that use them are evaluated by turning them back into full-precision weights.</li>
+      <li><b>One model so far against public files.</b> The public comparison covers Gemma 4 E2B only. The other Gemma 4 sizes are next.</li>
+      <li><b>Calibration text.</b> The compiler and our llama.cpp builds calibrate on a split of the same 13-source mix used for testing; the unsloth and bartowski files calibrate on their own text. WikiText-2 is in neither, and the gap there is as large.</li>
+      <li><b>Small evaluation sets.</b> KL uses 104 held-out windows and 64 WikiText-2 windows of 512 tokens; GSM8K uses 250 problems.</li>
+      <li><b>No fine-tuning.</b> Every result here is post-training quantization. Fine-tuning after allocation would mostly help low-bit plans.</li>
+    </ul>
+
+    <h2 id="related">Related work</h2>
+    <p><b>Bits per layer.</b> HIGGS [1] proves that perplexity increase is linear in each layer's error and allocates widths by dynamic programming; our measurements agree, matrix by matrix. ExLlamaV2's EXL2 format [2] measures each module at about a dozen settings and optimizes to a target bits per weight. NVIDIA ModelOpt's <code>auto_quantize</code> [3] searches a format per layer under an effective-bits budget. EvoPress [4] searches with real model evaluations because summed per-layer errors can rank configurations wrongly, and AMQ [5] uses a learned quality predictor. HAWQ-V3 [6] solves an integer program under memory, latency and bit-operation budgets for convolutional networks, the closest prior version of per-device pricing.</p>
+    <p><b>Cache and embeddings.</b> KVTuner [7] searches per-layer key and value widths and also finds keys more sensitive than values; PM-KVQ [8] allocates cache precision under a memory budget. Recommendation models quantize embedding rows by feature frequency [9]. We found no peer-reviewed work that does this for language-model vocabularies.</p>
+    <p><b>Codes and rewrites.</b> GPTQ [10], QuIP# [11] and QTIP [12] supply the base quantizers: error-compensating sweeps, incoherence processing and trellis codes. Learned rotations such as SpinQuant and FlatQuant, and graph-rewrite systems such as TASO and Tensat, search exact rewrites, the latter for speed rather than quantization.</p>
+    <p><b>What is new here.</b> One knapsack across matrices, frequency buckets of the embedding and per-layer tables, and the cache, with prices that depend on the device; a menu that mixes code families; plans run with cross-term targets so later matrices absorb earlier error; and compiled files in a standard format, compared with public files on one protocol.</p>
+
+    <h2 id="refs">References</h2>
+    <ol class="refs">
+      <li><b>HIGGS.</b> Malinovskii et al., Pushing the Limits of Large Language Model Quantization via the Linearity Theorem. NAACL 2025. <a href="https://arxiv.org/abs/2411.17525">arXiv:2411.17525</a></li>
+      <li><b>EXL2.</b> turboderp, ExLlamaV2. <a href="https://github.com/turboderp-org/exllamav2">github.com/turboderp-org/exllamav2</a></li>
+      <li><b>ModelOpt.</b> NVIDIA Model Optimizer, <code>auto_quantize</code>. <a href="https://nvidia.github.io/Model-Optimizer/reference/generated/modelopt.torch.quantization.model_quant.html">Documentation</a></li>
+      <li><b>EvoPress.</b> Sieberling et al., evolutionary search for dynamic model compression. ICML 2025. <a href="https://arxiv.org/abs/2410.14649">arXiv:2410.14649</a></li>
+      <li><b>AMQ.</b> AutoML search over per-layer bit widths with a quality predictor. EMNLP 2025. <a href="https://preview.aclanthology.org/setup/2025.emnlp-main.1799">ACL Anthology</a></li>
+      <li><b>HAWQ-V3.</b> Yao et al., HAWQ-V3: Dyadic Neural Network Quantization. ICML 2021. <a href="https://proceedings.mlr.press/v139/yao21a.html">PMLR</a></li>
+      <li><b>KVTuner.</b> Li et al., layer-wise mixed-precision key–value cache quantization. ICML 2025. <a href="https://proceedings.mlr.press/v267/li25dd.html">PMLR</a></li>
+      <li><b>PM-KVQ.</b> Key–value cache precision allocated under a memory budget. <a href="https://arxiv.org/abs/2505.18610">arXiv:2505.18610</a></li>
+      <li><b>Mixed-precision embeddings.</b> Embedding precision chosen per feature-frequency group in recommendation models. <a href="https://arxiv.org/abs/2409.20305">arXiv:2409.20305</a></li>
+      <li><b>GPTQ.</b> Frantar et al., GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. ICLR 2023. <a href="https://arxiv.org/abs/2210.17323">arXiv:2210.17323</a></li>
+      <li><b>QuIP#.</b> Tseng et al., QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks. ICML 2024. <a href="https://arxiv.org/abs/2402.04396">arXiv:2402.04396</a></li>
+      <li><b>QTIP.</b> Tseng et al., QTIP: Quantization with Trellises and Incoherence Processing. NeurIPS 2024. <a href="https://arxiv.org/abs/2406.11235">arXiv:2406.11235</a></li>
+    </ol>
+
+    <h2 id="citation">Citation</h2>
+    <pre class="bib">@misc{boson2026lookatmyquant,
+  title  = {LookAtMyQuant: A Quantization Compiler},
+  author = {{Shin Megami Boson}},
+  year   = {2026},
+  month  = oct
+}</pre>
+
+    <footer>LookAtMyQuant · October 2026</footer>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(async function () {
+  const D = await (await fetch('data.json')).json();
+  const E = D.e2b;
+  const by = (n) => E.find((r) => r.name === n);
+  const tip = document.getElementById('tip');
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  document.addEventListener('pointermove', (e) => {
+    const t = e.target.closest && e.target.closest('[data-tip]');
+    if (!t) { tip.hidden = true; return; }
+    tip.innerHTML = t.getAttribute('data-tip'); tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY - h - 12;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y < 8) y = e.clientY + 18;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  const kl = (v) => (v == null ? '–' : v >= 0.1 ? v.toFixed(3) : v >= 0.01 ? v.toFixed(3) : v.toFixed(4));
+  const pct = (v, d = 1) => (v == null ? '–' : (v * 100).toFixed(d) + '%');
+  const gb = (v) => Number(v).toFixed(2);
+  const floor1 = (v) => (Math.floor(v * 10) / 10).toFixed(1);
+  const T = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 12}" fill="${o.fill || 'var(--muted)'}" text-anchor="${o.anchor || 'start'}" font-family="${o.mono ? 'var(--mono)' : 'var(--sans)'}"${o.weight ? ` font-weight="${o.weight}"` : ''}${o.halo ? ' stroke="var(--bg)" stroke-width="3" paint-order="stroke"' : ''}>${s}</text>`;
+  const W = (el) => Math.max(300, el.clientWidth || 640);
+  const lg = Math.log10;
+
+  // ---- groups
+  const gguf = E.filter((r) => r.group === 'ours_gguf').sort((a, b) => a.gb - b.gb);
+  const own = E.filter((r) => r.group === 'ours').sort((a, b) => a.gb - b.gb);
+  const pub = E.filter((r) => r.group === 'public');
+  const orig = E.find((r) => r.group === 'original');
+  const shortName = (n) => n.replace('Compiler GGUF, ', '').replace('Compiler plan, ', '');
+
+  // ---- numbers quoted in the text
+  const q4 = by('llama.cpp Q4_K_M'), g339 = gguf.reduce((a, b) => (Math.abs(b.gb - q4.gb) < Math.abs(a.gb - q4.gb) ? b : a));
+  const pairs = gguf.flatMap((g) => pub.filter((p) => p.maker !== 'Google QAT' && p.mix_kl != null && Math.abs(p.gb - g.gb) < 0.06).map((p) => ({ g, p, r: p.mix_kl / g.mix_kl })));
+  const bench = E.filter((r) => r.gsm8k != null);
+  const drop = (rows) => Math.round(100 * Math.max(...rows.map((r) => orig.gsm8k - r.gsm8k)));
+  const V = {
+    q4Ratio: Math.floor(q4.mix_kl / g339.mix_kl), minRatio: Math.floor(Math.min(...pairs.map((x) => x.r))),
+    wikiG: kl(g339.wikitext_kl), wikiQ: kl(q4.wikitext_kl),
+    pubDrop: drop(bench.filter((r) => r.group === 'public' && /4/.test(r.name))), ourDrop: drop(bench.filter((r) => r.group === 'ours' || r.group === 'ours_gguf')),
+    own2kl: kl(own[1].mix_kl), own2gsm: pct(own[1].gsm8k), own341kl: kl(own[own.length - 1].mix_kl),
+  };
+  document.querySelectorAll('[data-v]').forEach((el) => { if (V[el.dataset.v] != null) el.textContent = V[el.dataset.v]; });
+
+  // ---- Table 1
+  document.querySelector('#t1 tbody').innerHTML = pairs.sort((a, b) => a.g.gb - b.g.gb || a.p.gb - b.p.gb).map(({ g, p, r }) =>
+    `<tr><td><b>${gb(g.gb)} GB</b></td><td class="num"><b>${kl(g.mix_kl)}</b></td><td>${esc(p.name)}</td><td class="num">${gb(p.gb)}</td><td class="num">${kl(p.mix_kl)}</td><td class="num"><b>${floor1(r)}×</b></td></tr>`).join('');
+
+  // ---- Table 2
+  const groups = [['Compiled GGUF, llama.cpp types', 'ours_gguf'], ["Compiler's own codes (no kernel yet)", 'ours'], ['Public files', 'public'], ['Original', 'original']];
+  document.querySelector('#t2 tbody').innerHTML = groups.map(([label, g]) => {
+    const rows = E.filter((r) => r.group === g).sort((a, b) => a.gb - b.gb);
+    return `<tr class="group"><td colspan="9">${label}</td></tr>` + rows.map((r) => `<tr${g.startsWith('ours') ? ' class="ours"' : ''}>
+      <td>${esc(g === 'ours_gguf' || g === 'ours' ? shortName(r.name) : r.name)}</td><td class="num">${gb(r.gb)}</td><td class="num">${r.bits_per_weight == null ? '–' : r.bits_per_weight.toFixed(2)}</td>
+      <td class="num">${g === 'original' ? '0' : kl(r.mix_kl)}</td><td class="num">${g === 'original' ? '0' : kl(r.wikitext_kl)}</td>
+      <td class="num">${pct(r.mmlu)}</td><td class="num">${pct(r.arc_c)}</td><td class="num">${pct(r.hellaswag)}</td><td class="num">${pct(r.gsm8k)}</td></tr>`).join('');
+  }).join('');
+
+  // ---- Table 6
+  const G = D.ratios['Gemma 4 E2B'];
+  const MENU = [['tr2', 'Trellis, 2 bits per step', 2.05, G.tr2], ['tr3', 'Trellis, 3 bits per step', 3.05, 1], ['tr4', 'Trellis, 4 bits per step', 4.04, G.tr4],
+    ['lm5', '32 Lloyd–Max levels', 5.01, G.lm5], ['lm6', '64 Lloyd–Max levels', 6.01, G.lm6], ['lm8', '256 Lloyd–Max levels', 8.01, G.lm8], ['fp16', 'None (kept as stored)', 16, 0]];
+  document.querySelector('#t6 tbody').innerHTML = MENU.map(([p, s, b, r]) =>
+    `<tr><td class="mono">${p}</td><td>${s}</td><td class="num">${b}</td><td class="num">${r === 0 ? '0' : r === 1 ? '1' : Number(r.toPrecision(2))}</td></tr>`).join('');
+
+  // ---- legends
+  const dot = (c, label, cls = '') => `<span><i class="${cls}" style="background:${c}"></i>${label}</span>`;
+  const MAIN_LEGEND = dot('var(--gguf)', 'LookAtMyQuant, GGUF (llama.cpp types)') + dot('var(--own)', "LookAtMyQuant, own codes (no kernel yet)") + dot('var(--pub)', 'Public files') + `<span><i class="ring"></i>Google QAT (retrained)</span>`;
+  document.getElementById('fig1-legend').innerHTML = MAIN_LEGEND;
+  document.getElementById('fig2-legend').innerHTML = MAIN_LEGEND;
+
+  // ---- label placement helper
+  const placeLabels = (items, bounds, fs) => {
+    const placed = [], out = [];
+    const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+    items.forEach((it) => {
+      const w = it.text.length * fs * 0.52, h = fs + 3;
+      const cands = [[8, -h / 2], [-8 - w, -h / 2], [-w / 2, -h - 7], [-w / 2, 8], [8, -h - 4], [8, 4], [-8 - w, -h - 4], [-8 - w, 4]];
+      for (const [dx, dy] of cands) {
+        const box = { x: it.x + dx, y: it.y + dy, w, h };
+        if (box.x < bounds.x0 || box.x + w > bounds.x1 || box.y < bounds.y0 || box.y + h > bounds.y1) continue;
+        if (placed.some((b) => hit(box, b)) || (it.avoid || []).some((b) => hit(box, b))) continue;
+        placed.push(box); out.push({ ...it, bx: box.x, by: box.y + h - 3 }); return;
+      }
+    });
+    return out;
+  };
+
+  // ---- Figure 1: KL against size
+  function teaser() {
+    const el = document.getElementById('teaser'), w = W(el), h = Math.round(Math.min(460, Math.max(330, w * 0.5)));
+    const ml = 52, mr = 16, mt = 14, mb = 36, fs = w < 520 ? 10.5 : 12;
+    const rows = E.filter((r) => r.mix_kl != null && r.group !== 'original');
+    const x0 = 1.4, x1 = 3.75, y0 = 0.004, y1 = 1.0;
+    const x = (v) => ml + (w - ml - mr) * (v - x0) / (x1 - x0), y = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(y0)) / (lg(y1) - lg(y0)));
+    let s = '';
+    [0.005, 0.01, 0.03, 0.1, 0.3, 1].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/>` + T(ml - 8, y(t) + 4, t, { anchor: 'end', mono: true, size: fs - 1 }); });
+    [1.5, 2, 2.5, 3, 3.5].forEach((t) => { s += T(x(t), h - 12, `${t.toFixed(1)} GB`, { anchor: 'middle', mono: true, size: fs - 1 }); });
+    s += `<line x1="${ml}" x2="${w - mr}" y1="${h - mb}" y2="${h - mb}" stroke="var(--faint)"/>`;
+    s += T(ml, mt - 2, 'KL to the original (lower is closer)', { size: fs - 1 });
+    const line = (pts, c, dash) => `<path d="M${pts.map((p) => `${x(p.gb)},${y(p.mix_kl)}`).join('L')}" fill="none" stroke="${c}" stroke-width="2.25" ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linejoin="round"/>`;
+    s += line(own, 'var(--own)', '6 4') + line(gguf, 'var(--gguf)');
+    const tipOf = (r) => esc(`<b>${r.name}</b><br>${gb(r.gb)} GB · KL ${kl(r.mix_kl)}${r.gsm8k != null ? ` · GSM8K ${pct(r.gsm8k)}` : ''}`);
+    const marks = [];
+    rows.forEach((r) => {
+      const cx = x(r.gb), cy = y(r.mix_kl);
+      const c = r.group === 'ours_gguf' ? 'var(--gguf)' : r.group === 'ours' ? 'var(--own)' : 'var(--pub)';
+      const qat = r.maker === 'Google QAT';
+      s += `<circle cx="${cx}" cy="${cy}" r="${r.group === 'public' ? 5.5 : 5}" fill="${qat ? 'var(--bg)' : c}" stroke="${qat ? c : 'var(--bg)'}" stroke-width="2" data-tip="${tipOf(r)}"/>`;
+      marks.push({ x: cx - 6, y: cy - 6, w: 12, h: 12 });
+    });
+    const labs = placeLabels(pub.filter((r) => r.mix_kl != null).sort((a, b) => a.mix_kl - b.mix_kl).map((r) => ({ x: x(r.gb), y: y(r.mix_kl), text: r.name, avoid: marks })),
+      { x0: ml, x1: w - mr, y0: mt, y1: h - mb }, fs - 1);
+    labs.forEach((l) => { s += T(l.bx, l.by, esc(l.text), { size: fs - 1, halo: true }); });
+    const gl = gguf[gguf.length - 1], ol = own[own.length - 1];
+    s += T(x(gguf[0].gb) - 6, y(gguf[0].mix_kl) - 10, 'GGUF', { size: fs, fill: 'var(--gguf)', weight: 600, anchor: 'end', halo: true });
+    s += T(x(own[0].gb) + 8, y(own[0].mix_kl) - 8, 'own codes', { size: fs, fill: 'var(--own)', weight: 600, halo: true });
+    s += T(x(gl.gb) + 9, y(gl.mix_kl) + 4, `${gb(gl.gb)} GB`, { size: fs - 1, fill: 'var(--gguf)', halo: true });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL divergence against file size for Gemma 4 E2B: compiled files sit far below every public file of the same size">${s}</svg>`;
+  }
+
+  // ---- Figure 2: GSM8K
+  function gsm() {
+    const el = document.getElementById('gsm'), w = W(el), h = Math.round(Math.min(400, Math.max(300, w * 0.44)));
+    const ml = 46, mr = 16, mt = 14, mb = 36, fs = w < 520 ? 10.5 : 12;
+    const rows = bench.filter((r) => r.group !== 'original');
+    const x0 = 1.4, x1 = 5.1, x = (v) => ml + (w - ml - mr) * (v - x0) / (x1 - x0), y = (v) => mt + (h - mt - mb) * (1 - v / 0.72);
+    let s = '';
+    [0, 0.2, 0.4, 0.6].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/>` + T(ml - 8, y(t) + 4, `${t * 100}%`, { anchor: 'end', mono: true, size: fs - 1 }); });
+    [1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].forEach((t) => { s += T(x(t), h - 12, `${t.toFixed(1)} GB`, { anchor: 'middle', mono: true, size: fs - 1 }); });
+    s += `<line x1="${ml}" x2="${w - mr}" y1="${y(orig.gsm8k)}" y2="${y(orig.gsm8k)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+    s += T(w - mr, y(orig.gsm8k) - 6, `original, ${pct(orig.gsm8k)}`, { anchor: 'end', size: fs - 1, halo: true });
+    rows.forEach((r) => {
+      const c = r.group === 'ours_gguf' ? 'var(--gguf)' : r.group === 'ours' ? 'var(--own)' : 'var(--pub)', qat = r.maker === 'Google QAT', cx = x(r.gb);
+      s += `<line x1="${cx}" x2="${cx}" y1="${y(r.gsm8k_lo)}" y2="${y(r.gsm8k_hi)}" stroke="${c}" stroke-width="1.5" stroke-opacity="0.55"/>`;
+      s += `<circle cx="${cx}" cy="${y(r.gsm8k)}" r="5" fill="${qat ? 'var(--bg)' : c}" stroke="${qat ? c : 'var(--bg)'}" stroke-width="2" data-tip="${esc(`<b>${r.name}</b><br>${gb(r.gb)} GB · GSM8K ${pct(r.gsm8k)} (95%: ${pct(r.gsm8k_lo)}–${pct(r.gsm8k_hi)})`)}"/>`;
+    });
+    const named = rows.filter((r) => ['Google QAT q4_0', 'LM Studio MLX 4-bit', 'llama.cpp Q2_K', 'llama.cpp Q4_K_M'].includes(r.name));
+    const gmarks = rows.map((r) => ({ x: x(r.gb) - 6, y: y(r.gsm8k_hi), w: 12, h: y(r.gsm8k_lo) - y(r.gsm8k_hi) }));
+    placeLabels(named.map((r) => ({ x: x(r.gb), y: y(r.gsm8k), text: r.name, avoid: gmarks.filter((m) => Math.abs(m.x + 6 - x(r.gb)) > 1) })), { x0: ml, x1: w - mr, y0: mt, y1: h - mb }, fs - 1)
+      .forEach((l) => { s += T(l.bx, l.by, esc(l.text), { size: fs - 1, halo: true }); });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="GSM8K accuracy against size; compiled files stay near the original, Google QAT and MLX 4-bit fall to about 35 percent">${s}</svg>`;
+  }
+
+  // ---- Figure 3: bytes
+  function bytes() {
+    const el = document.getElementById('bytes'), w = W(el), narrow = w < 560, ml = narrow ? 112 : 230, mr = 44, rh = 44;
+    const own341 = D.plans[D.plans.length - 1];
+    const rowsB = [
+      { name: 'llama.cpp Q4_K_M', sub: `stock recipe · KL ${kl(q4.mix_kl)}`, parts: [['mat', 1.1145, 4.79], ['emb', 0.3303, 6.56], ['ple', 1.9268, 6.56], ['kept', 0.0405]] },
+      { name: 'LookAtMyQuant GGUF', sub: `llama.cpp types · KL ${kl(g339.mix_kl)}`, parts: [['mat', 1.775, 7.62], ['emb', 0.3303, 6.56], ['ple', 1.2478, 4.25], ['kept', 0.0405]] },
+      { name: 'LookAtMyQuant, own codes', sub: `no kernel yet · KL ${kl(own[own.length - 1].mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept]] },
+    ];
+    const h = rowsB.length * rh + 28, x = (v) => ml + (w - ml - mr) * v / 3.5;
+    const COL = { mat: 'var(--mat)', emb: 'var(--emb)', ple: 'var(--ple)' }, NAME = { mat: 'Weight matrices', emb: 'Embedding table', ple: 'Per-layer table', kept: 'Kept at 16 bits' };
+    let s = `<defs><pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="var(--bg)"/><line x1="0" y1="0" x2="0" y2="4" stroke="var(--emb)" stroke-width="2"/></pattern></defs>`;
+    [0, 1, 2, 3].forEach((t) => { s += `<line x1="${x(t)}" x2="${x(t)}" y1="0" y2="${h - 22}" stroke="var(--line)"/>` + T(x(t), h - 6, `${t} GB`, { anchor: 'middle', mono: true, size: 11 }); });
+    rowsB.forEach((r, i) => {
+      const yy = i * rh + 4;
+      s += T(ml - 12, yy + 16, esc(r.name), { anchor: 'end', size: narrow ? 11 : 13, fill: 'var(--ink)', weight: 600 });
+      s += T(ml - 12, yy + 31, esc(r.sub), { anchor: 'end', size: narrow ? 9.5 : 11 });
+      let a = 0;
+      r.parts.forEach(([k, v, bits]) => {
+        const xa = x(a) + (a ? 1 : 0), ww = Math.max(1, x(a + v) - x(a) - (a ? 1 : 0));
+        s += `<rect x="${xa}" y="${yy + 4}" width="${ww}" height="${rh - 16}" fill="${k === 'kept' ? 'url(#hatch)' : COL[k]}" data-tip="${esc(`<b>${r.name}</b><br>${NAME[k]}: ${v.toFixed(2)} GB${bits ? `, ${bits.toFixed(2)} bits per weight` : ''}`)}"/>`;
+        const lab = `${v.toFixed(2)} GB · ${bits ? bits.toFixed(2) : ''} b`;
+        if (bits && ww > lab.length * 6.6 + 12) s += T(xa + 7, yy + 22, lab, { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
+        else if (bits && ww > 38) s += T(xa + 5, yy + 22, v.toFixed(2), { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
+        a += v;
+      });
+      s += T(x(a) + 6, yy + 22, a.toFixed(2), { mono: true, size: 11, fill: 'var(--ink)' });
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Bytes by part for three files of about 3.4 GB; Q4_K_M spends 1.93 GB on the per-layer table, the compiled GGUF 1.25 GB">${s}</svg>`;
+  }
+
+  // ---- Figure 6: probe
+  function probe() {
+    const host = document.getElementById('probe');
+    host.innerHTML = Object.keys(D.noise).map((m, i) => `<div><p class="panel-title">${esc(m)}</p><div class="chart" id="probe${i}"></div></div>`).join('');
+    Object.entries(D.noise).forEach(([m, pts], i) => {
+      const el = document.getElementById(`probe${i}`), w = W(el), h = Math.round(w * 0.86), ml = 40, mr = 8, mt = 8, mb = 28;
+      pts = pts.filter(([a, b]) => a > 0 && b > 0);
+      const all = pts.flat(), lo = Math.min(...all) / 1.5, hi = Math.max(...all) * 1.5;
+      const sx = (v) => ml + (w - ml - mr) * (lg(v) - lg(lo)) / (lg(hi) - lg(lo)), sy = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(lo)) / (lg(hi) - lg(lo)));
+      let s = '';
+      const ticks = [1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1].filter((t) => t >= lo && t <= hi);
+      ticks.forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${sy(t)}" y2="${sy(t)}" stroke="var(--line)"/><line x1="${sx(t)}" x2="${sx(t)}" y1="${mt}" y2="${h - mb}" stroke="var(--line)"/>`;
+        s += T(ml - 5, sy(t) + 4, t.toExponential(0).replace('e-', 'e−'), { anchor: 'end', mono: true, size: 9.5 }) + T(sx(t), h - 12, t.toExponential(0).replace('e-', 'e−'), { anchor: 'middle', mono: true, size: 9.5 }); });
+      s += `<line x1="${sx(lo)}" y1="${sy(lo * 1.33)}" x2="${sx(hi / 1.33)}" y2="${sy(hi)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+      pts.forEach(([a, b]) => { s += `<circle cx="${sx(a)}" cy="${sy(b)}" r="2.6" fill="var(--gguf)" fill-opacity="0.65"/>`; });
+      el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(m)}: real 3-bit KL against probe KL per matrix">${s}</svg>`;
+    });
+  }
+
+  // ---- Figure 7: code ratios
+  const SHAPES = ['circle', 'square', 'diamond'];
+  const shape = (k, cx, cy, fill, stroke) => k === 'circle' ? `<circle cx="${cx}" cy="${cy}" r="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`
+    : k === 'square' ? `<rect x="${cx - 4.5}" y="${cy - 4.5}" width="9" height="9" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`
+    : `<path d="M${cx} ${cy - 6}L${cx + 6} ${cy}L${cx} ${cy + 6}L${cx - 6} ${cy}Z" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  const shapeIcon = (k, fill, stroke) => `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">${shape(k, 7, 7, fill, stroke)}</svg>`;
+  function ratios() {
+    const el = document.getElementById('ratios'), w = W(el), h = 280, ml = 52, mr = 12, mt = 10, mb = 30;
+    const codes = ['tr2', 'tr4', 'lm5', 'lm6', 'lm8'], models = Object.keys(D.ratios);
+    const y = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(0.001)) / (lg(10) - lg(0.001))), band = (w - ml - mr) / codes.length, x = (i) => ml + band * (i + 0.5);
+    let s = '';
+    [0.001, 0.01, 0.1, 1, 10].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="${t === 1 ? 1.5 : 1}"/>` + T(ml - 8, y(t) + 4, `${t}×`, { anchor: 'end', mono: true, size: 11 }); });
+    s += T(w - mr, y(1) - 6, '3-bit trellis', { anchor: 'end', size: 11 });
+    codes.forEach((c, i) => {
+      s += T(x(i), h - 8, c, { anchor: 'middle', mono: true, fill: 'var(--ink)' });
+      models.forEach((m, k) => {
+        const v = D.ratios[m][c], f = k === 2 ? 'var(--gguf)' : 'var(--bg)', st = k === 2 ? 'var(--gguf)' : 'var(--ink)';
+        s += `<g data-tip="${esc(`<b>${m}</b><br>${c}: ${Number(v.toPrecision(3))}× the KL of tr3`)}">${shape(SHAPES[k], x(i) + (k - 1) * 14, y(v), f, st)}</g>`;
+      });
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL ratios of five codes to the 3-bit trellis on three models; the three models nearly coincide">${s}</svg>`;
+    document.getElementById('fig7-legend').innerHTML = models.map((m, k) => `<span>${shapeIcon(SHAPES[k], k === 2 ? 'var(--gguf)' : 'var(--bg)', k === 2 ? 'var(--gguf)' : 'var(--ink)')}${esc(m)}</span>`).join('');
+  }
+
+  // ---- Figure 8: additivity
+  function additivity() {
+    const el = document.getElementById('additivity'), w = W(el), h = Math.round(Math.min(440, Math.max(320, w * 0.55))), ml = 52, mr = 14, mt = 10, mb = 36;
+    const S = { 'SmolLM2-360M': ['circle', 'var(--bg)', 'var(--ink)'], 'Qwen3.5-4B': ['square', 'var(--bg)', 'var(--ink)'],
+      'Gemma 4 E2B, own codes': ['diamond', 'var(--own)', 'var(--own)'], 'Gemma 4 E2B, GGUF': ['diamond', 'var(--gguf)', 'var(--gguf)'] };
+    const lo = 0.0008, hi = 0.6, sx = (v) => ml + (w - ml - mr) * (lg(v) - lg(lo)) / (lg(hi) - lg(lo)), sy = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(lo)) / (lg(hi) - lg(lo)));
+    let s = '';
+    [0.001, 0.01, 0.1].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${sy(t)}" y2="${sy(t)}" stroke="var(--line)"/><line x1="${sx(t)}" x2="${sx(t)}" y1="${mt}" y2="${h - mb}" stroke="var(--line)"/>` +
+      T(ml - 8, sy(t) + 4, t, { anchor: 'end', mono: true, size: 11 }) + T(sx(t), h - 14, t, { anchor: 'middle', mono: true, size: 11 }); });
+    s += `<path d="M${sx(lo)},${sy(lo * 1.2)}L${sx(hi / 1.2)},${sy(hi)}L${sx(hi)},${sy(hi)}L${sx(hi)},${sy(hi * 0.8)}L${sx(lo / 0.8)},${sy(lo)}L${sx(lo)},${sy(lo)}Z" fill="var(--soft)"/>`;
+    s += `<line x1="${sx(lo)}" y1="${sy(lo)}" x2="${sx(hi)}" y2="${sy(hi)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
+    s += T(ml + 4, mt + 12, 'measured ↑', { size: 11 }) + T(w - mr, h - 2, 'predicted →', { anchor: 'end', size: 11 });
+    Object.entries(D.additivity).forEach(([m, pts]) => {
+      const [k, f, st] = S[m];
+      pts.forEach(([name, p, q]) => { s += `<g data-tip="${esc(`<b>${m}</b><br>${name}<br>predicted ${kl(p)} · measured ${kl(q)}`)}">${shape(k, sx(p), sy(q), f, st)}</g>`; });
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Predicted against measured KL; most plans fall within 20 percent of the diagonal">${s}</svg>`;
+    document.getElementById('fig8-legend').innerHTML = Object.entries(S).map(([m, [k, f, st]]) => `<span>${shapeIcon(k, f, st)}${esc(m)}</span>`).join('');
+  }
+
+  // ---- Figure 9: layers
+  function layers() {
+    const el = document.getElementById('layers'), w = W(el), h = 250, ml = 46, mr = 8, mt = 22, mb = 30, cap = 0.03;
+    const v = D.layer_tr3, n = v.length, bw = (w - ml - mr) / n, y = (a) => mt + (h - mt - mb) * (1 - Math.min(a, cap) / cap);
+    let s = `<rect x="${ml + bw * 15}" y="${mt - 16}" width="${bw * 20}" height="${h - mt - mb + 16}" fill="var(--soft)"/>`;
+    s += T(ml + bw * 15 + 6, mt - 4, 'reuse keys and values from layers 13–14', { size: 11 });
+    [0, 0.01, 0.02, 0.03].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/>` + T(ml - 8, y(t) + 4, t.toFixed(2), { anchor: 'end', mono: true, size: 11 }); });
+    v.forEach((a, i) => {
+      const xx = ml + bw * i + 1;
+      s += `<rect x="${xx}" y="${y(a)}" width="${Math.max(1, bw - 2)}" height="${h - mb - y(a)}" rx="1.5" fill="${i === 13 ? 'var(--lossy)' : 'var(--gguf)'}" data-tip="${esc(`<b>Layer ${i}</b>: ${a.toFixed(4)} KL at 3 bits`)}"/>`;
+      if (i % 5 === 0 || i === 34) s += T(xx + (bw - 2) / 2, h - 12, i, { anchor: 'middle', mono: true, size: 11 });
+    });
+    s += T(ml + bw * 13 - 4, mt + 10, '0.124 ↑', { anchor: 'end', mono: true, size: 11, fill: 'var(--lossy)', halo: true });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Predicted 3-bit KL per layer of Gemma 4 E2B; layers 15 to 34 cost less than half as much; layer 13 spikes">${s}</svg>`;
+  }
+
+  const draw = () => { teaser(); gsm(); bytes(); probe(); ratios(); additivity(); layers(); };
+  draw();
+  let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(draw, 120); }).observe(document.body);
+})();
+</script>
+</body>
+</html>
