@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>LookAtMyQuant</title>
-<meta name="description" content="LookAtMyQuant is a quantization compiler. It gives every stored piece of a model its own code, chosen by measuring what each piece costs the whole model.">
+<meta name="description" content="A quantization compiler that delivers 12× lower KL than Q4_K_M at the same file size, measured on Gemma 4 E2B.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="LookAtMyQuant">
-<meta property="og:description" content="A quantization compiler that picks a code for every piece of a model. On Gemma 4 E2B, its GGUF has 12 times lower KL than llama.cpp Q4_K_M at the same size.">
+<meta property="og:description" content="A quantization compiler that delivers 12× lower KL than Q4_K_M at the same file size, measured on Gemma 4 E2B. The compiled GGUF uses only llama.cpp's own quantization types.">
 <meta property="og:url" content="https://lookatmyquant.pages.dev/">
 <meta property="og:image" content="https://lookatmyquant.pages.dev/og.jpg">
 <meta property="og:image:width" content="1200">
@@ -67,7 +67,7 @@ section.wide { margin-top: 22px; margin-bottom: 26px; }
 .hero img { display: block; width: 100%; height: auto; max-height: 34rem; object-fit: cover; object-position: center 30%; border-radius: 6px; }
 header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
 h1 { font: 600 clamp(2.4rem, 6vw, 3.6rem)/1.05 var(--serif); letter-spacing: -0.015em; margin: 0; }
-.subtitle { font: 400 clamp(1.15rem, 2.6vw, 1.5rem)/1.3 var(--serif); color: var(--muted); margin: 0; max-width: 34ch; text-wrap: balance; }
+.subtitle { font: 400 clamp(1.15rem, 2.6vw, 1.5rem)/1.3 var(--serif); color: var(--muted); margin: 0; max-width: 40ch; text-wrap: balance; }
 .authors { font: 500 1.05rem/1.4 var(--sans); margin: 6px 0 0; }
 .meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
 .links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
@@ -173,7 +173,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </figure>
   <header class="title col">
     <h1>LookAtMyQuant</h1>
-    <p class="subtitle">A quantization compiler that picks a code for every piece of a model</p>
+    <p class="subtitle">A quantization compiler that delivers 12× lower KL than Q4_K_M at the same file size</p>
     <p class="authors">Shin Megami Boson</p>
     <p class="meta">October 2026</p>
     <nav class="links" aria-label="Sections">
