@@ -29,19 +29,21 @@
   --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
   --sans: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --surface: var(--bg); --band: var(--soft); --accent: var(--gguf); --font-mono: var(--mono); --font-body: var(--sans);
+  --r1: #DCE6F8; --r2: #B9CDF0; --r3: #8EAEE4; --r4: #6389D2; --r5: #4068BE; --r6: #284B9B; --r7: #142A5E; --rt-light: #1A1E24; --rt-dark: #FFFFFF;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24;
     --gguf: #6E9BF0; --own: #D9963F; --pub: #7D8592; --ple: #3EB08B; --mat: #C9CED6; --emb: #6A717C;
-    --exact: #5CC19E; --lossy: #E59059; --control: #A99BF0; color-scheme: dark;
+    --exact: #5CC19E; --lossy: #E59059; --control: #A99BF0; --r1: #2C3D60; --r2: #36548E; --r3: #4369B2; --r4: #5A84CC; --r5: #7A9EDD; --r6: #A3BEEC; --r7: #D3E0F8; --rt-light: #E6E9EE; --rt-dark: #121418; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24;
   --gguf: #6E9BF0; --own: #D9963F; --pub: #7D8592; --ple: #3EB08B; --mat: #C9CED6; --emb: #6A717C;
-  --exact: #5CC19E; --lossy: #E59059; --control: #A99BF0; color-scheme: dark;
+  --exact: #5CC19E; --lossy: #E59059; --control: #A99BF0; --r1: #2C3D60; --r2: #36548E; --r3: #4369B2; --r4: #5A84CC; --r5: #7A9EDD; --r6: #A3BEEC; --r7: #D3E0F8; --rt-light: #E6E9EE; --rt-dark: #121418; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -118,6 +120,29 @@ tr.group td { font: 600 0.78rem var(--sans); letter-spacing: 0.06em; text-transf
   .flow, .flow.six { grid-template-columns: 1fr; }
   .flow > div + div { border-left: 0; border-top-width: 3px; }
 }
+.anim-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font: 400 0.88rem var(--sans); color: var(--muted); }
+.anim-ctl button { font: 600 0.88rem var(--sans); color: var(--bg); background: var(--ink); border: 0; border-radius: 999px; padding: 6px 16px; cursor: pointer; }
+.anim-ctl button:focus-visible, .anim-ctl input:focus-visible { outline: 2px solid var(--gguf); outline-offset: 2px; }
+.anim-ctl input[type=range] { flex: 1 1 14rem; accent-color: var(--gguf); }
+.anim-status { font: 400 0.9rem/1.4 var(--sans); color: var(--ink); min-height: 2.8em; margin: 0; font-variant-numeric: tabular-nums; }
+.anim-status b { font-family: var(--mono); font-weight: 500; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.tabs button { font: 500 0.88rem var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+.tabs button .mono { font-weight: 500; }
+.tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.tabs button:focus-visible { outline: 2px solid var(--gguf); outline-offset: 2px; }
+.tn svg { display: block; width: 100%; height: auto; min-width: 600px; }
+.tn-note { font: 400 0.95rem/1.5 var(--sans); max-width: 70ch; margin: 0; min-height: 4.8em; }
+.tn-note b { font-family: var(--mono); font-weight: 500; }
+.tn-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 12px; }
+.tn-tile { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; background: var(--bg); }
+.tn-tile .who { font: 400 0.8rem var(--sans); color: var(--muted); }
+.tn-tile .verbs { font: 500 0.82rem var(--mono); color: var(--ink); }
+.tn-tile p { margin: 0; font: 400 0.86rem/1.45 var(--sans); color: var(--muted); }
+.tn-tile svg { display: block; width: 100%; height: auto; }
+.tn-key { display: flex; flex-wrap: wrap; gap: 6px 16px; font: 400 0.82rem var(--sans); color: var(--muted); }
+.tn-key span { display: inline-flex; align-items: center; gap: 6px; }
+.tn-key i { width: 14px; height: 10px; border-radius: 2px; display: inline-block; border: 1.5px solid; }
 pre.bib { font: 400 0.82rem/1.5 var(--mono); background: var(--soft); border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 0; }
 ol.refs { padding-left: 1.4em; font: 400 0.92rem/1.5 var(--sans); color: var(--muted); }
 ol.refs li { margin-bottom: 6px; }
@@ -191,7 +216,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   <section class="col">
     <h3>Most of the gain comes from the per-layer lookup table</h3>
     <p>Gemma 4 E2B feeds each of its 35 layers a 256-wide vector looked up by token. Together these vectors form a table of 262,144 rows by 8,960 columns: 2.35 billion of the model's 4.63 billion text weights. The table is never multiplied, only read one row per token. The compiler measured it as cheap to compress: per weight, it costs less than a tenth as much as the least sensitive matrices.</p>
-    <p>llama.cpp's Q4_K_M recipe stores this table at Q6_K, 6.56 bits per weight. That is 1.93 GB, 56% of the file. The compiler, choosing among the same llama.cpp types, stores it at IQ4_XS, 4.25 bits, and gives the 0.68 GB it saves to the matrices, most of which it stores at Q8_0 or BF16 (Figure 3).</p>
+    <p>llama.cpp's Q4_K_M recipe stores this table at Q6_K, 6.56 bits per weight. That is 1.93 GB, 56% of the file. The compiler, choosing among the same llama.cpp types, stores it at IQ4_XS, 4.25 bits, and gives the 0.68 GB it saves to the matrices, most of which it stores at Q8_0 or BF16 (Figure 3). Figure 4 replays the compiled file one piece at a time.</p>
   </section>
 
   <figure class="wide" id="fig3">
@@ -203,6 +228,18 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     </div>
     <div class="chart" id="bytes"></div>
     <figcaption><b>Figure 3.</b> Where three files of about 3.4 GB spend their bytes. Labels give bits per weight. The compiled GGUF uses only llama.cpp types; the compiler's own codes go further in the same direction.</figcaption>
+  </figure>
+
+  <figure class="wide" id="fig4">
+    <div class="legend" id="anim-legend"></div>
+    <div class="chart" id="anim-map"></div>
+    <div class="anim-ctl">
+      <button type="button" id="anim-play">Replay</button>
+      <input type="range" id="anim-scrub" min="0" max="1" value="1" aria-label="Step through the compiled plan">
+    </div>
+    <p class="anim-status" id="anim-status" aria-live="polite"></p>
+    <div class="chart" id="anim-curve"></div>
+    <figcaption><b>Figure 4.</b> The compiled 3.39 GB GGUF, built piece by piece from the 16-bit model. Each rectangle is one stored piece, with area proportional to its number of weights; the large block on the left is the per-layer lookup table, and each column on the right is one layer's matrices. Colour shows the llama.cpp type the plan gives the piece, and grey pieces stay at 16 bits. The compiler finds the whole plan at once. The animation applies its choices one piece at a time, those that save the most bytes per unit of KL first. Below, the file's size and predicted KL along the way.</figcaption>
   </figure>
 
   <section class="col">
@@ -268,7 +305,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col" id="method">
     <h2>Quantization methods are short programs in a grammar of rewrites</h2>
-    <p>LookAtMyQuant writes a model as a tensor network. Each weight matrix is a node with named indices, and nodes that share an index are joined. A quantization method is a sequence of rewrites of this network, written in five kinds of word:</p>
+    <p>LookAtMyQuant writes a model as a tensor network. Each weight matrix is a node with named indices, and nodes that share an index are joined. A quantization method is a sequence of rewrites of this network, written in five kinds of word, listed below. Figure 5 shows one layer's MLP in this form.</p>
     <ul class="contrib">
       <li><b>Nouns</b> are the nodes and the indices between them.</li>
       <li><b>Types</b> are the values a node may take: an integer grid, a finite set of levels, paths through a trellis, or a randomized Hadamard transform stored as its signs. The type sets the storage price.</li>
@@ -276,18 +313,30 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <li><b>Lossy verbs</b> restrict values to a cheaper type. All error comes from these.</li>
       <li><b>Control words</b> order the steps and choose the data each one is fitted to. One example is the sweep that settles columns one block at a time and re-solves the rest, as GPTQ does.</li>
     </ul>
-    <p>Nine published methods are short programs in this grammar, each reproduced exactly, layer by layer, against its reference code: RTN, GPTQ, AWQ, SVD, SVD-LLM, SliceGPT, magnitude pruning, Wanda and SparseGPT. The same words also build MXFP4, NVFP4, QuIP#-style codebooks and QTIP-style trellis codes. Figure 4 takes apart the program the compiler uses most.</p>
+    <p>Nine published methods are short programs in this grammar, each reproduced exactly, layer by layer, against its reference code: RTN, GPTQ, AWQ, SVD, SVD-LLM, SliceGPT, magnitude pruning, Wanda and SparseGPT. The same words also build MXFP4, NVFP4, QuIP#-style codebooks and QTIP-style trellis codes. Figure 6 steps through the program the compiler uses most, and Figure 7 shows the rewrites behind five published methods.</p>
   </section>
 
-  <figure class="wide" id="fig4">
-    <div class="flow">
-      <div class="exact"><span class="k">Exact</span><span class="v">incoherence</span><span class="d">Randomized Hadamard transforms on both sides of the matrix spread outliers out, so every weight looks Gaussian. Stored as sign bits and applied at runtime.</span></div>
-      <div class="exact"><span class="k">Exact</span><span class="v">split_scale</span><span class="d">Each row is divided by its root-mean-square value, kept at 16 bits, so one code fits every row.</span></div>
-      <div class="control"><span class="k">Control</span><span class="v">sweep (LDLQ)</span><span class="d">Columns are settled a block at a time. After each block, the free columns are re-solved by least squares under <span class="math">H</span>, the second moment of the matrix's inputs.</span></div>
-      <div class="lossy"><span class="k">Lossy</span><span class="v">restrict_trellis</span><span class="d">Each run of 256 weights becomes a path through a 4,096-state bitshift trellis, found by Viterbi: 3 bits per weight plus 0.035 bits of overhead.</span></div>
-      <div class="control"><span class="k">Control</span><span class="v">sequential + cross term</span><span class="d">Layers are quantized in order on the already-quantized model. Each matrix aims at the original model's output, so it absorbs part of the earlier layers' error.</span></div>
+  <figure class="wide" id="fig5">
+    <div class="scroll-x"><div class="tn" id="tn-layer"></div></div>
+    <figcaption><b>Figure 5.</b> The MLP of one Gemma 4 E2B layer as a tensor network. Each weight matrix is a node. Each index it shares with another node is a line, labelled with its size. The gate and up matrices read the same index, so their lines meet at one junction, and the compiler quantizes them together.</figcaption>
+  </figure>
+
+  <figure class="wide" id="fig6">
+    <div class="tn-key">
+      <span><i style="border-color:var(--ink)"></i>16-bit values</span>
+      <span><i style="border-color:var(--exact);background:color-mix(in srgb, var(--exact) 14%, transparent)"></i>added by an exact step</span>
+      <span><i style="border-color:var(--lossy);background:color-mix(in srgb, var(--lossy) 18%, transparent)"></i>restricted to a code</span>
+      <span><i style="border-color:var(--control);border-style:dashed"></i>data a control step fits to</span>
     </div>
-    <figcaption><b>Figure 4.</b> The program <span class="mono">tr3x</span>, a 3-bit trellis code with the cross term. Replacing the lossy step with a restriction to 64 Lloyd–Max levels, with a sweep one column wide, gives <span class="mono">lm6x</span>. For the per-layer table, which is only looked up, the sweep is dropped: its input second moment is the identity, so a sweep would change nothing.</figcaption>
+    <div class="tabs" role="tablist" aria-label="Step" id="tn-tabs"></div>
+    <div class="scroll-x"><div class="tn" id="tn-step"></div></div>
+    <p class="tn-note" id="tn-note"></p>
+    <figcaption><b>Figure 6.</b> What each step of the program <span class="mono">tr3x</span>, a 3-bit trellis code with the cross term, does to one matrix's network. Pick a step. Exact steps add nodes without changing the product; only the lossy step changes what the network computes. Replacing the trellis with 64 Lloyd–Max levels, with a sweep one column wide, gives <span class="mono">lm6x</span>.</figcaption>
+  </figure>
+
+  <figure class="wide" id="fig7">
+    <div class="tn-gallery" id="tn-gallery"></div>
+    <figcaption><b>Figure 7.</b> Five published methods as rewrites of the same matrix, x → W → y. Each drawing shows the network after the method's rewrites.</figcaption>
   </figure>
 
   <section class="wide">
@@ -298,7 +347,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   <section class="col">
     <h2>The compiler measures each piece alone, then solves a knapsack</h2>
   </section>
-  <figure class="wide" id="fig5">
+  <figure class="wide" id="fig6">
     <div class="flow six">
       <div class="stage"><span class="k">Pieces</span><span class="v">items</span><span class="d">Every weight matrix; the embedding and per-layer tables cut into buckets of rows by token frequency; each layer's key–value cache.</span></div>
       <div class="stage"><span class="k">Measure</span><span class="v">KL, one piece at a time</span><span class="d">Compress one piece, run the model on held-out text, and record the KL divergence from the original model.</span></div>
@@ -307,12 +356,18 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <div class="stage"><span class="k">Allocate</span><span class="v">knapsack</span><span class="d">Choose one option per piece: least total KL within the budget, solved exactly by dynamic programming.</span></div>
       <div class="stage"><span class="k">Run</span><span class="v">plan</span><span class="d">Quantize in order with each piece's program and the cross term, then evaluate on the test split.</span></div>
     </div>
-    <figcaption><b>Figure 5.</b> The compiler. The measurement is done once per model; each device or budget then needs only a new allocation, which takes seconds.</figcaption>
+    <figcaption><b>Figure 8.</b> The compiler. The measurement is done once per model; each device or budget then needs only a new allocation, which takes seconds.</figcaption>
   </figure>
 
   <section class="col">
     <h3>Pieces</h3>
     <p>The compiler finds the pieces by running the model once. Linear layers that read the same tensor form one stage and are quantized together. Embedding tables are cut into 11 buckets of rows ranked by how often their token appears in the calibration text: 256, 256, 512 and so on, doubling up to 131,072 rows. A tied table is read two ways, as the output head at every position and as a lookup of one row, so its error is weighted by the head's inputs plus the identity. A table that is only looked up is weighted by the identity alone. Small linear layers, routers and normalization weights stay at 16 bits, and their bytes are counted.</p>
+  </section>
+  <figure class="wide" id="fig9">
+    <div class="scroll-x"><div class="tn" id="tn-table"></div></div>
+    <figcaption><b>Figure 9.</b> The embedding table is one node with a token index t and a hidden index d. split_index cuts t into 11 ranges by how often each token appears, and each range becomes its own node with its own program, shown here for the 2.00 GB plan. A lookup reads one row of one node; the output head reads all of them.</figcaption>
+  </figure>
+  <section class="col">
 
     <h3>Measure</h3>
     <p>For each piece and option, the compiler quantizes that piece alone and measures the KL divergence of the model's next-token distribution from the original's, on 16 held-out windows of 512 tokens. The windows come from the calibration split, never the test split. On SmolLM2-360M we measured all 2,312 piece-option pairs this way.</p>
@@ -321,7 +376,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <h3>Predict</h3>
     <p>An option that was not measured is predicted from the probe and the code ratios:</p>
     <p class="eq">KL<sub>i</sub>(c) = r<sub>probe</sub> · KL<sub>i</sub>(probe) · ρ(c), &nbsp; where ρ(c) = median over spot matrices of KL(c) / KL(tr3)</p>
-    <p>Here <span class="math">r</span><sub>probe</sub> is the median ratio of real 3-bit KL to probe KL on the spot layers. Both ratios turn out to be properties of the codes rather than of the model (Figures 6 and 7).</p>
+    <p>Here <span class="math">r</span><sub>probe</sub> is the median ratio of real 3-bit KL to probe KL on the spot layers. Both ratios turn out to be properties of the codes rather than of the model (Figures 10 and 11).</p>
 
     <h3>Price</h3>
     <p>Each option has a cost under a target, from three numbers: the bits it stores, the cache bits it adds per token of context, and the operations needed to decode it.</p>
@@ -342,45 +397,45 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <h2 id="analysis">Analysis</h2>
 
     <h3>One noisy forward pass predicts a matrix's 3-bit damage</h3>
-    <p>Across 224 matrices of SmolLM2-360M and 211 of Qwen3.5-4B, real 3-bit trellis KL is 1.33 times the probe's KL, with a log-scale correlation of 0.99 on both models. Eighty percent of matrices fall between 1.22 and 1.59 times. On Gemma 4 E2B's 32 spot matrices the median ratio is 1.35 with a wider spread (Figure 6).</p>
+    <p>Across 224 matrices of SmolLM2-360M and 211 of Qwen3.5-4B, real 3-bit trellis KL is 1.33 times the probe's KL, with a log-scale correlation of 0.99 on both models. Eighty percent of matrices fall between 1.22 and 1.59 times. On Gemma 4 E2B's 32 spot matrices the median ratio is 1.35 with a wider spread (Figure 10).</p>
   </section>
 
-  <figure class="wide" id="fig6">
+  <figure class="wide" id="fig7">
     <div class="grid3" id="probe"></div>
-    <figcaption><b>Figure 6.</b> Each point is one matrix: its KL with the noise probe (across) and with the real 3-bit trellis code (up), both log scale. The dashed line is 1.33 times the probe.</figcaption>
+    <figcaption><b>Figure 10.</b> Each point is one matrix: its KL with the noise probe (across) and with the real 3-bit trellis code (up), both log scale. The dashed line is 1.33 times the probe.</figcaption>
   </figure>
 
   <section class="col">
     <h3>Ratios between codes are the same on every model tested</h3>
-    <p>Each bit removed multiplies a matrix's KL by about four, as Gaussian rate–distortion theory predicts. The ratio of each code's KL to the 3-bit trellis's KL is nearly the same on SmolLM2-360M, Qwen3.5-4B and Gemma 4 E2B (Figure 7). So the spot layers of a new model mostly confirm ratios already known. On SmolLM2, a plan built from three spot layers has a true summed KL of 0.01333, against 0.0133 for a plan built from every measurement.</p>
+    <p>Each bit removed multiplies a matrix's KL by about four, as Gaussian rate–distortion theory predicts. The ratio of each code's KL to the 3-bit trellis's KL is nearly the same on SmolLM2-360M, Qwen3.5-4B and Gemma 4 E2B (Figure 11). So the spot layers of a new model mostly confirm ratios already known. On SmolLM2, a plan built from three spot layers has a true summed KL of 0.01333, against 0.0133 for a plan built from every measurement.</p>
   </section>
 
-  <figure class="wide" id="fig7">
+  <figure class="wide" id="fig8">
     <div class="legend" id="fig7-legend"></div>
     <div class="chart" id="ratios"></div>
-    <figcaption><b>Figure 7.</b> Median KL of each code divided by the median KL of the 3-bit trellis, over matrices measured with every code, on three models; log scale.</figcaption>
+    <figcaption><b>Figure 11.</b> Median KL of each code divided by the median KL of the 3-bit trellis, over matrices measured with every code, on three models; log scale.</figcaption>
   </figure>
 
   <section class="col">
     <h3>Damage adds up, except where it is smallest</h3>
-    <p>The knapsack assumes that the KL of a plan is the sum of its pieces' KL. Measured KL is within 18% of the sum for every compiled plan on SmolLM2 and Qwen3.5 and for every Gemma GGUF plan (Figure 8). Uniform plans measure 10–14% below the sum, because the cross term repairs them better than predicted. Gemma plans with the compiler's own codes measure 36% to 93% above the sum from 2.5 GB up, where each piece's KL is smallest. Searching around the knapsack's plan with real evaluations, as EvoPress does, would target this gap.</p>
+    <p>The knapsack assumes that the KL of a plan is the sum of its pieces' KL. Measured KL is within 18% of the sum for every compiled plan on SmolLM2 and Qwen3.5 and for every Gemma GGUF plan (Figure 12). Uniform plans measure 10–14% below the sum, because the cross term repairs them better than predicted. Gemma plans with the compiler's own codes measure 36% to 93% above the sum from 2.5 GB up, where each piece's KL is smallest. Searching around the knapsack's plan with real evaluations, as EvoPress does, would target this gap.</p>
   </section>
 
-  <figure class="wide" id="fig8">
+  <figure class="wide" id="fig9">
     <div class="legend" id="fig8-legend"></div>
     <div class="chart" id="additivity"></div>
-    <figcaption><b>Figure 8.</b> Predicted KL (the sum over pieces) against measured KL for every compiled plan we evaluated, log scales. The diagonal is perfect prediction; the band is ±20%.</figcaption>
+    <figcaption><b>Figure 12.</b> Predicted KL (the sum over pieces) against measured KL for every compiled plan we evaluated, log scales. The diagonal is perfect prediction; the band is ±20%.</figcaption>
   </figure>
 
   <section class="col">
     <h3>In Gemma 4 E2B, a few pieces carry most of the sensitivity</h3>
-    <p>Layers 15 to 34 reuse the keys and values that layers 13 and 14 compute, and have no key or value projections of their own. They cost less than half as much per layer (Figure 9). One matrix, layer 13's per-layer projection, costs 0.106 KL at 3 bits, nearly as much as all twenty later layers together. Every plan keeps it at 16 bits.</p>
+    <p>Layers 15 to 34 reuse the keys and values that layers 13 and 14 compute, and have no key or value projections of their own. They cost less than half as much per layer (Figure 13). One matrix, layer 13's per-layer projection, costs 0.106 KL at 3 bits, nearly as much as all twenty later layers together. Every plan keeps it at 16 bits.</p>
     <p>Per weight, key and value projections cost 15 to 19 times as much as query projections. In both tables, KL per row falls 2,000 to 5,000 times from the most frequent bucket to the rarest, so the compiler gives frequent rows 8 or 16 bits, and the rarest half of the per-layer table gets 2 bits in every plan.</p>
   </section>
 
-  <figure class="wide" id="fig9">
+  <figure class="wide" id="fig10">
     <div class="chart" id="layers"></div>
-    <figcaption><b>Figure 9.</b> Predicted KL of each layer's matrices at the 3-bit trellis, Gemma 4 E2B. The shaded layers reuse earlier keys and values. Layer 13's bar is cut off at 0.03; its value is 0.124.</figcaption>
+    <figcaption><b>Figure 13.</b> Predicted KL of each layer's matrices at the 3-bit trellis, Gemma 4 E2B. The shaded layers reuse earlier keys and values. Layer 13's bar is cut off at 0.03; its value is 0.124.</figcaption>
   </figure>
 
   <section class="col">
@@ -613,7 +668,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Bytes by part for three files of about 3.4 GB; Q4_K_M spends 1.93 GB on the per-layer table, the compiled GGUF 1.25 GB">${s}</svg>`;
   }
 
-  // ---- Figure 6: probe
+  // ---- Figure 10: probe
   function probe() {
     const host = document.getElementById('probe');
     host.innerHTML = Object.keys(D.noise).map((m, i) => `<div><p class="panel-title">${esc(m)}</p><div class="chart" id="probe${i}"></div></div>`).join('');
@@ -632,7 +687,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     });
   }
 
-  // ---- Figure 7: code ratios
+  // ---- Figure 11: code ratios
   const SHAPES = ['circle', 'square', 'diamond'];
   const shape = (k, cx, cy, fill, stroke) => k === 'circle' ? `<circle cx="${cx}" cy="${cy}" r="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`
     : k === 'square' ? `<rect x="${cx - 4.5}" y="${cy - 4.5}" width="9" height="9" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`
@@ -656,7 +711,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     document.getElementById('fig7-legend').innerHTML = models.map((m, k) => `<span>${shapeIcon(SHAPES[k], k === 2 ? 'var(--gguf)' : 'var(--bg)', k === 2 ? 'var(--gguf)' : 'var(--ink)')}${esc(m)}</span>`).join('');
   }
 
-  // ---- Figure 8: additivity
+  // ---- Figure 12: additivity
   function additivity() {
     const el = document.getElementById('additivity'), w = W(el), h = Math.round(Math.min(440, Math.max(320, w * 0.55))), ml = 52, mr = 14, mt = 10, mb = 36;
     const S = { 'SmolLM2-360M': ['circle', 'var(--bg)', 'var(--ink)'], 'Qwen3.5-4B': ['square', 'var(--bg)', 'var(--ink)'],
@@ -676,7 +731,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     document.getElementById('fig8-legend').innerHTML = Object.entries(S).map(([m, [k, f, st]]) => `<span>${shapeIcon(k, f, st)}${esc(m)}</span>`).join('');
   }
 
-  // ---- Figure 9: layers
+  // ---- Figure 13: layers
   function layers() {
     const el = document.getElementById('layers'), w = W(el), h = 250, ml = 46, mr = 8, mt = 22, mb = 30, cap = 0.03;
     const v = D.layer_tr3, n = v.length, bw = (w - ml - mr) / n, y = (a) => mt + (h - mt - mb) * (1 - Math.min(a, cap) / cap);
@@ -692,7 +747,293 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Predicted 3-bit KL per layer of Gemma 4 E2B; layers 15 to 34 cost less than half as much; layer 13 spikes">${s}</svg>`;
   }
 
-  const draw = () => { teaser(); gsm(); bytes(); probe(); ratios(); additivity(); layers(); };
+
+  const DATA = D;
+  const PROGS = ['tr2', 'tr3', 'tr4', 'lm5', 'lm6', 'lm8', 'fp16'];
+  const RAMP = (p) => `var(--r${PROGS.indexOf(p) + 1})`;
+  const RAMP_TEXT = (p) => (PROGS.indexOf(p) < 3 ? 'var(--rt-light)' : 'var(--rt-dark)');
+  const BITS = { tr2: 2.05, tr3: 3.05, tr4: 4.04, lm5: 5.01, lm6: 6.01, lm8: 8.01, fp16: 16 };
+  const rowsLabel = (r) => (r >= 1024 ? Math.round(r / 1024) + 'k' : String(r));
+/* ---------- tensor-network diagrams ---------- */
+const TNK = {  // fill, stroke, dash, fill opacity
+  real: ['var(--surface)', 'var(--ink)', '', 1], data: ['var(--surface)', 'var(--muted)', '', 1],
+  exact: ['var(--exact)', 'var(--exact)', '', 0.14], quant: ['var(--lossy)', 'var(--lossy)', '', 0.18],
+  act: ['var(--band)', 'var(--muted)', '4 3', 1], low: ['var(--control)', 'var(--control)', '', 0.14],
+  env: ['var(--surface)', 'var(--control)', '5 3', 1], mask: ['url(#tn-mask)', 'var(--ink)', '', 1],
+};
+const tnT = (x, y, s, o = {}) => `<text x="${x}" y="${y}" text-anchor="${o.anchor || 'middle'}" font-family="${o.body ? 'var(--font-body)' : 'var(--font-mono)'}" font-size="${o.size || 12}"${o.weight ? ` font-weight="${o.weight}"` : ''} fill="${o.fill || 'var(--ink)'}">${s}</text>`;
+const tnSub = (a, b) => `${a}<tspan baseline-shift="sub" font-size="9">${b}</tspan>`;
+function tnNode(n) {
+  const { x, y, w = 96, h = 48, name, sub, kind = 'real', shape = 'rect', fill, tip, nameY } = n;
+  const [f, st, dash, fo] = TNK[kind];
+  const a = `fill="${fill || f}" fill-opacity="${fill ? 1 : fo}" stroke="${st}" stroke-width="1.6"${dash ? ` stroke-dasharray="${dash}"` : ''}`;
+  let s = `<g${tip ? ` data-tip="${esc(tip)}"` : ''}>`;
+  if (shape === 'circle') s += `<circle cx="${x}" cy="${y}" r="${h / 2}" ${a}/>`;
+  else if (shape === 'diamond') s += `<path d="M${x} ${y - h / 2}L${x + w / 2} ${y}L${x} ${y + h / 2}L${x - w / 2} ${y}Z" ${a}/>`;
+  else s += `<rect x="${x - w / 2}" y="${y - h / 2}" width="${w}" height="${h}" rx="7" ${a}/>`;
+  if (name) s += tnT(x, nameY != null ? nameY : y + (sub ? -1 : 4.5), name, { size: n.size || 13, weight: 500, fill: n.textFill });
+  if (sub) s += tnT(x, n.subY != null ? n.subY : y + 13, sub, { size: 10, fill: 'var(--muted)', body: true });
+  return s + '</g>';
+}
+function tnBond(x1, y1, x2, y2, label, o = {}) {
+  let s = `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${o.stroke || 'var(--ink)'}" stroke-width="${o.width || 1.6}"${o.dash ? ` stroke-dasharray="${o.dash}"` : ''}/>`;
+  if (label) s += tnT((x1 + x2) / 2 + (o.dx || 0), (y1 + y2) / 2 + (o.dy == null ? -7 : o.dy), label, { size: 11, fill: o.labelFill || 'var(--muted)', anchor: o.anchor });
+  return s;
+}
+const tnDot = (x, y) => `<circle cx="${x}" cy="${y}" r="3.5" fill="var(--ink)"/>`;
+const tnNew = (x, y, color) => tnT(x, y, 'new', { size: 10, fill: color, body: true, weight: 600 });
+const tnSvg = (w, h, body, aria) => `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(aria)}"><defs><pattern id="tn-mask" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="var(--surface)"/><rect width="4" height="4" fill="var(--ink)" fill-opacity="0.3"/><rect x="4" y="4" width="4" height="4" fill="var(--ink)" fill-opacity="0.3"/></pattern></defs>${body}</svg>`;
+
+function tnLayer() {
+  let s = '';
+  s += `<path d="M40 94 V26 H650 V96" fill="none" stroke="var(--ink)" stroke-width="1.6"/>` + tnT(345, 18, 'd 1,536 · the residual stream', { size: 11, fill: 'var(--muted)' });
+  s += tnNode({ x: 40, y: 110, h: 32, shape: 'circle', kind: 'data', name: 'x', tip: 'The token\'s 1,536-wide hidden vector entering the MLP' });
+  s += tnBond(56, 110, 103, 110, 'd');
+  s += tnNode({ x: 125, y: 110, w: 44, h: 44, shape: 'diamond', name: 'g', tip: 'Normalization gain: 1,536 values on index d' });
+  s += tnBond(147, 110, 205, 110, 'd');
+  s += tnDot(205, 110);
+  s += tnBond(205, 110, 252, 60, 'd', { dx: -10 }) + tnBond(205, 110, 252, 160, 'd', { dx: -10, dy: 14 });
+  s += tnNode({ x: 300, y: 60, name: 'gate', sub: '6,144 × 1,536', tip: 'Gate projection, one weight matrix' });
+  s += tnNode({ x: 300, y: 160, name: 'up', sub: '6,144 × 1,536', tip: 'Up projection, one weight matrix' });
+  s += tnBond(348, 60, 384, 102, 'f 6,144', { dx: 12 }) + tnBond(348, 160, 384, 118, 'f', { dx: 8, dy: 16 });
+  s += tnNode({ x: 430, y: 110, w: 92, h: 44, kind: 'act', name: 'gelu(a)·b', size: 11, tip: 'The nonlinearity: not a weight, not quantized' });
+  s += tnBond(476, 110, 502, 110, 'f');
+  s += tnNode({ x: 550, y: 110, name: 'down', sub: '1,536 × 6,144', tip: 'Down projection, one weight matrix' });
+  s += tnBond(598, 110, 636, 110, 'd');
+  s += tnNode({ x: 650, y: 110, h: 28, shape: 'circle', kind: 'data', name: '+', tip: 'Adds the MLP output back to the residual stream' });
+  s += tnBond(664, 110, 704, 110, 'd');
+  s += tnNode({ x: 720, y: 110, h: 32, shape: 'circle', kind: 'data', name: 'y' });
+  document.getElementById('tn-layer').innerHTML = tnSvg(760, 200, s, 'The MLP of one layer as a tensor network: x, a norm gain, gate and up matrices meeting at one junction, a nonlinearity, the down matrix, and the residual stream');
+}
+
+const TN_STEPS = [
+  { tab: 'stored', note: 'One weight matrix is one node. Its two lines are its indices: <b>i</b> runs over the 1,536 inputs and <b>o</b> over the 12,288 outputs. The input x connects on i, and the output y leaves on o. Every entry is a 16-bit number.' },
+  { tab: 'incoherence', note: 'Two nodes appear on the lines: randomized Hadamard transforms R<sub>v</sub> and R<sub>u</sub>. The middle node becomes R<sub>u</sub>ᵀ W R<sub>v</sub>ᵀ, so the product of all three equals W exactly. The new indices <b>u</b> and <b>v</b> name the rotated bases. Each transform is stored as one sign per row and applied at runtime.' },
+  { tab: 'split_scale', note: 'A scale node s joins the <b>u</b> line at a junction. It holds each row\'s root-mean-square value at 16 bits, and the middle node is divided by it. Every row of the middle node now has the same scale, so one code fits all of them.' },
+  { tab: 'sweep', note: 'The network does not change; the sweep decides the values. It settles the middle node\'s columns a block at a time. After each block it re-solves the free columns by least squares under <b>H</b>, the second moment of this matrix\'s inputs on calibration text.' },
+  { tab: 'restrict_trellis', note: 'The middle node\'s type changes from 16-bit numbers to trellis paths. Each run of 256 values along <b>v</b> becomes a path through a 4,096-state trellis, at 3 bits per value. This is the only step that changes what the network computes.' },
+  { tab: 'cross term', note: 'Layers are quantized in order. Each matrix receives inputs x̂ that already carry the earlier layers\' error. It is fitted so that its output ŷ matches the original model\'s output y, so it absorbs part of that error.' },
+];
+let tnStep = 0, tnCol = 0, tnTimer = null;
+function tnGrid(x0, y0, w, h, mode) {
+  const C = 24, R = 7, cw = (w - 12) / C, ch = (h - 12) / R;
+  let s = '';
+  for (let c = 0; c < C; c++) {
+    const state = mode === 'quant' ? 'done' : c < tnCol ? 'done' : c < tnCol + 4 ? 'now' : 'free';
+    const fill = state === 'done' ? 'var(--lossy)' : state === 'now' ? 'var(--accent)' : 'var(--ink)';
+    const op = state === 'done' ? (mode === 'quant' ? 0.55 : 0.5) : state === 'now' ? 0.85 : 0.1;
+    for (let r = 0; r < R; r++) s += `<rect x="${(x0 + 6 + c * cw).toFixed(1)}" y="${(y0 + 6 + r * ch).toFixed(1)}" width="${(cw - 1).toFixed(1)}" height="${(ch - 1).toFixed(1)}" fill="${fill}" fill-opacity="${op}"/>`;
+  }
+  return s;
+}
+function tnRenderStep() {
+  const k = tnStep, Y = 100;
+  let s = '';
+  if (k === 5) {
+    s += tnT(40, 22, 'original model', { anchor: 'start', size: 11, fill: 'var(--muted)', body: true });
+    s += tnNode({ x: 40, y: 55, h: 30, shape: 'circle', kind: 'data', name: 'x' }) + tnBond(55, 55, 325, 55, 'i');
+    s += tnNode({ x: 380, y: 55, w: 110, h: 44, name: 'W', sub: '16-bit' }) + tnBond(435, 55, 705, 55, 'o');
+    s += tnNode({ x: 720, y: 55, h: 30, shape: 'circle', kind: 'data', name: 'y' });
+    s += tnT(40, 128, 'quantized so far', { anchor: 'start', size: 11, fill: 'var(--muted)', body: true });
+    s += tnNode({ x: 40, y: 165, h: 30, shape: 'circle', kind: 'data', name: 'x̂', tip: 'Inputs computed by the already-quantized earlier layers' });
+    s += tnBond(55, 165, 133, 165, 'i') + tnNode({ x: 175, y: 165, w: 84, h: 40, kind: 'exact', name: tnSub('R', 'v') });
+    s += tnBond(217, 165, 325, 165, 'v') + tnNode({ x: 380, y: 165, w: 110, h: 44, kind: 'quant', name: 'Q', sub: '3-bit trellis' });
+    s += tnBond(435, 165, 548, 165, 'u') + tnDot(500, 165) + tnBond(500, 165, 500, 196) + tnNode({ x: 500, y: 208, w: 28, h: 26, shape: 'diamond', kind: 'exact', name: 's', size: 11 });
+    s += tnNode({ x: 590, y: 165, w: 84, h: 40, kind: 'exact', name: tnSub('R', 'u') }) + tnBond(632, 165, 705, 165, 'o');
+    s += tnNode({ x: 720, y: 165, h: 30, shape: 'circle', kind: 'data', name: 'ŷ' });
+    s += `<path d="M738 62 C760 90 760 130 738 158" fill="none" stroke="var(--control)" stroke-width="1.6" stroke-dasharray="5 3"/>`;
+    s += tnT(700, 112, 'fit ŷ to y', { anchor: 'end', size: 11, fill: 'var(--control)', body: true, weight: 600 });
+    document.getElementById('tn-step').innerHTML = tnSvg(770, 230, s, 'Cross term: the quantized network with inputs from earlier quantized layers is fitted so its output matches the original model output');
+    return;
+  }
+  s += tnNode({ x: 40, y: Y, h: 32, shape: 'circle', kind: 'data', name: 'x' });
+  s += tnNode({ x: 720, y: Y, h: 32, shape: 'circle', kind: 'data', name: 'y' });
+  const grid = k >= 3;
+  const mid = k >= 4 ? { kind: 'quant', name: 'Q', sub: 'trellis, 3 bits per value' } : k >= 1 ? { kind: 'real', name: 'W′', sub: k >= 2 ? 'rows at unit scale' : '= Rᵤᵀ W Rᵥᵀ, 16-bit' } : { kind: 'real', name: 'W', sub: '12,288 × 1,536 · 16-bit' };
+  if (grid) {
+    s += `<rect x="305" y="${Y - 34}" width="150" height="68" rx="7" fill="var(--surface)" stroke="${k >= 4 ? 'var(--lossy)' : 'var(--ink)'}" stroke-width="1.6"/>`;
+    s += tnGrid(305, Y - 34, 150, 68, k >= 4 ? 'quant' : 'sweep');
+    s += tnT(380, Y - 42, mid.name, { size: 13, weight: 500 }) + tnT(380, Y + 50, mid.sub, { size: 10, fill: 'var(--muted)', body: true });
+  } else s += tnNode({ x: 380, y: Y, w: 150, h: 60, ...mid });
+  if (k === 0) {
+    s += tnBond(56, Y, 305, Y, 'i  1,536') + tnBond(455, Y, 704, Y, 'o  12,288');
+  } else {
+    s += tnBond(56, Y, 133, Y, 'i') + tnNode({ x: 175, y: Y, w: 84, h: 44, kind: 'exact', name: tnSub('R', 'v'), sub: 'Hadamard, signs', tip: 'Randomized Hadamard transform on the input side, stored as signs' });
+    s += tnBond(217, Y, 305, Y, 'v') + tnBond(455, Y, 548, Y, 'u');
+    s += tnNode({ x: 590, y: Y, w: 84, h: 44, kind: 'exact', name: tnSub('R', 'u'), sub: 'Hadamard, signs', tip: 'Randomized Hadamard transform on the output side, stored as signs' });
+    s += tnBond(632, Y, 704, Y, 'o');
+    if (k === 1) s += tnNew(175, Y - 30, 'var(--exact)') + tnNew(590, Y - 30, 'var(--exact)');
+  }
+  if (k >= 2) {
+    s += tnDot(500, Y) + tnBond(500, Y, 500, Y + 46) + tnNode({ x: 500, y: Y + 62, w: 34, h: 32, shape: 'diamond', kind: 'exact', name: 's', size: 12, tip: 'One 16-bit scale per row, on index u' });
+    s += tnT(522, Y + 66, 'row scales, 16-bit', { anchor: 'start', size: 10, fill: 'var(--muted)', body: true });
+    if (k === 2) s += tnNew(500, Y + 90, 'var(--exact)');
+  }
+  if (k === 3) {
+    s += tnNode({ x: 255, y: Y + 70, w: 132, h: 34, kind: 'env', name: 'H', sub: 'inputs\' second moment', nameY: Y + 68, subY: Y + 81, tip: 'H is measured on calibration text; it is not stored in the model' });
+    s += tnBond(261, Y, 255, Y + 53, '', { stroke: 'var(--control)', dash: '5 3' });
+  }
+  document.getElementById('tn-step').innerHTML = tnSvg(770, 200, s, `Step ${k}: ${TN_STEPS[k].tab}`);
+}
+function tnSetStep(k) {
+  tnStep = k;
+  document.querySelectorAll('#tn-tabs button').forEach((b) => b.setAttribute('aria-selected', String(+b.dataset.k === k)));
+  document.getElementById('tn-note').innerHTML = TN_STEPS[k].note;
+  clearInterval(tnTimer); tnTimer = null;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  tnCol = k === 3 ? (still ? 12 : 0) : 24;
+  tnRenderStep();
+  if (k === 3 && !still) tnTimer = setInterval(() => { tnCol = tnCol >= 24 ? 0 : tnCol + 4; tnRenderStep(); }, 700);
+}
+document.getElementById('tn-tabs').innerHTML = TN_STEPS.map((s, i) => `<button role="tab" data-k="${i}"><span class="mono">${i}</span> · ${s.tab}</button>`).join('');
+document.getElementById('tn-tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) tnSetStep(+b.dataset.k); });
+
+const TN_GALLERY = [
+  { who: 'RTN, GPTQ', verbs: 'split_index → split_scale → restrict(INT4)', note: 'Index i splits into groups g of 64 and positions w. A scale node S holds one 16-bit scale per row and group, and the main node becomes 4-bit integers. GPTQ adds the sweep.',
+    draw: () => tnBond(30, 60, 70, 60, 'i') + tnDot(70, 60) + tnBond(70, 60, 122, 48, 'g', { dy: -6, dx: -4 }) + tnBond(70, 60, 122, 72, 'w', { dy: 16, dx: -4 }) +
+      tnNode({ x: 160, y: 60, w: 76, h: 44, kind: 'quant', name: 'Q', sub: '4-bit' }) + tnBond(198, 60, 278, 60, 'o') + tnDot(236, 60) + tnDot(96, 53) +
+      tnBond(236, 60, 176, 108) + tnBond(96, 53, 144, 108) + tnNode({ x: 160, y: 112, w: 34, h: 26, shape: 'diamond', kind: 'exact', name: 'S', size: 11 }) },
+  { who: 'SVD, SVD-LLM', verbs: 'split_svd → truncate', note: 'The matrix factors through a new index r. Truncate keeps only the first values of r, so two thin nodes replace one wide one.',
+    draw: () => tnBond(20, 65, 62, 65, 'i') + tnNode({ x: 100, y: 65, w: 76, h: 44, kind: 'low', name: 'B', sub: 'r × i' }) +
+      tnBond(138, 65, 182, 65, 'r', { width: 1, stroke: 'var(--control)', labelFill: 'var(--control)' }) + tnNode({ x: 220, y: 65, w: 76, h: 44, kind: 'low', name: 'A', sub: 'o × r' }) + tnBond(258, 65, 290, 65, 'o') },
+  { who: 'Magnitude pruning, Wanda, SparseGPT', verbs: 'mask', note: 'Every node and line stays. Half of the entries inside the matrix are set to zero; Wanda and SparseGPT choose which using the inputs.',
+    draw: () => tnBond(30, 65, 110, 65, 'i') + tnNode({ x: 160, y: 65, w: 100, h: 54, kind: 'mask', name: '', tip: 'Half of the entries are zero' }) + tnT(160, 108, 'W, half zero', { size: 10, fill: 'var(--muted)', body: true }) + tnBond(210, 65, 290, 65, 'o') },
+  { who: 'AWQ', verbs: 'gauge_diag → restrict(INT4)', note: 'A diagonal pair on index i: s⁻¹ is folded into the norm before the matrix and s into its columns. Important input channels are scaled up before rounding.',
+    draw: () => tnBond(20, 65, 62, 65, 'i') + tnNode({ x: 82, y: 65, w: 40, h: 36, shape: 'diamond', kind: 'exact', name: 's⁻¹', size: 11, tip: 'Folded into the previous norm gain' }) +
+      tnBond(102, 65, 148, 65, 'i') + tnNode({ x: 196, y: 65, w: 96, h: 48, kind: 'quant', name: 'W·diag(s)', size: 11, sub: '4-bit' }) + tnBond(244, 65, 290, 65, 'o') },
+  { who: 'SliceGPT', verbs: 'gauge_segment → truncate', note: 'A rotation on the residual stream, folded into every matrix that reads or writes it. Truncate then narrows the residual index d to a smaller d′, so every such matrix loses rows or columns.',
+    draw: () => tnBond(20, 65, 62, 65, 'd') + tnNode({ x: 92, y: 65, w: 56, h: 40, kind: 'exact', name: 'Q', sub: 'rotation' }) +
+      tnBond(120, 65, 172, 65, 'd′', { width: 1, stroke: 'var(--control)', labelFill: 'var(--control)' }) + tnNode({ x: 220, y: 65, w: 92, h: 44, name: 'W′', sub: 'fewer columns' }) + tnBond(266, 65, 290, 65, 'o') },
+];
+function tnGallery() {
+  document.getElementById('tn-gallery').innerHTML = TN_GALLERY.map((g) => `<div class="tn-tile"><span class="who">${esc(g.who)}</span><span class="verbs">${esc(g.verbs)}</span>${tnSvg(300, 132, g.draw(), g.who + ': ' + g.verbs)}<p>${esc(g.note)}</p></div>`).join('');
+}
+function tnTable() {
+  const plan = DATA.plans.find((p) => p.label === '2.00');
+  const B = DATA.buckets, top = 22, step = 21;
+  let s = tnNode({ x: 40, y: 130, h: 30, shape: 'circle', kind: 'data', name: 't', tip: 'The token id' });
+  s += tnBond(55, 130, 92, 130, 't') + tnNode({ x: 150, y: 130, w: 116, h: 58, name: 'E', sub: '262,144 × 1,536' });
+  s += `<path d="M216 130 H290" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#tn-arrow)"/>`;
+  s += tnT(253, 120, 'split_index', { size: 10.5, fill: 'var(--exact)', weight: 500 }) + tnT(253, 146, 'by frequency', { size: 10, fill: 'var(--muted)', body: true });
+  let cum = 0;
+  B.forEach((b, i) => {
+    const y = top + i * step, p = plan.embed[i];
+    s += tnBond(330, y + 8, 352, y + 8, '') + tnT(326, y + 12, `t${'₀₁₂₃₄₅₆₇₈₉'[i] || ''}${i === 10 ? '₁₀' : ''}`.replace('t₁₀₁₀', 't₁₀'), { anchor: 'end', size: 10, fill: 'var(--muted)' });
+    s += `<g data-tip="${esc(`<b>${b.rows.toLocaleString()} rows</b> (${pct(b.mass)} of tokens)<br>${p}, about ${BITS[p]} bits per weight`)}"><rect x="352" y="${y}" width="190" height="17" rx="3" fill="${RAMP(p)}" stroke="var(--line)"/>` +
+      tnT(360, y + 12.5, `${rowsLabel(b.rows)} rows`, { anchor: 'start', size: 10.5, fill: RAMP_TEXT(p) }) + tnT(534, y + 12.5, p, { anchor: 'end', size: 10.5, fill: RAMP_TEXT(p), weight: 500 }) + '</g>';
+    s += `<line x1="542" y1="${y + 8}" x2="600" y2="130" stroke="var(--ink)" stroke-width="1"/>`;
+    cum += b.rows;
+  });
+  s += tnDot(600, 130) + tnBond(600, 130, 690, 130, 'd  1,536');
+  s += tnNode({ x: 715, y: 130, w: 46, h: 46, shape: 'circle', kind: 'data', name: 'out', size: 11, tip: 'The lookup reads one row; the output head reads every row' });
+  document.getElementById('tn-table').innerHTML = tnSvg(760, 262, `<defs><marker id="tn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--muted)"/></marker></defs>` + s,
+    'The embedding table split into 11 nodes by token frequency, each with its own program, joined on the hidden index');
+}
+  tnLayer(); tnGallery(); tnTable(); tnSetStep(0);
+
+
+  // ---- Figure 4: the compiled plan, one piece at a time
+  function compileAnim() {
+    const A = D.anim, P = A.pieces, NS = 'http://www.w3.org/2000/svg';
+    const LEVEL = { Q2_K: 1, Q3_K: 2, IQ4_XS: 3, Q4_K: 3, Q5_K: 4, Q6_K: 5, Q8_0: 6 };
+    const colorOf = (ty) => (ty === 'BF16' ? 'var(--emb)' : `var(--r${LEVEL[ty]})`);
+    const ROLE = { 'self_attn.q_proj': 'query', 'self_attn.k_proj': 'key', 'self_attn.v_proj': 'value', 'self_attn.o_proj': 'attention output',
+      'mlp.gate_proj': 'MLP gate', 'mlp.up_proj': 'MLP up', 'mlp.down_proj': 'MLP down', per_layer_input_gate: 'per-layer input gate', per_layer_projection: 'per-layer projection' };
+    const ORDER = Object.keys(ROLE);
+    const nameOf = (p) => (p.kind === 'ple' ? 'the per-layer table' : p.kind === 'emb' ? 'the embedding table' : `layer ${p.layer} ${ROLE[p.role] || p.role}`);
+    const steps = P.filter((p) => p.t !== 'BF16').map((p) => ({ p, save: (p.b16 - p.b) / 8e9, kl: Math.max(p.kl, 1e-9) }))
+      .sort((a, b) => b.save / b.kl - a.save / a.kl);
+    const N = steps.length, endGB = by(A.plan).gb, startGB = endGB + steps.reduce((a, s) => a + s.save, 0);
+    const GB = [startGB], KLs = [0];
+    steps.forEach((s, i) => { GB.push(GB[i] - s.save); KLs.push(KLs[i] + s.p.kl); });
+    const stepOf = new Map(steps.map((s, i) => [s.p.id, i]));
+
+    // legend
+    const used = ['BF16', 'Q8_0', 'Q6_K', 'Q5_K', 'IQ4_XS', 'Q2_K'];
+    document.getElementById('anim-legend').innerHTML = used.map((ty) => `<span><i class="sq" style="background:${colorOf(ty)}"></i>${ty === 'BF16' ? '16-bit' : ty}</span>`).join('');
+
+    // area map: per-layer table on the left, embedding table on top right, one column of matrices per layer
+    const map = document.getElementById('anim-map'), w = 760, h = 300, gap = 2;
+    const ple = P.find((p) => p.kind === 'ple'), emb = P.find((p) => p.kind === 'emb'), mats = P.filter((p) => p.kind === 'mat');
+    const Wt = ple.w + emb.w + mats.reduce((a, p) => a + p.w, 0);
+    const xP = w * ple.w / Wt, x0 = xP + gap, Wr = w - x0, embH = h * emb.w / (Wt - ple.w);
+    const rects = [];
+    const rect = (p, x, y, rw, rh) => rects.push({ p, x, y, w: Math.max(0.5, rw - gap), h: Math.max(0.5, rh - gap) });
+    rect(ple, 0, 0, xP, h); rect(emb, x0, 0, Wr + gap, embH);
+    const layers = [...new Set(mats.map((p) => p.layer))].sort((a, b) => a - b), matW = mats.reduce((a, p) => a + p.w, 0);
+    let cx = x0;
+    layers.forEach((L) => {
+      const col = mats.filter((p) => p.layer === L).sort((a, b) => ORDER.indexOf(a.role) - ORDER.indexOf(b.role));
+      const cw = Wr * col.reduce((a, p) => a + p.w, 0) / matW, colW = col.reduce((a, p) => a + p.w, 0);
+      let cy = embH;
+      col.forEach((p) => { const ch = (h - embH) * p.w / colW; rect(p, cx, cy, cw + (cw > 4 ? 0 : gap - 0.6), ch); cy += ch; });
+      cx += cw;
+    });
+    map.innerHTML = `<svg viewBox="0 0 ${w} ${h + 16}" role="img" aria-label="Area map of every stored piece of Gemma 4 E2B, coloured by the llama.cpp type the compiled plan gives it"></svg>`;
+    const svg = map.querySelector('svg');
+    const els = rects.map((r) => {
+      const e = document.createElementNS(NS, 'rect');
+      e.setAttribute('x', r.x); e.setAttribute('y', r.y); e.setAttribute('width', r.w); e.setAttribute('height', r.h);
+      e.setAttribute('data-tip', esc(`<b>${nameOf(r.p)}</b><br>${(r.p.w / 1e6).toFixed(1)}M weights · plan: ${r.p.t === 'BF16' ? '16-bit' : r.p.t}`));
+      svg.appendChild(e); return e;
+    });
+    const label = (x, y, s, anchor = 'start') => { const e = document.createElementNS(NS, 'text'); e.setAttribute('x', x); e.setAttribute('y', y); e.setAttribute('text-anchor', anchor);
+      e.setAttribute('font-size', 12); e.setAttribute('font-family', 'var(--sans)'); e.setAttribute('font-weight', 600); e.setAttribute('fill', 'var(--ink)');
+      e.setAttribute('stroke', 'var(--bg)'); e.setAttribute('stroke-width', 3); e.setAttribute('paint-order', 'stroke'); e.setAttribute('pointer-events', 'none'); e.textContent = s; svg.appendChild(e); };
+    label(10, 20, 'Per-layer lookup table, 2.35B weights'); label(x0 + 8, 18, 'Embedding table'); label(x0 + 8, embH + 16, 'Matrices, one column per layer');
+    label(x0, h + 14, 'layer 0'); label(w, h + 14, 'layer 34', 'end');
+
+    // size and KL along the way
+    const cv = document.getElementById('anim-curve');
+    function curve(k) {
+      const cw = Math.max(300, cv.clientWidth || 640), ch = 190, ml = 52, mr = 16, mt = 12, mb = 32;
+      const xs = (g) => ml + (cw - ml - mr) * (startGB + 0.15 - g) / (startGB + 0.15 - 3.1), y0 = 1e-5, y1 = 0.3;
+      const ys = (v) => mt + (ch - mt - mb) * (1 - (lg(Math.max(v, y0)) - lg(y0)) / (lg(y1) - lg(y0)));
+      let s = '';
+      [1e-4, 1e-3, 0.01, 0.1].forEach((v) => { s += `<line x1="${ml}" x2="${cw - mr}" y1="${ys(v)}" y2="${ys(v)}" stroke="var(--line)"/>` + T(ml - 8, ys(v) + 4, v, { anchor: 'end', mono: true, size: 11 }); });
+      [9, 8, 7, 6, 5, 4].forEach((g) => { s += T(xs(g), ch - 12, `${g} GB`, { anchor: 'middle', mono: true, size: 11 }); });
+      s += T(ml, mt - 2, 'predicted KL, log scale', { size: 11 }) + T(cw - mr, ch - 1, 'file size as pieces are compressed →', { anchor: 'end', size: 11 });
+      const pts = (n) => GB.slice(1, n + 1).map((g, i) => `${xs(g)},${ys(KLs[i + 1])}`).join('L');
+      s += `<path d="M${pts(N)}" fill="none" stroke="var(--line)" stroke-width="2"/>`;
+      if (k > 0) s += `<path d="M${pts(k)}" fill="none" stroke="var(--gguf)" stroke-width="2.25" stroke-linejoin="round"/><circle cx="${xs(GB[k])}" cy="${ys(KLs[k])}" r="5" fill="var(--gguf)" stroke="var(--bg)" stroke-width="2"/>`;
+      s += `<circle cx="${xs(A.q4.gb)}" cy="${ys(A.q4.kl)}" r="5.5" fill="var(--pub)" stroke="var(--bg)" stroke-width="2"/>` + T(xs(A.q4.gb) - 9, ys(A.q4.kl) + 4, 'llama.cpp Q4_K_M', { anchor: 'end', size: 11, halo: true });
+      if (k === N) s += `<circle cx="${xs(endGB)}" cy="${ys(A.measured_kl)}" r="6" fill="none" stroke="var(--gguf)" stroke-width="2"/>` + T(xs(endGB) - 10, ys(A.measured_kl) - 8, `measured ${kl(A.measured_kl)}`, { anchor: 'end', size: 11, fill: 'var(--gguf)', halo: true });
+      cv.innerHTML = `<svg viewBox="0 0 ${cw} ${ch}" role="img" aria-label="Predicted KL against file size as the plan is applied">${s}</svg>`;
+    }
+    const scrub = document.getElementById('anim-scrub'), status = document.getElementById('anim-status'), play = document.getElementById('anim-play');
+    scrub.max = N;
+    let cur = -1;
+    function show(k) {
+      cur = k; scrub.value = k;
+      rects.forEach((r, i) => {
+        const si = stepOf.get(r.p.id), done = si != null && si < k;
+        els[i].setAttribute('fill', done ? colorOf(r.p.t) : colorOf('BF16'));
+        els[i].setAttribute('stroke', si === k - 1 ? 'var(--ink)' : 'none'); els[i].setAttribute('stroke-width', si === k - 1 ? 2 : 0);
+      });
+      const s = steps[k - 1];
+      status.innerHTML = (k === 0 ? 'Every piece at 16 bits.' : k === N ? `Done: the compiled plan.` : `Step ${k} of ${N}: <b>${esc(nameOf(s.p))}</b> → <b>${s.p.t}</b>.`) +
+        `<br>File size <b>${GB[k].toFixed(2)} GB</b> · predicted KL <b>${k ? kl(KLs[k]) : '0'}</b>`;
+      curve(k);
+    }
+    let raf = null;
+    function run() {
+      cancelAnimationFrame(raf);
+      const t0 = performance.now(), dur = 9000;
+      const tick = (now) => { const k = Math.min(N, Math.round(N * (now - t0) / dur)); if (k !== cur) show(k); if (k < N) raf = requestAnimationFrame(tick); };
+      show(0); raf = requestAnimationFrame(tick);
+    }
+    play.addEventListener('click', run);
+    scrub.addEventListener('input', () => { cancelAnimationFrame(raf); show(+scrub.value); });
+    show(N);
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
+      const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); run(); } }, { threshold: 0.5 });
+      io.observe(map);
+    }
+    return () => curve(cur);
+  }
+  const redrawCurve = compileAnim();
+
+  const draw = () => { redrawCurve(); teaser(); gsm(); bytes(); probe(); ratios(); additivity(); layers(); };
   draw();
   let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(draw, 120); }).observe(document.body);
 })();
