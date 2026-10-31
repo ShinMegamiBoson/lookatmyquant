@@ -177,7 +177,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   <section class="col">
     <p class="lede-label">Abstract</p>
     <div class="abstract">
-      <p>Quantized language models are usually made by one recipe for every tensor: one format, one bit width and a few hand-written exceptions. LookAtMyQuant is a quantization compiler. It measures how much each stored piece of a model hurts the whole model when that piece alone is compressed. The pieces are every weight matrix, buckets of embedding rows grouped by token frequency, and each layer's key–value cache. The compiler predicts most options from a few measurements, prices every option for a target device and solves a knapsack for the plan with the least total damage within the budget.</p>
+      <p>Quantized language models are usually made by one recipe for every tensor: one format, one bit width and a few hand-written exceptions. LookAtMyQuant is a quantization compiler. It measures how much each stored piece of a model hurts the whole model when that piece alone is compressed. The pieces are every weight matrix, buckets of embedding rows grouped by token frequency, and each layer's key–value cache. It measures a few codes for each piece and predicts the rest. Then it gives each piece the code that keeps total damage lowest while the model fits the size or speed budget of a target device.</p>
       <p>The programs it chooses from are written in a grammar of tensor-network rewrites. Nine published quantization and pruning methods are short programs in this grammar, reproduced exactly.</p>
       <p>On Gemma 4 E2B, the compiler restricted to llama.cpp's types makes ordinary GGUF files. At the size of llama.cpp's Q4_K_M, the compiled file has 12 times lower KL divergence from the original model, and it solves 59% of GSM8K problems against 50% for Q4_K_M and 61% for the original. Most of the gain comes from a choice a fixed recipe does not make. Gemma's 2.35-billion-weight per-layer lookup table is cheap to compress, so the compiler stores it at 4.25 bits instead of 6.56 and gives the saved bytes to the matrices. On Qwen3.5-4B and SmolLM2-360M, compared with 3-bit models that keep the embedding or the cache at 16 bits, the compiler's plans have 6 to 81 times lower KL at equal cost on each target device.</p>
     </div>
@@ -188,8 +188,8 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p>LookAtMyQuant treats quantization as compilation. A plan names one program for every stored piece of the model. The compiler finds the plan that does the least damage for a given budget on a given device. We make four contributions:</p>
     <ul class="contrib">
       <li><b>A quantization compiler.</b> It allocates bits across weight matrices, frequency buckets of the embedding and per-layer tables, and the key–value cache, with prices that depend on the target device.</li>
-      <li><b>A cheap way to measure.</b> One forward pass with shaped noise predicts each matrix's damage at 3 bits, and the ratios between codes are the same on every model we tested. A few layers measured with real codes then predict every option.</li>
-      <li><b>Compiled GGUF files for Gemma 4 E2B</b> that beat every public quantization we measured, on one protocol, at every size where one exists.</li>
+      <li><b>A cheap way to measure.</b> One forward pass with shaped noise predicts each matrix's damage at 3 bits, and the ratios between codes are the same on every model we tested. Measuring a few layers with real codes is then enough to predict every other code.</li>
+      <li><b>Compiled GGUF files for Gemma 4 E2B</b> that beat every public quantization we measured, scored the same way, at every size where a public file exists.</li>
       <li><b>A grammar of quantization programs</b> in which published methods are short programs, so the compiler's menu can mix code families.</li>
     </ul>
 
@@ -205,7 +205,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col">
     <p>The gap holds on every one of the 13 sources and on WikiText-2, which is not part of the calibration text. On WikiText-2 the 3.39 GB compiled file has a KL of <span data-v="wikiG">0.008</span>, and Q4_K_M has <span data-v="wikiQ">0.143</span>.</p>
-    <p>Benchmarks agree. Multiple-choice tasks barely separate the files: except for Q2_K and Google's QAT file, every file is within about two points of the original on MMLU, ARC-Challenge and HellaSwag. Multi-step math separates them (Figure 2). Public 4-bit files lose up to <span data-v="pubDrop">27</span> points on GSM8K, and compiled files at most <span data-v="ourDrop">6</span>. With 250 problems, each GSM8K figure is uncertain by about ±6 points.</p>
+    <p>Benchmarks agree. Multiple-choice tasks barely separate the files. Except for Q2_K and Google's QAT file, every file is within about two points of the original on MMLU, ARC-Challenge and HellaSwag. Multi-step math separates them (Figure 2). Public 4-bit files lose up to <span data-v="pubDrop">27</span> points on GSM8K, and compiled files at most <span data-v="ourDrop">6</span>. With 250 problems, each GSM8K figure is uncertain by about ±6 points.</p>
   </section>
 
   <figure class="wide" id="fig2">
@@ -228,7 +228,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <span><i class="hatch"></i>Kept at 16 bits</span>
     </div>
     <div class="chart" id="bytes"></div>
-    <figcaption><b>Figure 3.</b> Where three files of about 3.4 GB spend their bytes. Labels give bits per weight. The compiled GGUF uses only llama.cpp types; the compiler's own codes go further in the same direction.</figcaption>
+    <figcaption><b>Figure 3.</b> Where three files of about 3.4 GB spend their bytes. Labels give bits per weight. The compiled GGUF uses only llama.cpp types. With its own codes, the compiler moves even more bytes from the per-layer table to the matrices.</figcaption>
   </figure>
 
   <figure class="wide" id="fig4">
@@ -240,56 +240,56 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     </div>
     <p class="anim-status" id="anim-status" aria-live="polite"></p>
     <div class="chart" id="anim-curve"></div>
-    <figcaption><b>Figure 4.</b> The compiled 3.39 GB GGUF, built piece by piece from the 16-bit model. The whole model is drawn as one tensor network. Each square is a stored piece, with area proportional to its number of weights. The 35 layers sit on the residual stream, with attention matrices above it and MLP matrices below. The per-layer lookup table along the bottom feeds each layer one slice. Layers 15 to 34 have no key or value matrices, because they reuse those of layers 13 and 14. Colour shows the llama.cpp type the plan gives the piece, and grey pieces stay at 16 bits. The compiler finds the whole plan at once. The animation applies its choices one piece at a time, those that save the most bytes per unit of KL first. Below, the file's size and predicted KL along the way.</figcaption>
+    <figcaption><b>Figure 4.</b> The compiled 3.39 GB GGUF, built piece by piece from the 16-bit model. The whole model is drawn as one tensor network. Each square is a stored piece, with area proportional to its number of weights. The 35 layers sit on the residual stream, with attention matrices above it and MLP matrices below. The per-layer lookup table along the bottom feeds each layer one slice. Layers 15 to 34 have no key or value matrices, because they reuse those of layers 13 and 14. Colour shows the llama.cpp type the plan gives the piece, and grey pieces stay at 16 bits. The compiler finds the whole plan at once. The animation applies its choices one piece at a time, those that save the most bytes per unit of KL first. The chart below tracks the file's size and predicted KL as pieces change.</figcaption>
   </figure>
 
   <section class="col">
-    <h3>With its own codes, the compiler reaches the same quality at 2 GB</h3>
+    <h3>With its own codes, the compiler beats every public file under 3.5 GB at only 2 GB</h3>
     <p>The compiler's native menu has trellis codes and Lloyd–Max codes, described below, which have no inference kernel yet. With them, its 2.00 GB plan has a KL of <span data-v="own2kl">0.074</span>, lower than every public file under 3.5 GB, and solves <span data-v="own2gsm">60.4%</span> of GSM8K problems. At 3.41 GB its KL is <span data-v="own341kl">0.0057</span>. These plans show what the allocation can reach once such codes run.</p>
   </section>
 
   <section class="wide">
     <p class="tcap"><b>Table 2.</b> Every Gemma 4 E2B file we measured. KL on the 13-source text mix and on WikiText-2; accuracy on MMLU (1,000 sampled questions, zero-shot), ARC-Challenge (all 1,172), HellaSwag (1,000 sampled) and GSM8K (the first 250, five-shot).</p>
-    <div class="scroll-x"><table id="t2"><thead><tr><th>File</th><th class="num">Size (GB)</th><th class="num">Bits / weight</th><th class="num">KL, mix</th><th class="num">KL, WikiText</th><th class="num">MMLU</th><th class="num">ARC-C</th><th class="num">HellaSwag</th><th class="num">GSM8K</th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll-x"><table id="t2"><thead><tr><th>File</th><th class="num">Size (GB)</th><th class="num">Bits / weight</th><th class="num">KL, text mix</th><th class="num">KL, WikiText</th><th class="num">MMLU</th><th class="num">ARC-C</th><th class="num">HellaSwag</th><th class="num">GSM8K</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section class="col">
     <h3>On Qwen3.5-4B, the embedding table is the largest lever</h3>
-    <p>Qwen3.5-4B ties a 248,320-row embedding table to its output head. At 16 bits the table takes about as many bytes as all the matrices at 3 bits. At the bytes of "3-bit matrices with a 16-bit embedding", the compiler's plan stores the embedding at 3.1 bits on average and the matrices at 5.35. Perplexity rises 0.13% instead of 4.9%, with 12 times less KL (Table 3).</p>
-    <p>The plan gives the 256 most frequent rows 16 bits, the next 8,000 rows 8 bits, and the rarest 117,000 rows 2 bits. The rarest 183,000 rows never appear in WikiText's training split. Together they cost 0.0007 KL at 2 bits.</p>
+    <p>Qwen3.5-4B ties a 248,320-row embedding table to its output head. At 16 bits the table takes about as many bytes as all the matrices at 3 bits. At the same size as a model with 3-bit matrices and a 16-bit embedding, the compiler's plan stores the embedding at 3.1 bits on average and the matrices at 5.35. Perplexity rises 0.13% instead of 4.9%, with 12 times less KL (Table 3).</p>
+    <p>The plan gives the 256 most frequent rows 16 bits, the next 8,000 rows 8 bits, and the rarest 117,000 rows 2 bits. Rare rows are cheap. The 183,000 rows whose tokens never appear in WikiText's training split cost 0.0007 KL in total when all of them are stored at 2 bits.</p>
   </section>
 
   <section class="wide">
-    <p class="tcap"><b>Table 3.</b> Qwen3.5-4B, 64 WikiText-2 test windows of 512 tokens. Original perplexity 12.283. Bits are given for matrices / embedding / cache.</p>
-    <div class="scroll-x"><table><thead><tr><th>Plan</th><th class="num">Bits</th><th class="num">Perplexity</th><th class="num">KL</th></tr></thead><tbody>
-      <tr><td>Uniform 3-bit trellis, 16-bit embedding</td><td class="num">3.06 / 16 / –</td><td class="num">12.884</td><td class="num">0.0614</td></tr>
-      <tr class="ours"><td>Compiler, matrices only, same bits</td><td class="num">3.05 / 16 / –</td><td class="num">12.848</td><td class="num">0.0592</td></tr>
-      <tr class="ours"><td>Compiler, matrices and embedding, same bytes</td><td class="num">5.35 / 3.10 / –</td><td class="num">12.299</td><td class="num">0.0050</td></tr>
-      <tr><td>Uniform 3-bit trellis, 3-bit embedding</td><td class="num">3.06 / 3.04 / –</td><td class="num">13.008</td><td class="num">0.0735</td></tr>
-      <tr class="ours"><td>Compiler, same bytes as that</td><td class="num">3.17 / 2.41 / –</td><td class="num">12.801</td><td class="num">0.0542</td></tr>
-      <tr class="ours"><td>Compiler for a laptop at 32k context, same bits read per token as the first row</td><td class="num">6.62 / 4.23 / 6.19</td><td class="num">12.298</td><td class="num">0.0015</td></tr>
+    <p class="tcap"><b>Table 3.</b> Qwen3.5-4B, 64 WikiText-2 test windows of 512 tokens. Original perplexity 12.283. Each compiler plan costs the same as the uniform plan named in the second column.</p>
+    <div class="scroll-x"><table><thead><tr><th>Plan</th><th>Same cost as</th><th class="num">Matrix bits</th><th class="num">Embedding bits</th><th class="num">Cache bits</th><th class="num">Perplexity</th><th class="num">KL</th></tr></thead><tbody>
+      <tr><td>1. Uniform 3-bit trellis, 16-bit embedding</td><td>–</td><td class="num">3.06</td><td class="num">16</td><td class="num">–</td><td class="num">12.884</td><td class="num">0.0614</td></tr>
+      <tr class="ours"><td>2. Compiler, widths for the matrices only</td><td>Plan 1, in file size</td><td class="num">3.05</td><td class="num">16</td><td class="num">–</td><td class="num">12.848</td><td class="num">0.0592</td></tr>
+      <tr class="ours"><td>3. Compiler, matrices and embedding</td><td>Plan 1, in file size</td><td class="num">5.35</td><td class="num">3.10</td><td class="num">–</td><td class="num">12.299</td><td class="num">0.0050</td></tr>
+      <tr><td>4. Uniform 3-bit trellis, 3-bit embedding</td><td>–</td><td class="num">3.06</td><td class="num">3.04</td><td class="num">–</td><td class="num">13.008</td><td class="num">0.0735</td></tr>
+      <tr class="ours"><td>5. Compiler, matrices and embedding</td><td>Plan 4, in file size</td><td class="num">3.17</td><td class="num">2.41</td><td class="num">–</td><td class="num">12.801</td><td class="num">0.0542</td></tr>
+      <tr class="ours"><td>6. Compiler for a laptop with a 32,768-token context</td><td>Plan 1 with a 16-bit cache, in bits read per token</td><td class="num">6.62</td><td class="num">4.23</td><td class="num">6.19</td><td class="num">12.298</td><td class="num">0.0015</td></tr>
     </tbody></table></div>
   </section>
 
   <section class="col">
     <h3>Each device gets its own plan</h3>
-    <p>The price of an option depends on the device. On disk, only stored bits count. On a laptop generating one sequence, the weights and the key–value cache are both read for every token, so cache bits count too. On a server running 32 sequences, one read of the weights serves all of them, so weights become cheap and the cache dominates. On a device limited by compute, decode work counts. For SmolLM2-360M the compiler makes a different plan for each (Table 4). The server plan stores matrices at 7.4 bits because 32 sequences share each read, and the compute-limited plan avoids trellis codes, which take more work to decode.</p>
+    <p>What a code costs depends on the device. On disk, only stored bits count. On a laptop generating one sequence, the weights and the key–value cache are both read for every token, so cache bits count too. On a server running 32 sequences, one read of the weights serves all of them, so weights become cheap and the cache dominates. On a device limited by compute, decode work counts. For SmolLM2-360M the compiler makes a different plan for each (Table 4). The server plan stores matrices at 7.4 bits because 32 sequences share each read, and the compute-limited plan avoids trellis codes, which take more work to decode.</p>
   </section>
 
   <section class="wide">
-    <p class="tcap"><b>Table 4.</b> SmolLM2-360M. Each compiler plan costs what the reference costs under that target's price. Cells are WikiText-2 perplexity / KL; the laptop, server and NPU rows use windows of 2,048 tokens.</p>
-    <div class="scroll-x"><table><thead><tr><th>Target</th><th>Reference</th><th class="num">Reference</th><th class="num">Compiler</th><th>What the compiler changed</th></tr></thead><tbody>
+    <p class="tcap"><b>Table 4.</b> SmolLM2-360M. Each compiler plan costs the same as its reference plan on that device. Cells are WikiText-2 perplexity / KL; the laptop, server and NPU rows use windows of 2,048 tokens.</p>
+    <div class="scroll-x"><table><thead><tr><th>Device</th><th>Reference plan</th><th class="num">Reference</th><th class="num">Compiler</th><th>What the compiler changed</th></tr></thead><tbody>
       <tr><td>Disk</td><td>3-bit trellis matrices, 16-bit embedding</td><td class="num">16.72 / 0.0959</td><td class="num"><b>15.48 / 0.0128</b></td><td>Embedding from 16 to 4.8 bits; matrices from 3.0 to 4.7 bits</td></tr>
       <tr><td>Disk</td><td>3-bit trellis matrices and embedding</td><td class="num">17.40 / 0.1376</td><td class="num"><b>16.81 / 0.1068</b></td><td>Embedding rows by frequency, 8 bits for the most frequent to 2 bits for the rarest</td></tr>
-      <tr><td>Laptop, batch 1, 2k context</td><td>3-bit trellis, 16-bit embedding and cache</td><td class="num">12.25 / 0.0979</td><td class="num"><b>11.22 / 0.0050</b></td><td>Cache keys 8 bits, values 5–6; matrices 5.8 bits; embedding 5.6 bits</td></tr>
-      <tr><td>Server, batch 32, 16k context</td><td>3-bit trellis, 16-bit embedding, 4-bit cache</td><td class="num">12.70 / 0.1323</td><td class="num"><b>11.44 / 0.0216</b></td><td>Matrices 7.4 bits; cache keys 4–5 bits, values 3</td></tr>
-      <tr><td>Compute-limited device</td><td>3-bit trellis, 16-bit embedding and cache</td><td class="num">12.25 / 0.0979</td><td class="num"><b>11.20 / 0.0012</b></td><td>No trellis codes: Lloyd–Max at 6–8 bits; cache 6–8 bits</td></tr>
+      <tr><td>Laptop: one sequence, 2,048-token context</td><td>3-bit trellis, 16-bit embedding and cache</td><td class="num">12.25 / 0.0979</td><td class="num"><b>11.22 / 0.0050</b></td><td>Cache keys 8 bits, values 5–6; matrices 5.8 bits; embedding 5.6 bits</td></tr>
+      <tr><td>Server: 32 sequences, 16,384-token context</td><td>3-bit trellis, 16-bit embedding, 4-bit cache</td><td class="num">12.70 / 0.1323</td><td class="num"><b>11.44 / 0.0216</b></td><td>Matrices 7.4 bits; cache keys 4–5 bits, values 3</td></tr>
+      <tr><td>Compute-limited device</td><td>3-bit trellis, 16-bit embedding and cache</td><td class="num">12.25 / 0.0979</td><td class="num"><b>11.20 / 0.0012</b></td><td>Lloyd–Max codes at 6–8 bits instead of trellis codes; cache at 6–8 bits</td></tr>
     </tbody></table></div>
   </section>
 
   <section class="col">
-    <h3>A width per matrix alone gains only 3 to 5%</h3>
-    <p>The large gains come from pieces that uniform formats leave at 16 bits or treat as one block: the embedding table, the per-layer table and the cache. Choosing a width per matrix, and nothing else, helps little on top of a strong base quantizer. On SmolLM2-360M, at the uniform programs' own rates, per-matrix widths lower KL by 3% at 3.04 bits and 5% at 4.04 bits (Table 5). Layer matters more than role: keeping each role's widths but moving them to random layers is 21% worse than uniform.</p>
+    <h3>Choosing a bit width per matrix, and nothing else, lowers KL by only 3 to 5%</h3>
+    <p>The large gains come from pieces that uniform formats leave at 16 bits or treat as one block: the embedding table, the per-layer table and the cache. On top of a strong base quantizer, choosing a width per matrix helps little. On SmolLM2-360M, at the same average bits as the uniform 3-bit and 4-bit programs, per-matrix widths lower KL by 3% and 5% (Table 5). Which layer a matrix is in matters more than what kind of matrix it is. Keeping the widths chosen for each kind of matrix but assigning them to random layers gives 21% more KL than the uniform program.</p>
   </section>
 
   <section class="wide">
@@ -306,7 +306,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col" id="method">
     <h2>Quantization methods are short programs in a grammar of rewrites</h2>
-    <p>LookAtMyQuant writes a model as a tensor network. Each weight matrix is a node with named indices, and nodes that share an index are joined. A quantization method is a sequence of rewrites of this network, written in five kinds of word, listed below. Figure 5 shows one layer's MLP in this form.</p>
+    <p>LookAtMyQuant writes a model as a tensor network. Each weight matrix is a node with named indices, and nodes that share an index are joined. A quantization method is a sequence of rewrites of this network, built from five kinds of word, named after parts of speech. Figure 5 shows one layer's MLP in this form.</p>
     <ul class="contrib">
       <li><b>Nouns</b> are the nodes and the indices between them.</li>
       <li><b>Types</b> are the values a node may take: an integer grid, a finite set of levels, paths through a trellis, or a randomized Hadamard transform stored as its signs. The type sets the storage price.</li>
@@ -342,20 +342,20 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="wide">
     <p class="tcap"><b>Table 6.</b> The compiler's menu for a weight matrix. Bits are for a matrix 1,536 columns wide. The last column is the median, over 32 Gemma 4 E2B matrices measured with every program, of KL divided by the 3-bit trellis's KL.</p>
-    <div class="scroll-x"><table id="t6"><thead><tr><th>Program</th><th>Lossy step</th><th class="num">Bits per weight</th><th class="num">KL relative to tr3</th></tr></thead><tbody></tbody></table></div>
+    <div class="scroll-x"><table id="t6"><thead><tr><th>Program</th><th>Lossy step</th><th class="num">Bits per weight</th><th class="num">KL relative to the 3-bit trellis</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section class="col">
-    <h2>The compiler measures each piece alone, then solves a knapsack</h2>
+    <h2>The compiler measures what each piece costs, then picks the combination with the least damage</h2>
   </section>
   <figure class="wide" id="fig6">
     <div class="flow six">
-      <div class="stage"><span class="k">Pieces</span><span class="v">items</span><span class="d">Every weight matrix; the embedding and per-layer tables cut into buckets of rows by token frequency; each layer's key–value cache.</span></div>
-      <div class="stage"><span class="k">Measure</span><span class="v">KL, one piece at a time</span><span class="d">Compress one piece, run the model on held-out text, and record the KL divergence from the original model.</span></div>
-      <div class="stage"><span class="k">Predict</span><span class="v">code ratios</span><span class="d">Fill in unmeasured options from one cheap probe per matrix and the ratios between codes.</span></div>
-      <div class="stage"><span class="k">Price</span><span class="v">per device</span><span class="d">Stored bits, bits read per token, cache bits per token of context, and decode work.</span></div>
-      <div class="stage"><span class="k">Allocate</span><span class="v">knapsack</span><span class="d">Choose one option per piece: least total KL within the budget, solved exactly by dynamic programming.</span></div>
-      <div class="stage"><span class="k">Run</span><span class="v">plan</span><span class="d">Quantize in order with each piece's program and the cross term, then evaluate on the test split.</span></div>
+      <div class="stage"><span class="k">Pieces</span><span class="d">Every weight matrix; the embedding and per-layer tables cut into buckets of rows by token frequency; each layer's key–value cache.</span></div>
+      <div class="stage"><span class="k">Measure</span><span class="d">Compress one piece, run the model on held-out text, and record the KL divergence from the original model.</span></div>
+      <div class="stage"><span class="k">Predict</span><span class="d">Estimate the codes that were not measured from one cheap probe per matrix and the ratios between codes.</span></div>
+      <div class="stage"><span class="k">Price</span><span class="d">Count what each code costs on the device: stored bits, bits read per token, cache bits per token of context and decode work.</span></div>
+      <div class="stage"><span class="k">Allocate</span><span class="d">Choose one code per piece so that total KL is lowest and the total cost fits the budget.</span></div>
+      <div class="stage"><span class="k">Run</span><span class="d">Quantize in order with each piece's program and the cross term, then evaluate on the test split.</span></div>
     </div>
     <figcaption><b>Figure 8.</b> The compiler. The measurement is done once per model; each device or budget then needs only a new allocation, which takes seconds.</figcaption>
   </figure>
@@ -372,7 +372,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
     <h3>Measure</h3>
     <p>For each piece and option, the compiler quantizes that piece alone and measures the KL divergence of the model's next-token distribution from the original's, on 16 held-out windows of 512 tokens. The windows come from the calibration split, never the test split. On SmolLM2-360M we measured all 2,312 piece-option pairs this way.</p>
-    <p>For larger models, each matrix gets one cheap probe instead. The probe adds noise shaped like the error that LDLQ leaves behind: Gaussian noise multiplied by the square root of LDLQ's error variances and by the inverse of the triangular factor of <span class="math">H</span>, at a fixed level. This takes one forward pass and no code search. A few spot layers are measured with every real code. On Gemma 4 E2B, the 275 matrices got a probe each, four layers and all 22 table buckets got real codes, and measuring took about one H100-hour.</p>
+    <p>For larger models, each matrix gets one cheap probe instead. The probe adds noise shaped like the error that LDLQ leaves behind: Gaussian noise multiplied by the square root of LDLQ's error variances and by the inverse of the triangular factor of <span class="math">H</span>, at a fixed level. This takes one forward pass and no code search. A few layers, which we call spot layers, are measured with every real code. On Gemma 4 E2B, the 275 matrices got a probe each, four layers and all 22 table buckets got real codes, and measuring took about one H100-hour.</p>
 
     <h3>Predict</h3>
     <p>An option that was not measured is predicted from the probe and the code ratios:</p>
@@ -380,25 +380,26 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p>Here <span class="math">r</span><sub>probe</sub> is the median ratio of real 3-bit KL to probe KL on the spot layers. Both ratios turn out to be properties of the codes rather than of the model (Figures 10 and 11).</p>
 
     <h3>Price</h3>
-    <p>Each option has a cost under a target, from three numbers: the bits it stores, the cache bits it adds per token of context, and the operations needed to decode it.</p>
-    <p class="eq">price = stored bits / batch + decode ops · c / batch + context · cache bits</p>
-    <p>The disk target counts stored bits only. The laptop target uses batch 1 and a 2,048-token context; the server target uses batch 32 and 16,384 tokens; the compute-limited target charges 2 bits per decode operation.</p>
+    <p>A code's cost on a device comes from three numbers: the bits it stores, the cache bits it adds per token of context, and the operations needed to decode it.</p>
+    <p class="eq">cost = stored bits / batch + decode operations · c / batch + context · cache bits</p>
+    <p>Here batch is the number of sequences generated together, context is the number of tokens in the cache, and c is the price of one decode operation in bits.</p>
+    <p>On disk, only stored bits count. The laptop setting generates one sequence with a 2,048-token context. The server setting generates 32 sequences with 16,384 tokens each. The compute-limited setting charges 2 bits per decode operation.</p>
 
     <h3>Allocate</h3>
-    <p>The plan solves a multiple-choice knapsack: choose one option <span class="math">o<sub>i</sub></span> for every piece <span class="math">i</span> to</p>
+    <p>The compiler chooses one code <span class="math">o<sub>i</sub></span> for every piece <span class="math">i</span> to</p>
     <p class="eq">minimize Σ<sub>i</sub> KL<sub>i</sub>(o<sub>i</sub>) &nbsp; subject to &nbsp; Σ<sub>i</sub> price<sub>i</sub>(o<sub>i</sub>) ≤ B</p>
-    <p>Dynamic programming over 100,000 budget cells solves it in seconds, with each price rounded up to the cell size. Summing per-piece KL assumes that damage adds up; we test this below.</p>
+    <p>Dynamic programming solves this in seconds, with the budget divided into 100,000 steps and each cost rounded up to a whole step. Adding up each piece's KL assumes that damage adds up; we test this below.</p>
 
     <h3>Run</h3>
     <p>The model is quantized layer by layer with each piece's program, on 64 calibration windows from a separate split of the same text. Each matrix is fitted with the cross term, so it targets the original model's output given the already-quantized inputs. For llama.cpp, the same plan becomes one <code>--tensor-type</code> override per tensor in <code>llama-quantize</code>, and we check that every tensor in the output file has the planned type.</p>
 
-    <h3>llama.cpp types as the menu</h3>
-    <p>To make files that run today, the menu can be llama.cpp's own types: Q2_K, Q3_K, IQ4_XS, Q4_K, Q5_K, Q6_K, Q8_0 and BF16. Each of Gemma 4 E2B's 278 tensors is measured alone in each type, inside real llama.cpp files, with the same KL measurement. The knapsack then picks one type per tensor.</p>
+    <h3>For files that run today, the menu is llama.cpp's own types</h3>
+    <p>The types are Q2_K, Q3_K, IQ4_XS, Q4_K, Q5_K, Q6_K, Q8_0 and BF16. Each of Gemma 4 E2B's 278 tensors is measured alone in each type, inside real llama.cpp files, with the same KL measurement. The compiler then picks one type per tensor in the same way.</p>
 
     <h2 id="analysis">Analysis</h2>
 
     <h3>One noisy forward pass predicts a matrix's 3-bit damage</h3>
-    <p>Across 224 matrices of SmolLM2-360M and 211 of Qwen3.5-4B, real 3-bit trellis KL is 1.33 times the probe's KL, with a log-scale correlation of 0.99 on both models. Eighty percent of matrices fall between 1.22 and 1.59 times. On Gemma 4 E2B's 32 spot matrices the median ratio is 1.35 with a wider spread (Figure 10).</p>
+    <p>Across 224 matrices of SmolLM2-360M and 211 of Qwen3.5-4B, the KL of the real 3-bit trellis code is 1.33 times the probe's KL, with a log-scale correlation of 0.99 on both models. Eighty percent of matrices fall between 1.22 and 1.59 times. On the 32 Gemma 4 E2B matrices measured with real codes, the median ratio is 1.35 with a wider spread (Figure 10).</p>
   </section>
 
   <figure class="wide" id="fig7">
@@ -408,7 +409,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col">
     <h3>Ratios between codes are the same on every model tested</h3>
-    <p>Each bit removed multiplies a matrix's KL by about four, as Gaussian rate–distortion theory predicts. The ratio of each code's KL to the 3-bit trellis's KL is nearly the same on SmolLM2-360M, Qwen3.5-4B and Gemma 4 E2B (Figure 11). So the spot layers of a new model mostly confirm ratios already known. On SmolLM2, a plan built from three spot layers has a true summed KL of 0.01333, against 0.0133 for a plan built from every measurement.</p>
+    <p>Each bit removed multiplies a matrix's KL by about four, as Gaussian rate–distortion theory predicts. The ratio of each code's KL to the 3-bit trellis's KL is nearly the same on SmolLM2-360M, Qwen3.5-4B and Gemma 4 E2B (Figure 11). So the spot layers of a new model mostly confirm ratios already known. On SmolLM2, a plan chosen from three measured layers plus predictions is as good as a plan chosen from every measurement: 0.01333 summed KL against 0.0133.</p>
   </section>
 
   <figure class="wide" id="fig8">
@@ -419,7 +420,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col">
     <h3>Damage adds up, except where it is smallest</h3>
-    <p>The knapsack assumes that the KL of a plan is the sum of its pieces' KL. Measured KL is within 18% of the sum for every compiled plan on SmolLM2 and Qwen3.5 and for every Gemma GGUF plan (Figure 12). Uniform plans measure 10–14% below the sum, because the cross term repairs them better than predicted. Gemma plans with the compiler's own codes measure 36% to 93% above the sum from 2.5 GB up, where each piece's KL is smallest. Searching around the knapsack's plan with real evaluations, as EvoPress does, would target this gap.</p>
+    <p>The compiler assumes that the KL of a plan is the sum of its pieces' KL. Measured KL is within 18% of the sum for every compiled plan on SmolLM2 and Qwen3.5 and for every Gemma GGUF plan (Figure 12). Uniform plans measure 10–14% below the sum, because the cross term repairs them better than predicted. Gemma plans with the compiler's own codes measure 36% to 93% above the sum from 2.5 GB up, where each piece's KL is smallest. Searching around the compiler's plan with real evaluations, as EvoPress does, would target this gap.</p>
   </section>
 
   <figure class="wide" id="fig9">
@@ -443,7 +444,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <h3>Two exact rewrites did not help</h3>
     <p>Exact rewrites are free moves for a search: they change how the network is written without changing its output, so they can make it easier to quantize. We tried two on SmolLM2-360M.</p>
     <ul class="contrib">
-      <li><b>Diagonal rescaling across a matrix pair</b> (value and output projections, up and down projections). Searching the rescaling strength per block, 63 of 64 blocks chose none, and the result was slightly worse: 16.735 perplexity against 16.721. The randomized Hadamard transform spreads quantization error evenly across channels, and rescaling makes some channels small, so the compensating factor amplifies their error.</li>
+      <li><b>Diagonal rescaling across a matrix pair</b> (value and output projections, up and down projections). We searched the rescaling strength per block. 63 of 64 blocks chose no rescaling, and the result was slightly worse: 16.735 perplexity against 16.721. The randomized Hadamard transform spreads quantization error evenly across channels, and rescaling makes some channels small, so the compensating factor amplifies their error.</li>
       <li><b>Choosing Hadamard signs.</b> Keeping the best of four random sign seeds per matrix changed nothing: 16.76 against 16.72 at 3 bits. The per-matrix error picks among seeds that differ only by noise.</li>
     </ul>
     <p>On top of incoherence processing, these rewrites have nothing left to fix. The exact rewrites worth searching are those the code does not already perform.</p>
@@ -462,7 +463,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p><b>Bits per layer.</b> HIGGS [1] proves that perplexity increase is linear in each layer's error and allocates widths by dynamic programming; our measurements agree, matrix by matrix. ExLlamaV2's EXL2 format [2] measures each module at about a dozen settings and optimizes to a target bits per weight. NVIDIA ModelOpt's <code>auto_quantize</code> [3] searches a format per layer under an effective-bits budget. EvoPress [4] searches with real model evaluations because summed per-layer errors can rank configurations wrongly, and AMQ [5] uses a learned quality predictor. HAWQ-V3 [6] solves an integer program under memory, latency and bit-operation budgets for convolutional networks, the closest prior version of per-device pricing.</p>
     <p><b>Cache and embeddings.</b> KVTuner [7] searches per-layer key and value widths and also finds keys more sensitive than values; PM-KVQ [8] allocates cache precision under a memory budget. Recommendation models quantize embedding rows by feature frequency [9]. We found no peer-reviewed work that does this for language-model vocabularies.</p>
     <p><b>Codes and rewrites.</b> GPTQ [10], QuIP# [11] and QTIP [12] supply the base quantizers: error-compensating sweeps, incoherence processing and trellis codes. Learned rotations such as SpinQuant and FlatQuant, and graph-rewrite systems such as TASO and Tensat, search exact rewrites, the latter for speed rather than quantization.</p>
-    <p><b>What is new here.</b> One knapsack across matrices, frequency buckets of the embedding and per-layer tables, and the cache, with prices that depend on the device; a menu that mixes code families; plans run with cross-term targets so later matrices absorb earlier error; and compiled files in a standard format, compared with public files on one protocol.</p>
+    <p><b>What is new here.</b> One allocation across matrices, frequency buckets of the embedding and per-layer tables, and the cache, with prices that depend on the device; a menu that mixes code families; plans run with cross-term targets so later matrices absorb earlier error; and compiled files in a standard format, compared with public files on one protocol.</p>
 
     <h2 id="refs">References</h2>
     <ol class="refs">
@@ -543,7 +544,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     `<tr><td><b>${gb(g.gb)} GB</b></td><td class="num"><b>${kl(g.mix_kl)}</b></td><td>${esc(p.name)}</td><td class="num">${gb(p.gb)}</td><td class="num">${kl(p.mix_kl)}</td><td class="num"><b>${floor1(r)}×</b></td></tr>`).join('');
 
   // ---- Table 2
-  const groups = [['Compiled GGUF, llama.cpp types', 'ours_gguf'], ["Compiler's own codes (no kernel yet)", 'ours'], ['Public files', 'public'], ['Original', 'original']];
+  const groups = [['Compiled GGUF, llama.cpp types', 'ours_gguf'], ["Compiler's own codes (not runnable yet)", 'ours'], ['Public files', 'public'], ['Original', 'original']];
   document.querySelector('#t2 tbody').innerHTML = groups.map(([label, g]) => {
     const rows = E.filter((r) => r.group === g).sort((a, b) => a.gb - b.gb);
     return `<tr class="group"><td colspan="9">${label}</td></tr>` + rows.map((r) => `<tr${g.startsWith('ours') ? ' class="ours"' : ''}>
@@ -554,14 +555,14 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   // ---- Table 6
   const G = D.ratios['Gemma 4 E2B'];
-  const MENU = [['tr2', 'Trellis, 2 bits per step', 2.05, G.tr2], ['tr3', 'Trellis, 3 bits per step', 3.05, 1], ['tr4', 'Trellis, 4 bits per step', 4.04, G.tr4],
+  const MENU = [['tr2', 'Trellis, 2 bits per weight', 2.05, G.tr2], ['tr3', 'Trellis, 3 bits per weight', 3.05, 1], ['tr4', 'Trellis, 4 bits per weight', 4.04, G.tr4],
     ['lm5', '32 Lloyd–Max levels', 5.01, G.lm5], ['lm6', '64 Lloyd–Max levels', 6.01, G.lm6], ['lm8', '256 Lloyd–Max levels', 8.01, G.lm8], ['fp16', 'None (kept as stored)', 16, 0]];
   document.querySelector('#t6 tbody').innerHTML = MENU.map(([p, s, b, r]) =>
     `<tr><td class="mono">${p}</td><td>${s}</td><td class="num">${b}</td><td class="num">${r === 0 ? '0' : r === 1 ? '1' : Number(r.toPrecision(2))}</td></tr>`).join('');
 
   // ---- legends
   const dot = (c, label, cls = '') => `<span><i class="${cls}" style="background:${c}"></i>${label}</span>`;
-  const MAIN_LEGEND = dot('var(--gguf)', 'LookAtMyQuant, GGUF (llama.cpp types)') + dot('var(--own)', "LookAtMyQuant, own codes (no kernel yet)") + dot('var(--pub)', 'Public files') + `<span><i class="ring"></i>Google QAT (retrained)</span>`;
+  const MAIN_LEGEND = dot('var(--gguf)', 'LookAtMyQuant, GGUF (llama.cpp types)') + dot('var(--own)', "LookAtMyQuant, own codes (not runnable yet)") + dot('var(--pub)', 'Public files') + `<span><i class="ring"></i>Google QAT (retrained)</span>`;
   document.getElementById('fig1-legend').innerHTML = MAIN_LEGEND;
   document.getElementById('fig2-legend').innerHTML = MAIN_LEGEND;
 
@@ -645,7 +646,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     const rowsB = [
       { name: 'llama.cpp Q4_K_M', sub: `stock recipe · KL ${kl(q4.mix_kl)}`, parts: [['mat', 1.1145, 4.79], ['emb', 0.3303, 6.56], ['ple', 1.9268, 6.56], ['kept', 0.0405]] },
       { name: 'LookAtMyQuant GGUF', sub: `llama.cpp types · KL ${kl(g339.mix_kl)}`, parts: [['mat', 1.775, 7.62], ['emb', 0.3303, 6.56], ['ple', 1.2478, 4.25], ['kept', 0.0405]] },
-      { name: 'LookAtMyQuant, own codes', sub: `no kernel yet · KL ${kl(own[own.length - 1].mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept]] },
+      { name: 'LookAtMyQuant, own codes', sub: `not runnable yet · KL ${kl(own[own.length - 1].mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept]] },
     ];
     const h = rowsB.length * rh + 28, x = (v) => ml + (w - ml - mr) * v / 3.5;
     const COL = { mat: 'var(--mat)', emb: 'var(--emb)', ple: 'var(--ple)' }, NAME = { mat: 'Weight matrices', emb: 'Embedding table', ple: 'Per-layer table', kept: 'Kept at 16 bits' };
@@ -659,7 +660,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       r.parts.forEach(([k, v, bits]) => {
         const xa = x(a) + (a ? 1 : 0), ww = Math.max(1, x(a + v) - x(a) - (a ? 1 : 0));
         s += `<rect x="${xa}" y="${yy + 4}" width="${ww}" height="${rh - 16}" fill="${k === 'kept' ? 'url(#hatch)' : COL[k]}" data-tip="${esc(`<b>${r.name}</b><br>${NAME[k]}: ${v.toFixed(2)} GB${bits ? `, ${bits.toFixed(2)} bits per weight` : ''}`)}"/>`;
-        const lab = `${v.toFixed(2)} GB · ${bits ? bits.toFixed(2) : ''} b`;
+        const lab = `${v.toFixed(2)} GB · ${bits ? bits.toFixed(2) : ''} bits`;
         if (bits && ww > lab.length * 6.6 + 12) s += T(xa + 7, yy + 22, lab, { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
         else if (bits && ww > 38) s += T(xa + 5, yy + 22, v.toFixed(2), { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
         a += v;
@@ -898,7 +899,7 @@ const TN_GALLERY = [
     draw: () => tnBond(20, 65, 62, 65, 'i') + tnNode({ x: 100, y: 65, w: 76, h: 44, kind: 'low', name: 'B', sub: 'r × i' }) +
       tnBond(138, 65, 182, 65, 'r', { width: 1, stroke: 'var(--control)', labelFill: 'var(--control)' }) + tnNode({ x: 220, y: 65, w: 76, h: 44, kind: 'low', name: 'A', sub: 'o × r' }) + tnBond(258, 65, 290, 65, 'o') },
   { who: 'Magnitude pruning, Wanda, SparseGPT', verbs: 'mask', note: 'Every node and line stays. Half of the entries inside the matrix are set to zero; Wanda and SparseGPT choose which using the inputs.',
-    draw: () => tnBond(30, 65, 110, 65, 'i') + tnNode({ x: 160, y: 65, w: 100, h: 54, kind: 'mask', name: '', tip: 'Half of the entries are zero' }) + tnT(160, 108, 'W, half zero', { size: 10, fill: 'var(--muted)', body: true }) + tnBond(210, 65, 290, 65, 'o') },
+    draw: () => tnBond(30, 65, 110, 65, 'i') + tnNode({ x: 160, y: 65, w: 100, h: 54, kind: 'mask', name: '', tip: 'Half of the entries are zero' }) + tnT(160, 108, 'W with half its entries zero', { size: 10, fill: 'var(--muted)', body: true }) + tnBond(210, 65, 290, 65, 'o') },
   { who: 'AWQ', verbs: 'gauge_diag → restrict(INT4)', note: 'A diagonal pair on index i: s⁻¹ is folded into the norm before the matrix and s into its columns. Important input channels are scaled up before rounding.',
     draw: () => tnBond(20, 65, 62, 65, 'i') + tnNode({ x: 82, y: 65, w: 40, h: 36, shape: 'diamond', kind: 'exact', name: 's⁻¹', size: 11, tip: 'Folded into the previous norm gain' }) +
       tnBond(102, 65, 148, 65, 'i') + tnNode({ x: 196, y: 65, w: 96, h: 48, kind: 'quant', name: 'W·diag(s)', size: 11, sub: '4-bit' }) + tnBond(244, 65, 290, 65, 'o') },
@@ -926,7 +927,7 @@ function tnTable() {
     cum += b.rows;
   });
   s += tnDot(600, 130) + tnBond(600, 130, 690, 130, 'd  1,536');
-  s += tnNode({ x: 715, y: 130, w: 46, h: 46, shape: 'circle', kind: 'data', name: 'out', size: 11, tip: 'The lookup reads one row; the output head reads every row' });
+  s += tnNode({ x: 715, y: 130, w: 46, h: 46, shape: 'circle', kind: 'data', name: 'model', size: 10, tip: 'The lookup reads one row; the output head reads every row' });
   document.getElementById('tn-table').innerHTML = tnSvg(760, 262, `<defs><marker id="tn-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--muted)"/></marker></defs>` + s,
     'The embedding table split into 11 nodes by token frequency, each with its own program, joined on the hidden index');
 }
@@ -1045,7 +1046,7 @@ function tnTable() {
         els[i].setAttribute('stroke', si === k - 1 ? 'var(--ink)' : 'none'); els[i].setAttribute('stroke-width', si === k - 1 ? 2 : 0);
       });
       const s = steps[k - 1];
-      status.innerHTML = (k === 0 ? 'Every piece at 16 bits.' : k === N ? `Done: the compiled plan.` : `Step ${k} of ${N}: <b>${esc(nameOf(s.p))}</b> → <b>${s.p.t}</b>.`) +
+      status.innerHTML = (k === 0 ? 'Every piece at 16 bits.' : k === N ? `The finished plan.` : `Step ${k} of ${N}: <b>${esc(nameOf(s.p))}</b> → <b>${s.p.t}</b>.`) +
         `<br>File size <b>${GB[k].toFixed(2)} GB</b> · predicted KL <b>${k ? kl(KLs[k]) : '0'}</b>`;
       curve(k);
     }
