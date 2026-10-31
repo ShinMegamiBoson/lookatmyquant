@@ -1065,6 +1065,22 @@ function tnTable() {
     const scrub = document.getElementById('anim-scrub'), status = document.getElementById('anim-status'), play = document.getElementById('anim-play');
     scrub.max = N;
     let cur = -1;
+    const statusHtml = (k) => {
+      const s = steps[k - 1];
+      return (k === 0 ? 'Every piece at 16 bits.' : k === N ? `The finished plan.` : `Step ${k} of ${N}: <b>${esc(nameOf(s.p))}</b> → <b>${s.p.t}</b>.`) +
+        `<br>File size <b>${GB[k].toFixed(2)} GB</b> · predicted KL <b>${k ? kl(KLs[k]) : '0'}</b>`;
+    };
+    // Reserve the height of the tallest status at this width, so a long piece name that wraps never moves the page.
+    function fitStatus() {
+      const probe = status.cloneNode(false);
+      probe.removeAttribute('id'); probe.removeAttribute('aria-live');
+      probe.style.cssText = `position:absolute;visibility:hidden;pointer-events:none;min-height:0;width:${status.clientWidth}px`;
+      status.parentNode.appendChild(probe);
+      let tall = 0;
+      for (let k = 0; k <= N; k++) { probe.innerHTML = statusHtml(k); tall = Math.max(tall, probe.offsetHeight); }
+      probe.remove();
+      status.style.minHeight = tall + 'px';
+    }
     function show(k) {
       cur = k; scrub.value = k;
       rects.forEach((r, i) => {
@@ -1072,9 +1088,7 @@ function tnTable() {
         els[i].setAttribute('fill', done ? colorOf(r.p.t) : colorOf('BF16'));
         els[i].setAttribute('stroke', si === k - 1 ? 'var(--ink)' : 'none'); els[i].setAttribute('stroke-width', si === k - 1 ? 2 : 0);
       });
-      const s = steps[k - 1];
-      status.innerHTML = (k === 0 ? 'Every piece at 16 bits.' : k === N ? `The finished plan.` : `Step ${k} of ${N}: <b>${esc(nameOf(s.p))}</b> → <b>${s.p.t}</b>.`) +
-        `<br>File size <b>${GB[k].toFixed(2)} GB</b> · predicted KL <b>${k ? kl(KLs[k]) : '0'}</b>`;
+      status.innerHTML = statusHtml(k);
       curve(k);
     }
     let raf = null;
@@ -1086,12 +1100,14 @@ function tnTable() {
     }
     play.addEventListener('click', run);
     scrub.addEventListener('input', () => { cancelAnimationFrame(raf); show(+scrub.value); });
+    fitStatus();
+    if (document.fonts) document.fonts.ready.then(fitStatus);
     show(N);
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
       const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); run(); } }, { threshold: 0.5 });
       io.observe(map);
     }
-    return () => curve(cur);
+    return () => { fitStatus(); curve(cur); };
   }
   const redrawCurve = compileAnim();
 
