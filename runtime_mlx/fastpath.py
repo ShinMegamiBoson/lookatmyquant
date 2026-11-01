@@ -168,6 +168,45 @@ inline void lamq_lm_rows_lane(const device uint* codes, uint wpr, uint m, const 
     }
 }
 
+// rows of a trellis matrix: y = S ⊙ (V[state] xs) · norm, a state being the 12 bits at the entry's place in its row's stream
+// (lamq.py). `map`, when given, writes row r to y[map[r]].
+template <uint BITS, uint LPR, uint ROWS, uint N, typename BUF, uint XP>
+inline void lamq_tr_rows(const device uint* codes, uint wpr, uint m, const device half* scales, const threadgroup BUF* xs,
+                         const device float* tv, device bfloat16_t* y, const device int* map, uint tg, uint ntg, uint simd, uint lane, float norm) {
+    const uint sub = lane / LPR, sl = lane % LPR;
+    constexpr uint RPT = ROWS * (32 / LPR), G = N / 32;
+    for (uint rb = tg; rb * RPT < m; rb += ntg) {
+        const uint row = (rb * ROWS + simd) * (32 / LPR) + sub;
+        const bool live = row < m;
+        const device uint* rc = codes + (ulong)(live ? row : 0) * wpr;
+        const uint ngroups = live ? G : 0;
+        float acc = 0.0f;
+        uint nx[BITS + 1];
+        #pragma unroll
+        for (uint i = 0; i < BITS; i++) nx[i] = sl < ngroups ? rc[(G - 1 - sl) * BITS + i] : 0u;
+        nx[BITS] = sl > 0 && sl < ngroups ? rc[(G - 1 - sl) * BITS + BITS] : 0u;
+        for (uint g = sl; g < ngroups; g += LPR) {
+            uint w[BITS + 1];
+            #pragma unroll
+            for (uint i = 0; i <= BITS; i++) w[i] = nx[i];
+            const uint gn = g + LPR < ngroups ? g + LPR : g;
+            #pragma unroll
+            for (uint i = 0; i < BITS; i++) nx[i] = rc[(G - 1 - gn) * BITS + i];
+            nx[BITS] = gn > 0 ? rc[(G - 1 - gn) * BITS + BITS] : 0u;
+            const threadgroup BUF* xg = xs + g * XP;
+            #pragma unroll
+            for (uint k = 0; k < 32; k++) {
+                const uint bit = (31 - k) * BITS, wi = bit >> 5, off = bit & 31u;
+                uint s = w[wi] >> off;
+                if (off + 12 > 32) s |= w[wi + 1] << (32 - off);
+                acc += tv[s & 4095u] * (float)xg[k];
+            }
+        }
+        for (uint d = LPR / 2; d > 0; d /= 2) acc += simd_shuffle_xor(acc, d);
+        if (live && sl == 0) y[map ? (uint)map[row] : row] = (bfloat16_t)(acc * (float)scales[row] * norm);
+    }
+}
+
 // the same, writing row r to y[map[r]] (the output head: a bucket's rows are scattered tokens)
 template <uint BITS, uint LPR, uint ROWS, uint N, typename BUF, uint XP>
 inline void lamq_lm_rows_map(const device uint* codes, uint wpr, uint m, const device half* scales, const threadgroup BUF* xs,
@@ -247,9 +286,9 @@ def _source(mode, kinds, second_norm, has_scale, eps, rotate="full", scatter=Fal
     nm = len(kinds)
     if packed:  # every matrix's codes, scales, signs and row map in shared buffers, at offsets offs[2i] (words) and offs[2i + 1] (rows)
         buf = {"c": lambda i: f"(codes + offs[{2 * i}])", "s": lambda i: f"(scales + offs[{2 * i + 1}])", "g": lambda i: f"(signs + {i}u * N)",
-               "r": lambda i: f"(rows + offs[{2 * i + 1}])", "d": lambda i: f"((const device bfloat16_t*)(codes + offs[{2 * i}]))"}
+               "r": lambda i: f"(rows + offs[{2 * i + 1}])", "d": lambda i: f"((const device bfloat16_t*)(codes + offs[{2 * i}]))", "v": lambda i: f"(tvals + TV{i} * 4096u)"}
     else:
-        buf = {"c": lambda i: f"c{i}", "s": lambda i: f"s{i}", "g": lambda i: f"g{i}", "r": lambda i: f"r{i}", "d": lambda i: f"c{i}"}
+        buf = {"c": lambda i: f"c{i}", "s": lambda i: f"s{i}", "g": lambda i: f"g{i}", "r": lambda i: f"r{i}", "d": lambda i: f"c{i}", "v": lambda i: f"tv{i}"}
     a("const uint tg = threadgroup_position_in_grid.x, tid = thread_position_in_threadgroup.x;")
     a("const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup;")
     a("constexpr uint NT = ROWS * 32;")
@@ -260,7 +299,7 @@ def _source(mode, kinds, second_norm, has_scale, eps, rotate="full", scatter=Fal
     for i in range(1, nm):
         a(f"if (tg >= dims[{4 * i + 2}]) mi = {i};")
     a("const uint TGL = tg - dims[4 * mi + 2], NTG = dims[4 * mi + 3];")
-    bits = [f"BITS{i}" if k == "lm" else "16u" for i, k in enumerate(kinds)]
+    bits = [f"BITS{i}" if k == "lm" else "0u" if k == "tr" else "16u" for i, k in enumerate(kinds)]  # the levels a threadgroup keeps: none on a trellis, 16 on dense rows
     expr = bits[-1]
     for i in range(nm - 2, -1, -1):
         expr = f"(mi == {i} ? {bits[i]} : {expr})"
@@ -279,7 +318,7 @@ def _source(mode, kinds, second_norm, has_scale, eps, rotate="full", scatter=Fal
         a("threadgroup_barrier(mem_flags::mem_threadgroup);")
         a(f"{{ float t_ = 0.0f; for (uint i = 0; i < ROWS; i++) t_ += red[{slot} * ROWS + i]; {var} = t_; }}")
     rs = lambda var: f"metal::precise::rsqrt({var} / (float)N + {eps!r}f)"
-    lmi = [i for i, k in enumerate(kinds) if k == "lm"] if rotate != "none" else []
+    lmi = [i for i, k in enumerate(kinds) if k != "dense"] if rotate != "none" else []
     full = rotate == "full"
     if lmi and full:
         sgx = buf["g"](lmi[-1])
@@ -348,7 +387,10 @@ def _source(mode, kinds, second_norm, has_scale, eps, rotate="full", scatter=Fal
     for i, k in enumerate(kinds):
         kw = "if" if i == 0 else "else if"
         c, s, r, d = buf["c"](i), buf["s"](i), buf["r"](i), buf["d"](i)
-        if scatter and k == "lm":
+        if k == "tr":
+            a(f"{kw} (mi == {i}) lamq_tr_rows<BITS{i}, LPR, ROWS, N, BUF, XP>({c}, dims[{4 * i + 1}], dims[{4 * i}], {s}, xs, {buf['v'](i)}, {'y' if scatter else f'y{i}'}, "
+              f"{r if scatter else '(const device int*)nullptr'}, TGL, NTG, simd, lane, 1.0f);")
+        elif scatter and k == "lm":
             a(f"{kw} (mi == {i}) lamq_lm_rows_map<BITS{i}, LPR, ROWS, N, BUF, XP>({c}, dims[{4 * i + 1}], dims[{4 * i}], {s}, xs, lv, y, {r}, TGL, NTG, simd, lane);")
         elif scatter:
             a(f"{kw} (mi == {i}) lamq_dense_rows_map<ROWS, N, BUF, XP>({d}, dims[{4 * i}], xs, y, {r}, TGL, NTG, simd, lane);")
@@ -473,45 +515,46 @@ class Stage:
     geglu GELU(x0)·x1. Returns [h,] y0, y1, ... as 1-D bf16 arrays."""
 
     def __init__(self, mode, mats, wa=None, wb=None, scl=None, eps=1e-6, scatter=None, budget=None, packed=None):
-        kinds = ["lm" if hasattr(m, "codes") else "dense" for m in mats]
-        ns = {m.n if k == "lm" else m.weight.shape[1] for m, k in zip(mats, kinds)}
+        kinds = ["tr" if getattr(m, "trellis", False) else "lm" if hasattr(m, "codes") else "dense" for m in mats]
+        coded = lambda k: k != "dense"
+        ns = {m.n if coded(k) else m.weight.shape[1] for m, k in zip(mats, kinds)}
         assert len(ns) == 1, "a stage's matrices share their input"
         n = ns.pop()
         self.mode, self.second_norm, self.has_scale = mode, wb is not None, scl is not None
-        lms = [m for m, k in zip(mats, kinds) if k == "lm"]
+        lms = [m for m, k in zip(mats, kinds) if coded(k)]
         rot = lms[0].r_in if lms else lamq.Rot(np.ones(n))
         self.wide = None
         R, C, maxj, Pm = _layout(rot)
-        if n > WIDE_N and kinds == ["lm"] and mode in ("plain", "geglu"):
+        if n > WIDE_N and len(kinds) == 1 and coded(kinds[0]) and mode in ("plain", "geglu"):
             self.wide = WideRot(mode, rot, R, C, Pm)
             mode = "plain"  # the product kernel takes WideRot's output as its input
         lpr = lamq.lanes_per_row(n)
-        sizes = [m.codes.nbytes if k == "lm" else m.weight.nbytes for m, k in zip(mats, kinds)]
-        ms = [m.m if k == "lm" else m.weight.shape[0] for m, k in zip(mats, kinds)]
-        sizes0 = [m.codes.nbytes if k == "lm" else m.weight.nbytes for m, k in zip(mats, kinds)]
+        sizes = [m.codes.nbytes if coded(k) else m.weight.nbytes for m, k in zip(mats, kinds)]
+        ms = [m.m if coded(k) else m.weight.shape[0] for m, k in zip(mats, kinds)]
+        sizes0 = list(sizes)
         self.row_kernel = ROW_KERNEL if ROW_KERNEL != "reg" or sum(sizes0) >= REG_MIN_MB * 1e6 else "group"
         rk = self.row_kernel
         rpb = lamq.ROWS * (RPS if rk == "lane" else 32 // lpr * RPS if rk == "reg" else 32 // lpr)  # rows a threadgroup takes at a time
-        blocks = [-(-mm // (rpb if k == "lm" else lamq.ROWS)) for mm, k in zip(ms, kinds)]
+        blocks = [-(-mm // (rpb if coded(k) else lamq.ROWS)) for mm, k in zip(ms, kinds)]
         budget = budget or (lamq.MAX_TG_NARROW if n <= 2048 else lamq.MAX_TG) * (len(mats) if PER_MATRIX_BUDGET else 1)
         ntg = [max(1, min(b, round(budget * s / sum(sizes)))) for b, s in zip(blocks, sizes)]
         dims, tg0 = [], 0
         for m, k, mm, t in zip(mats, kinds, ms, ntg):
-            dims += [mm, m.codes.shape[1] if k == "lm" else n, tg0, t]
+            dims += [mm, m.codes.shape[1] if coded(k) else n, tg0, t]
             tg0 += t
         self.n_tg = tg0
         names = ["x0"] + (["x1"] if mode in ("resid", "geglu") else []) + (["wa"] if mode in ("norm", "resid") else []) \
             + (["wb"] if self.second_norm else []) + (["scl"] if self.has_scale else []) + ["levels", "Pm", "dims"]
         fixed = [w for w in (wa, wb, scl) if w is not None] + [_levels_table(), Pm, mx.array(dims, dtype=mx.uint32)]
         if packed is not None:  # (codes, scales, signs, rows, offsets): shared buffers, as LMTable keeps them
-            names += ["codes", "scales", "signs", "rows", "offs"]
+            names += ["codes", "scales", "signs", "rows", "offs", "tvals"]
             fixed += list(packed)
         for i, (m, k) in enumerate(zip(mats, kinds)):
             if packed is not None:
                 continue
-            if k == "lm":
-                names += [f"c{i}", f"s{i}", f"g{i}"]
-                fixed += [m.codes, m.scales, m.r_in.s]
+            if coded(k):
+                names += [f"c{i}", f"s{i}", f"g{i}"] + ([f"tv{i}"] if k == "tr" else [])
+                fixed += [m.codes, m.scales, m.r_in.s] + ([m.levels] if k == "tr" else [])
             else:
                 names += [f"c{i}"]
                 fixed += [m.weight.astype(mx.bfloat16)]
@@ -530,10 +573,11 @@ class Stage:
         self.kernel, self.fixed = _KERNELS[key], fixed
         lvn = 1 << max([m.bits for m, k in zip(mats, kinds) if k == "lm"] + [1])
         self.template = [("BUF", mx.float32 if n <= lamq.TG_FLOATS and not HALF_INPUT else mx.float16), ("LVN", lvn), ("ROWS", lamq.ROWS), ("LPR", lpr), ("R", R), ("C", C),
-                         ("MAXJ", maxj), ("N", n), ("RPS", RPS), ("XP", 33 if PAD else 32), ("LUT_TG", LUT_TG)] + [(f"BITS{i}", m.bits) for i, (m, k) in enumerate(zip(mats, kinds)) if k == "lm"]
+                         ("MAXJ", maxj), ("N", n), ("RPS", RPS), ("XP", 33 if PAD else 32), ("LUT_TG", LUT_TG)] + [(f"BITS{i}", m.bits) for i, (m, k) in enumerate(zip(mats, kinds)) if coded(k)] \
+            + [(f"TV{i}", m.tv) for i, (m, k) in enumerate(zip(mats, kinds)) if k == "tr" and packed is not None]
         self.shapes = ([(n,)] if mode == "resid" else []) + ([(scatter[1],)] if scatter is not None else [(mm,) for mm in ms])
         self.r_out = [None] * len(self.shapes) if scatter is not None else \
-            [None] * (mode == "resid") + [m.r_out if k == "lm" else None for m, k in zip(mats, kinds)]
+            [None] * (mode == "resid") + [m.r_out if coded(k) else None for m, k in zip(mats, kinds)]
         mx.eval(self.fixed)
 
     def __call__(self, x0, x1=None):
@@ -564,6 +608,7 @@ class _Bucket:
     def __init__(self, b, d):
         self.codes, self.bits, self.m, self.n = b["codes"], b["bits"], b["codes"].shape[0], d
         self.scales, self.r_in, self.r_out = b["scales"][:, 0].astype(mx.float16), b["rot"], None
+        self.trellis, self.levels, self.tv = b["trellis"], b["levels"], 0
 
 
 class _Dense:
@@ -575,7 +620,10 @@ def head(table):
     """The tied output head as one launch: every bucket's rows, each written to its token's position. The buckets'
     codes, scales and signs are read from the table's shared buffers (a kernel takes at most 31 buffers)."""
     mats = [_Bucket(b, table.d) if b["kind"] == "lm" else _Dense(b["W"]) for b in table.buckets]
-    info = np.array(table.binfo).reshape(-1, 4)  # bits, word offset, words per row, scale offset (lm rows before this bucket)
+    info = np.array(table.binfo).reshape(-1, 5)  # bits, word offset, words per row, scale offset (coded rows before this bucket), the trellis values' place in tvals, plus 1
+    for mt, row in zip(mats, info):
+        if getattr(mt, "trellis", False):
+            mt.tv = int(row[4]) - 1
     starts = np.cumsum([0] + [len(r) for r in table.rows])[:-1]
     offs, sig = [], []
     for k, b in enumerate(table.buckets):
@@ -591,7 +639,7 @@ def head(table):
     for k, r in enumerate(table.rows):
         flat[offs[2 * k + 1] : offs[2 * k + 1] + len(r)] = np.array(r)
     scales = mx.concatenate([table.scales_all.reshape(-1)[:nlm], mx.zeros((extra - nlm,), mx.float16)]) if extra > nlm else table.scales_all.reshape(-1)
-    packed = (table.codes_all, scales, table.signs_all, mx.array(flat), mx.array(np.array(offs, np.uint32)))
+    packed = (table.codes_all, scales, table.signs_all, mx.array(flat), mx.array(np.array(offs, np.uint32)), table.tvals)
     return Stage("plain", mats, scatter=(None, table.V), budget=HEAD_TG, packed=packed)
 
 

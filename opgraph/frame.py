@@ -40,6 +40,7 @@ class Domain:
     levels: tuple | None = None  # the value set, for kind "set"; the value of each trellis state, for kind "trellis"
     axis: str | None = None  # the codebook index, for kind "onehot"; the vector index, for kind "codebook"; the sequence index, for kind "trellis"
     state_bits: int | None = None  # for kind "trellis": the trellis has 2**state_bits states
+    fixed_start: bool = False  # for kind "trellis": every sequence starts from state 0, so none stores its start
 
 
 REAL = Domain("real", 16.0)
@@ -142,7 +143,7 @@ def core_bits(c: Core) -> float:
     share = 1.0 if c.tied is None else c.tied
     if c.domain.kind == "trellis":  # k bits per entry, plus the extra bits that pick each sequence's starting state
         seqs = c.data.numel() / c.data.shape[c.axis(c.domain.axis)]
-        return share * (c.data.numel() * c.domain.bits + seqs * (c.domain.state_bits - c.domain.bits))
+        return share * (c.data.numel() * c.domain.bits + (0 if c.domain.fixed_start else seqs * (c.domain.state_bits - c.domain.bits)))
     if c.keep is None:
         return c.data.numel() * share * c.domain.bits
     kept = int(c.keep.sum()) * share

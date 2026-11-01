@@ -59,9 +59,11 @@ The runs behind the site used these machines, each with 8 CPU cores:
 
 `gguf_compiler.py` makes plans out of llama.cpp's own tensor types, so the result runs in llama.cpp as it is. `public_eval.py` scores public quantizations the same way as our plans. Both run inside the image in `modal_gguf.py`, which builds llama.cpp with CUDA.
 
-## The Apple Silicon runtime reads Lloyd–Max plans
+## The Apple Silicon runtime reads Lloyd–Max and trellis plans
 
-`quantize.py --export <folder>` writes a Lloyd–Max plan in the format `runtime_mlx/` reads. The runtime needs `mlx` and `mlx_lm`, which are not in `requirements.txt`. Support for trellis codes is coming.
+`quantize.py --export <folder>` writes a plan in the format `runtime_mlx/` reads. A plan with trellis codes also needs `--trellis-rows 16,8`, which runs each trellis path along a row of its matrix, so that decoding an entry reads only that row. The runtime needs `mlx` and `mlx_lm`, which are not in `requirements.txt`.
+
+On Gemma 4 E2B at 2.5 GB, the trellis plan has 26% lower KL than the Lloyd–Max plan and decodes about 22% slower. `runtime_mlx/test_trellis_gen.py` and `runtime_mlx/test_trellis.py` check the trellis kernels against the matrices the quantizer built.
 
 ```sh
 python runtime_mlx/bench.py lamq path/to/export

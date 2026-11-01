@@ -1,11 +1,15 @@
 """Writes a quantized plan in the LookAtMyQuant runtime format (runtime_mlx/): for every matrix and table bucket the plan
-codes with Lloyd–Max levels, the packed codes, the 16-bit row scales and the signs of its randomized Hadamard transforms;
-every other text weight as bf16. Trellis codes have no runtime kernel yet, so a plan that uses them cannot be exported.
+codes with Lloyd–Max or trellis codes, the packed codes, the 16-bit row scales and the signs of its randomized Hadamard
+transforms; every other text weight as bf16.
 
     model.safetensors   <name>.codes (uint32 bit streams, stored as int32), <name>.scales (fp16), <name>.s_in / .s_out (int8);
                         tables: <name>.b<k>.rows (int32 token ids), .codes, .scales (rows × slices), .signs (slices × width);
-                        16-bit buckets <name>.b<k>.dense; every other weight under its own name
+                        16-bit buckets <name>.b<k>.dense; every other weight under its own name;
+                        trellis.k<k>: a trellis code's 2^12 state values (fp32)
     lamq.json           what each name holds
+
+A trellis row is one stream of k-bit symbols, its path along the columns from state 0: later columns at lower bits, the
+runs of 32 stored last column first. An entry's state is the 12 bits at its place in the stream.
 """
 
 from __future__ import annotations
@@ -51,6 +55,15 @@ def pack(Q: np.ndarray, bits: int) -> np.ndarray:
     return out.reshape(m, -1)
 
 
+def trellis_symbols(core, k: int, L: int = 12) -> torch.Tensor:
+    """A trellis-restricted core (rows × n, on the state values) as its symbols, last column first: pack() then lays out the stream."""
+    v = torch.tensor(core.domain.levels, dtype=torch.float64)
+    order = torch.argsort(v)
+    states = order[torch.searchsorted(v[order], core.data.double().contiguous()).clamp(max=len(v) - 1)]
+    assert torch.equal(v[states], core.data.double()) and C.is_trellis_path(states, L, k) and bool((states[:, 0] >> k == 0).all()), "not a path from state 0"
+    return (states & ((1 << k) - 1)).flip(1)
+
+
 def _u32(a: np.ndarray) -> torch.Tensor:
     return torch.from_numpy(np.ascontiguousarray(a).view(np.int32))
 
@@ -62,32 +75,43 @@ class Exporter:
         self.coded: set[str] = set()
 
     def matrix(self, name: str, family: str, bits: int, net, seed: int, in_seed: int | None = None):
-        """One matrix's Lloyd–Max word (nested_words with a dedicated code): W ≈ R_outᵀ diag(S) L[Q] R_in, or, rotated on
-        the input side only, W ≈ diag(S) L[Q] R_in."""
+        """One matrix's word (Lloyd–Max: nested_words with a dedicated code; or trellis): W ≈ R_outᵀ diag(S) L[Q] R_in, or,
+        rotated on the input side only, W ≈ diag(S) L[Q] R_in."""
         if family == "fp":
             return  # kept as stored: written with the dense weights
-        if family != "lm":
-            raise ValueError(f"{name}: '{family}{bits}' has no runtime kernel yet (Lloyd–Max and 16-bit only)")
-        lv = N.lloyd_max(bits).double()
+        if family not in ("lm", "tr"):
+            raise ValueError(f"{name}: '{family}{bits}' has no runtime kernel yet")
         Wc, S = net.cores["W"].data.double(), net.cores["W.S"].data.double()
-        Q = codes_of(Wc, lv)
-        m, n = Q.shape
+        extra = {}
+        if family == "lm":
+            lv = N.lloyd_max(bits).double()
+            Q = codes_of(Wc, lv)
+            stored, Wv = Q, lv[Q]
+        else:
+            assert net.cores["W"].domain.fixed_start, f"{name}: the runtime reads trellis paths along the rows (--trellis-rows)"
+            stored, Wv = trellis_symbols(net.cores["W"], bits), Wc
+            self.trellis(bits, net.cores["W"].domain.levels)
+            extra = {"family": "tr"}
+        m, n = Wv.shape
         two_sided = "I[u]" in net.cores
         s_out, s_in = signs(m, seed), signs(n, seed + 1 if in_seed is None else in_seed)
         # check: the stored pieces rebuild the matrix the harness evaluates
-        Wq = (S[:, None] * lv[Q]) @ (C.hadamard(n) * s_in[None, :])
+        Wq = (S[:, None] * Wv) @ (C.hadamard(n) * s_in[None, :])
         if two_sided:
             Wq = (C.hadamard(m) * s_out[None, :]).T @ Wq
         err = (Wq - net.matrix(dtype=torch.float64)).abs().max().item()
         assert err < 1e-6, f"{name}: export does not rebuild the matrix (max error {err:.2e})"
-        self.tensors[f"{name}.codes"] = _u32(pack(Q.numpy(), bits))
+        self.tensors[f"{name}.codes"] = _u32(pack(stored.numpy(), bits))
         self.tensors[f"{name}.scales"] = S.to(torch.float16)
         self.tensors[f"{name}.s_in"] = s_in.to(torch.int8)
         if two_sided:
             self.tensors[f"{name}.s_out"] = s_out.to(torch.int8)
         self.meta["matrices"][name] = {"bits": bits, "shape": [m, n], "out_rot": two_sided,
-                                       "in_seed": seed + 1 if in_seed is None else in_seed}
+                                       "in_seed": seed + 1 if in_seed is None else in_seed, **extra}
         self.coded.add(name)
+
+    def trellis(self, k: int, values):
+        self.tensors.setdefault(f"trellis.k{k}", torch.as_tensor(values, dtype=torch.float32))
 
     def table_bucket(self, name: str, k: int, rows: torch.Tensor, program: str, parts: list[dict], shape, block):
         """One bucket of a table's rows. `parts` has one entry per slice (one for a table read whole)."""
@@ -100,11 +124,13 @@ class Exporter:
         else:
             if any("codes" not in p for p in parts):
                 raise ValueError(f"{name} bucket {k}: '{program}' has no runtime kernel yet")
-            bits = parts[0]["bits"]
+            bits, values = parts[0]["bits"], parts[0]["values"]
             self.tensors[f"{key}.codes"] = _u32(np.concatenate([pack(p["codes"].numpy(), bits) for p in parts], 1))
             self.tensors[f"{key}.scales"] = torch.stack([p["scales"] for p in parts], 1).to(torch.float16)
             self.tensors[f"{key}.signs"] = torch.stack([signs(p["width"], p["seed"]) for p in parts]).to(torch.int8)
-            t["buckets"].append({"program": program, "kind": "lm", "bits": bits, "rows": len(rows), "slices": len(parts)})
+            t["buckets"].append({"program": program, "kind": "lm", "bits": bits, "rows": len(rows), "slices": len(parts), **({} if values is None else {"family": "tr"})})
+            if values is not None:
+                self.trellis(bits, values)
         self.coded.add(name)
 
     def write(self, out: str, model, model_dir: str):
@@ -113,7 +139,8 @@ class Exporter:
         out.mkdir(parents=True, exist_ok=True)
         dense = 0
         params = dict(model.named_parameters())
-        for n, p in [*params.items(), *((n, b) for n, b in model.state_dict().items() if n not in params)]:  # and persistent buffers (Gemma 4's layer scales)
+        kept = model.state_dict()  # named_parameters leaves out a tied head; state_dict does not, and it holds the persistent buffers (Gemma 4's layer scales)
+        for n, p in [*params.items(), *((n, b) for n, b in model.named_buffers() if n in kept)]:
             if n in self.coded or any(s in n for s in SKIP):
                 continue
             self.tensors[n] = p.detach().to(torch.bfloat16).cpu().contiguous()

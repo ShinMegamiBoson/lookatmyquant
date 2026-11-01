@@ -26,8 +26,9 @@ def random_model(plan_path, cfg_dir, rot="both"):
     tm = M.language_model.model
     rng = np.random.default_rng(0)
     signs = lambda n: mx.array(rng.choice([-1, 1], n).astype(np.int8))
+    tvals = lambda: mx.array(rng.standard_normal(4096).astype(np.float32))
     for name, prog in plan["linears"].items():
-        if not prog.startswith("lm"):
+        if prog[:2] not in ("lm", "tr"):
             continue
         bits = int(prog[2:].rstrip("x"))
         i, path = name.split(".", 1)
@@ -38,26 +39,29 @@ def random_model(plan_path, cfg_dir, rot="both"):
         m, n = obj.weight.shape
         codes = mx.random.randint(0, 2 ** 31, (m, n // 32 * bits)).astype(mx.uint32)
         scales = mx.full((m,), 0.02, mx.float16)
-        lm._set(layer, path, lm.LMLinear(codes, scales, signs(n), signs(m) if rot == "both" else None, bits))
+        lm._set(layer, path, lm.LMLinear(codes, scales, signs(n), signs(m) if rot == "both" else None, bits, tvals() if prog[:2] == "tr" else None))
     for key, attr, block in (("embed", "embed_tokens", None), ("ple", "embed_tokens_per_layer", tm.config.hidden_size_per_layer_input)):
         V, d = getattr(tm, attr).weight.shape
         width = block or d
         slices = d // width
         perm = rng.permutation(V).astype(np.int32)
-        W, buckets, start = {}, [], 0
+        W, buckets, start, trellis = {}, [], 0, {}
         for k, (size, prog) in enumerate(zip(plan[key]["sizes"], plan[key]["programs"])):
             rows = perm[start : start + size]; start += size
             W[f"t.b{k}.rows"] = mx.array(rows)
-            if not prog.startswith("lm"):  # a 16-bit bucket
+            if prog[:2] not in ("lm", "tr"):  # a 16-bit bucket
                 W[f"t.b{k}.dense"] = mx.random.normal((size, d)).astype(mx.bfloat16)
                 buckets.append({"kind": "dense"})
                 continue
             bits = int(prog[2:])
+            tr = prog[:2] == "tr"
             W[f"t.b{k}.codes"] = mx.random.randint(0, 2 ** 31, (size, slices * width // 32 * bits)).astype(mx.uint32)
             W[f"t.b{k}.scales"] = mx.full((size, slices), 0.02, mx.float16)
             W[f"t.b{k}.signs"] = mx.array(rng.choice([-1, 1], (slices, width)).astype(np.int8))
-            buckets.append({"kind": "lm", "bits": bits})
-        setattr(tm, attr, lm.LMTable(W, "t", {"shape": [V, d], "block": block, "buckets": buckets}))
+            buckets.append({"kind": "lm", "bits": bits, **({"family": "tr"} if tr else {})})
+            if tr:
+                trellis.setdefault(bits, tvals())
+        setattr(tm, attr, lm.LMTable(W, "t", {"shape": [V, d], "block": block, "buckets": buckets}, trellis))
     M.eval()
     mx.eval(M.parameters())
     return M

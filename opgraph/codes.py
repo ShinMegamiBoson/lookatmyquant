@@ -51,8 +51,8 @@ GAUSS2 = SET([-1.5104, -0.4528, 0.4528, 1.5104])  # Lloyd–Max for N(0, 1) at 2
 RHT = Domain("rht", 0.0)
 
 
-def TRELLIS(values: torch.Tensor, L: int, k: int, axis: str = "t") -> Domain:
-    return Domain("trellis", float(k), levels=tuple(float(v) for v in values), axis=axis, state_bits=L)
+def TRELLIS(values: torch.Tensor, L: int, k: int, axis: str = "t", fixed_start: bool = False) -> Domain:
+    return Domain("trellis", float(k), levels=tuple(float(v) for v in values), axis=axis, state_bits=L, fixed_start=fixed_start)
 
 # ----------------------------------------------------------------------------- rules: microscaling scales
 
@@ -129,9 +129,10 @@ def gaussian_codebook(K: int, d: int, seed: int = 0) -> torch.Tensor:
 # ----------------------------------------------------------------------------- the trellis
 
 
-def viterbi(X: torch.Tensor, values: torch.Tensor, L: int, k: int, chunk: int | None = None) -> torch.Tensor:
+def viterbi(X: torch.Tensor, values: torch.Tensor, L: int, k: int, chunk: int | None = None, start: torch.Tensor | None = None) -> torch.Tensor:
     """The path through a bitshift trellis nearest each row of X in squared error. State s_t = (s_{t−1}·2^k + b_t) mod 2^L
-    emits values[s_t]; the first state is free (L bits), each later one costs k bits. Returns the states, (rows, T)."""
+    emits values[s_t]; the first state is free (L bits), each later one costs k bits. With `start` (one state per row), the
+    state before the first entry is given, and the first entry costs k bits too. Returns the states, (rows, T)."""
     # States s = r·2^k + b with the same r = s >> k share their predecessors r + h·2^(L−k), h < 2^k, so one minimum over
     # the cost viewed as (2^k, 2^(L−k)) serves 2^k states at once.
     nb, R = 1 << k, 1 << (L - k)
@@ -142,6 +143,9 @@ def viterbi(X: torch.Tensor, values: torch.Tensor, L: int, k: int, chunk: int | 
         x = X[b : b + chunk].to(DEVICE, torch.float32)
         B, T = x.shape
         cost = (x[:, :1] - C[None, :]).square()
+        if start is not None:
+            first = ((start[b : b + chunk, None].to(DEVICE) << k) | torch.arange(nb, device=DEVICE)[None, :]) & ((1 << L) - 1)
+            cost = torch.full_like(cost, torch.inf).scatter(1, first, cost.gather(1, first))
         back = torch.empty(T, B, R, dtype=torch.uint8, device=DEVICE)
         for t in range(1, T):
             best, arg = cost.view(B, nb, R).min(1)
@@ -198,7 +202,7 @@ def restrict_trellis(net: Net, core: str, label: str, domain: Domain, given: tor
         if not (torch.equal(v[states], Q) and is_trellis_path(states, domain.state_bits, int(domain.bits))):
             raise ValueError("the given projection is not a path through this trellis")
     c.data = torch.movedim(Q.reshape(shape), -1, ax)
-    c.domain = Domain(domain.kind, domain.bits, levels=domain.levels, axis=label, state_bits=domain.state_bits)
+    c.domain = Domain(domain.kind, domain.bits, levels=domain.levels, axis=label, state_bits=domain.state_bits, fixed_start=domain.fixed_start)
     return n
 
 
@@ -342,20 +346,51 @@ class TrellisCode:
         return restrict_trellis(net, core, "t", self.domain, given=None if settled is None else self._seqs(settled))
 
 
-def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list[int], incoherent: bool = True) -> list[Net]:
+class RowTrellisCode:
+    """Each row as one trellis path along its columns, from state 0: k bits per entry and nothing else, and a state is 12
+    consecutive bits of the row's own stream, so reading an entry touches no other row. Block LDLQ settles `width` columns
+    at a time; each block's Viterbi also looks `look` columns ahead, at their targets as they stand, and keeps only the block."""
+
+    def __init__(self, L: int, k: int, T: int = 256, width: int = 16, look: int = 8, seed: int = 0):
+        self.L, self.k, self.width, self.look = L, k, width, look
+        self.values = trellis_values(L, k, T, seed)
+        self.domain = TRELLIS(self.values, L, k, fixed_start=True)
+        self.state = None
+
+    def step(self, j, X, ahead):
+        """Column j onward, `width` columns: the block's settled values, continuing each row's path."""
+        if j == 0:
+            self.state = torch.zeros(len(X), dtype=torch.long)
+        w = X.shape[1]
+        path = viterbi(torch.cat([X, ahead], 1), self.values, self.L, self.k, start=self.state)[:, :w]
+        self.state = path[:, -1]
+        return self.values.to(X.dtype)[path]
+
+    def apply(self, net, core, rows, cols, settled=None):
+        if settled is None:  # no sweep: each whole row at once
+            X = net.cores[core].data
+            settled = self.values.to(X.dtype)[viterbi(X, self.values, self.L, self.k, start=torch.zeros(len(X), dtype=torch.long))]
+        return restrict_trellis(net, core, cols, self.domain, given=settled)
+
+
+def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list[int], incoherent: bool = True,
+               in_seed: int | None = None, out_rot: bool = True) -> list[Net]:
     """(Gauge: incoherence →) Split(scale, per row, by RMS) → (block LDLQ sweep →) the code's Restrict and Split, for
     matrices that read the same input. They share one input transform (computed once at runtime), keep their own output
     transforms, and are swept together as one taller matrix: rows do not interact under Refit, so this is the same as
     sweeping each alone. With H, columns are settled `code.width` at a time and the later ones re-solved under H;
-    without H, the code is applied directly (round to nearest)."""
+    without H, the code is applied directly (round to nearest). `in_seed` is one input rotation shared by several calls;
+    without `out_rot` the rows are not rotated at all (the column-wise TrellisCode splits the rows, so it needs them rotated)."""
     Ws = [W.cpu().double() for W in Ws]
     n = Ws[0].shape[1]
-    rows, cols = ("u", "v") if incoherent else ("o", "i")
-    R_in = rht(n, seeds[0] + 1) if incoherent else None
+    rows, cols = ("u" if out_rot else "o", "v") if incoherent else ("o", "i")
+    R_in = rht(n, seeds[0] + 1 if in_seed is None else in_seed) if incoherent else None
     nets = []
     for W, s in zip(Ws, seeds):
         net = matrix_net(W)
-        nets.append(incoherence(net, rht(W.shape[0], s), R_in) if incoherent else net)
+        if incoherent:
+            net = incoherence(net, rht(W.shape[0], s), R_in) if out_rot else incoherence_in(net, R_in)
+        nets.append(net)
     X = torch.cat([net.cores["W"].data for net in nets])
     S = X.pow(2).mean(1).sqrt().clamp(min=1e-12)
     settled = None
@@ -365,7 +400,10 @@ def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list
 
         def project(j, x, T):
             xs = x[:, None] if code.width == 1 else x
-            q = code.project(xs / S[:, None])
+            if isinstance(code, RowTrellisCode):
+                q = code.step(j, xs / S[:, None], T[:, j + xs.shape[1] : j + xs.shape[1] + code.look] / S[:, None])
+            else:
+                q = code.project(xs / S[:, None])
             settled[:, j : j + code.width] = q
             q = q * S[:, None]
             return q[:, 0] if code.width == 1 else q

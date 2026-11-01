@@ -256,7 +256,7 @@ def word(program, W, H, seed, trellis, in_seed=None, out_rot=True):
         return ops.gptq_lazy(W, H, b, 64)
     if fam == "lm":
         return N.nested_words([W], H, [seed], b, [b], 0.4, [1.0], N.lloyd_max(b), in_seed=in_seed, out_rot=out_rot)[b][0]
-    return C.ldlq_words([W], H, trellis[b], [seed])[0]
+    return C.ldlq_words([W], H, trellis[b], [seed], in_seed=in_seed, out_rot=out_rot)[0]
 
 
 def embedding_buckets(V, first=256):
@@ -320,17 +320,17 @@ def embed_word(W, H, program, seed, block=None, rec=None):
         return Dense(torch.cat([q.W for q in parts], 1), sum(q.bits for q in parts))
     lookup = H is None or bool(torch.equal(H, torch.eye(len(H), dtype=H.dtype)))  # a lookup table: plain rounding, no sweep
     R = C.rht(W.shape[1], seed)
-    code = C.TrellisCode(12, b, T=EMBED_T) if fam == "tr" else C.ScalarCode(SET(N.lloyd_max(b).tolist()))
+    code = trellis_code(b, EMBED_T) if fam == "tr" else C.ScalarCode(SET(N.lloyd_max(b).tolist()))
     rows = W.shape[0]
-    pad = (-rows) % EMBED_T if fam == "tr" else 0  # the trellis needs whole runs of rows: zero rows, dropped after
+    pad = (-rows) % EMBED_T if fam == "tr" and TRELLIS_ROWS is None else 0  # the trellis over rows needs whole runs of them: zero rows, dropped after
     Wp = torch.cat([W.double(), torch.zeros(pad, W.shape[1], dtype=torch.float64)]) if pad else W.double()
     Wr = (Wp.float().to(DEV) @ R.float().T.to(DEV)).double().cpu()  # the rotation on the GPU (a wide table is a large product)
     net = C.ldlq_words([Wr], None if lookup else R @ H.double() @ R.T, code, [seed], incoherent=False)[0]
     Q = net.matrix(dtype=torch.float64).reshape(Wp.shape)[:rows]  # the trellis splits rows into runs
-    if rec is not None and fam == "lm":  # what the runtime stores: codes, row scales and the rotation's seed
+    if rec is not None and fam in ("lm", "tr"):  # what the runtime stores: codes, row scales and the rotation's seed
         import lamq_export
-        rec.append({"codes": lamq_export.codes_of(net.cores["W"].data.double(), N.lloyd_max(b).double()), "scales": net.cores["W.S"].data.double(),
-                    "seed": seed, "width": W.shape[1], "bits": b})
+        codes = lamq_export.codes_of(net.cores["W"].data.double(), N.lloyd_max(b).double()) if fam == "lm" else lamq_export.trellis_symbols(net.cores["W"], b)
+        rec.append({"codes": codes, "scales": net.cores["W.S"].data.double(), "seed": seed, "width": W.shape[1], "bits": b, "values": None if fam == "lm" else code.values})
     return Dense((Q.float().to(DEV) @ R.float().to(DEV)).double().cpu(), net.rate_bits() * rows / (rows + pad))
 
 
@@ -351,6 +351,11 @@ def quantize_embedding(E, spec, H, order, seed0=7000, block=None, name=None):
 
 
 EXPORT = None  # a lamq_export.Exporter when --export is given
+TRELLIS_ROWS = None  # --trellis-rows: (width, look) for trellis paths along each row, which the Apple Silicon runtime reads, instead of along each column
+
+
+def trellis_code(k, T):
+    return C.TrellisCode(12, k, T=T) if TRELLIS_ROWS is None else C.RowTrellisCode(12, k, T=256, width=TRELLIS_ROWS[0], look=TRELLIS_ROWS[1])
 
 
 class KVQuant:
@@ -600,13 +605,15 @@ def main():
     ap.add_argument("--data", choices=["wikitext", "mix"], default="wikitext", help="calibration text (and token frequencies)")
     ap.add_argument("--eval-mix", type=int, default=0, help="held-out windows per text-mix source to evaluate (0: 8 with --data mix)")
     ap.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
+    ap.add_argument("--trellis-rows", default="", help="width,look: run trellis paths along each row, settling width columns at a time and looking look columns ahead")
     ap.add_argument("--rot", choices=["both", "in-shared"], default="both",
-                    help="Lloyd–Max words: rotate both sides of each matrix, or only the input, with one rotation shared by a stage's matrices")
-    ap.add_argument("--export", default="", help="write the plan in the Apple Silicon runtime's format (Lloyd–Max and 16-bit plans only)")
+                    help="Lloyd–Max and trellis words: rotate both sides of each matrix, or only the input, with one rotation shared by a stage's matrices")
+    ap.add_argument("--export", default="", help="write the plan in the Apple Silicon runtime's format")
     ap.add_argument("--save", default="", help="keep the quantized text weights (bf16) here, for later evaluation (public_eval.py dense:)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
-    global EXPORT
+    global EXPORT, TRELLIS_ROWS
+    TRELLIS_ROWS = tuple(int(x) for x in args.trellis_rows.split(",")) if args.trellis_rows else None
     if args.export:
         import lamq_export
         assert args.seeds <= 1, "--export records each matrix's seed; --seeds picks among several"
@@ -737,7 +744,7 @@ def main():
     def trellis_for(rows):
         """The trellis codes for a matrix with `rows` outputs: runs of T_tr, or the largest of 320, 256, 128, 64 that tiles them."""
         T = T_tr if rows % T_tr == 0 else next(t for t in (320, 256, 128, 64) if rows % t == 0)
-        return {k: codes.setdefault((k, T), C.TrellisCode(12, k, T=T)) for k in sorted({parse(q)[1] for q in progs if parse(q)[0] == "tr"})}
+        return {k: codes.setdefault((k, T), trellis_code(k, T)) for k in sorted({parse(q)[1] for q in progs if parse(q)[0] == "tr"})}
     cross = any(parse(q)[2] for q in progs)
     gauges = [g for g in args.gauges.split(",") if g]
     alphas = [float(x) for x in args.gauge_alphas.split(",")]

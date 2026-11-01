@@ -1,5 +1,5 @@
-"""Loads a LookAtMyQuant export into an mlx_lm model: Lloyd–Max matrices, frequency-bucketed embedding and per-layer
-tables, every other weight dense.
+"""Loads a LookAtMyQuant export into an mlx_lm model: Lloyd–Max and trellis matrices, frequency-bucketed embedding and
+per-layer tables, every other weight dense.
 
     model, tok = load("path/to/export")
 """
@@ -49,8 +49,8 @@ _LOOKUP_SRC = """
     const uint tid = thread_position_in_threadgroup.x, nt = threads_per_threadgroup.x;
     const uint tok = (uint)ids[t];
     const uint k = (uint)bucket_of[tok], loc = (uint)local_of[tok];
-    const uint b = binfo[4 * k], soff = binfo[4 * k + 3];
-    const device uint* rw = codes + (ulong)binfo[4 * k + 1] + (ulong)loc * binfo[4 * k + 2];
+    const uint b = binfo[5 * k], soff = binfo[5 * k + 3], tvi = binfo[5 * k + 4];  // tvi: 0 for Lloyd–Max levels, i + 1 for row i of tvals
+    const device uint* rw = codes + (ulong)binfo[5 * k + 1] + (ulong)loc * binfo[5 * k + 2];
     device bfloat16_t* o = out + (ulong)t * D + j * WIDTH;
     if (b == 16) {  // a dense bucket: bf16 values, two to a word, not rotated
         for (uint i = tid; i < WIDTH; i += nt) {
@@ -62,8 +62,14 @@ _LOOKUP_SRC = """
     threadgroup float buf[WIDTH];
     const float sc = (float)scales[(ulong)(soff + loc) * SLICES + j];
     const device float* lv = levels + b * 256;
+    const device float* tv = tvals + (ulong)(tvi ? tvi - 1 : 0) * 4096;
     const uint mask = (1u << b) - 1u;
     for (uint g = tid; g < WIDTH / 32; g += nt) {
+        if (tvi) {
+            const device uint* tw = rw + (j * (WIDTH / 32) + WIDTH / 32 - 1 - g) * b;
+            for (uint q = 0; q < 32; q++) buf[g * 32 + q] = tv[lamq_tr_state(tw, b, g, q)] * sc;
+            continue;
+        }
         const device uint* gw = rw + (j * (WIDTH / 32) + g) * b;
         ulong acc = 0; uint have = 0, wi = 0;
         for (uint q = 0; q < 32; q++) {
@@ -101,8 +107,8 @@ _LOOKUP_SRC = """
     const device float* sg = signs + ((ulong)k * SLICES + j) * WIDTH;
     for (uint i = tid; i < WIDTH; i += nt) o[i] = (bfloat16_t)(buf[i] * norm * sg[i]);
 """
-_lookup = mx.fast.metal_kernel(name="lamq_lookup", input_names=["ids", "bucket_of", "local_of", "binfo", "codes", "scales", "levels", "signs", "Pm"],
-                               output_names=["out"], source=_LOOKUP_SRC)
+_lookup = mx.fast.metal_kernel(name="lamq_lookup", input_names=["ids", "bucket_of", "local_of", "binfo", "codes", "scales", "levels", "tvals", "signs", "Pm"],
+                               output_names=["out"], source=_LOOKUP_SRC, header=lamq.TRELLIS_HEADER)
 
 FUSE_MAX_N = 12288  # widest input whose rotation runs inside the matrix–vector kernel
 
@@ -112,18 +118,20 @@ def _levels(bits):
 
 
 class LMLinear(nn.Module):
-    """y = R_outᵀ · S ⊙ L[Q] · R_in x, or S ⊙ L[Q] · R_in x for a matrix rotated on the input side only (s_out None)."""
+    """y = R_outᵀ · S ⊙ L[Q] · R_in x, or S ⊙ L[Q] · R_in x for a matrix rotated on the input side only (s_out None).
+    With `trellis` (the code's state values), V[state] in place of L[Q]."""
 
-    def __init__(self, codes, scales, s_in, s_out, bits):
+    def __init__(self, codes, scales, s_in, s_out, bits, trellis=None):
         super().__init__()
         self.codes = codes.view(mx.uint32)
         self.scales = scales.astype(mx.float16)
-        self.levels = _levels(bits)
+        self.levels = _levels(bits) if trellis is None else trellis
+        self.trellis = trellis is not None
         self.bits, self.m, self.n = bits, scales.shape[0], s_in.shape[0]
         self.r_in = lamq.Rot(np.array(s_in.astype(mx.float32)))
         self.r_out = None if s_out is None else lamq.Rot(np.array(s_out.astype(mx.float32)))
         # one token: the input rotation and the product in one launch, for inputs narrow enough that the rotation is cheap
-        self.fused = lamq.RotGemv(self.r_in, self.codes, self.levels, self.scales, self.m, bits) if self.n <= FUSE_MAX_N else None
+        self.fused = lamq.RotGemv(self.r_in, self.codes, self.levels, self.scales, self.m, bits) if self.n <= FUSE_MAX_N and trellis is None else None
         self.freeze()
 
     def __call__(self, x):
@@ -135,12 +143,14 @@ class LMLinear(nn.Module):
             return self.r_out.bwd(y.astype(mx.float32)).astype(x.dtype)
         T = int(np.prod(lead))
         xr = self.r_in.many(x) if T > 1 else self.r_in.fwd(x.astype(mx.float32)).astype(mx.float16)
+        code = (self.codes, self.levels, self.scales, self.m, self.n, self.bits)
+        gemv, gemm, dequant = (lamq.tr_gemv, lamq.tr_gemm_few, lamq.tr_dequant) if self.trellis else (lamq.lm_gemv, lamq.lm_gemm_few, lamq.lm_dequant)
         if T == 1:
-            y = lamq.lm_gemv(xr.reshape(-1), self.codes, self.levels, self.scales, self.m, self.n, self.bits).reshape(*lead, self.m)
+            y = gemv(xr.reshape(-1), *code).reshape(*lead, self.m)
         elif T <= lamq.GEMM_MAX_T:  # a short prompt: from the codes, without expanding them
-            y = lamq.lm_gemm_few(xr.reshape(T, self.n), self.codes, self.levels, self.scales, self.m, self.n, self.bits).reshape(*lead, self.m)
+            y = gemm(xr.reshape(T, self.n), *code).reshape(*lead, self.m)
         else:
-            y = xr @ lamq.lm_dequant(self.codes, self.levels, self.scales, self.m, self.n, self.bits).T
+            y = xr @ dequant(*code).T
         if self.r_out is None:
             return y.astype(x.dtype)
         return self.r_out.bwd(y.astype(mx.float32)).astype(x.dtype)
@@ -151,7 +161,7 @@ class LMTable(nn.Module):
     slices (Gemma 4's per-layer inputs) has one rotation and one row scale per slice. __call__ looks rows up; as_linear
     is the tied output head (every row, each bucket in its own rotated basis)."""
 
-    def __init__(self, W, name, meta):
+    def __init__(self, W, name, meta, trellis=None):
         super().__init__()
         V, d = meta["shape"]
         self.V, self.d, self.block = V, d, meta["block"] or d
@@ -170,9 +180,10 @@ class LMTable(nn.Module):
             else:
                 width = self.block
                 wpad = -(-width // 32) * 32
+                tr = b.get("family") == "tr"
                 self.buckets.append({"kind": "lm", "bits": b["bits"], "codes": W[f"{key}.codes"].view(mx.uint32), "scales": W[f"{key}.scales"].astype(mx.float32),
-                                     "rot": lamq.Rot(np.array(W[f"{key}.signs"].astype(mx.float32))), "width": width, "wpad": wpad,
-                                     "levels": _levels(b["bits"])})
+                                     "rot": lamq.Rot(np.array(W[f"{key}.signs"].astype(mx.float32))), "width": width, "wpad": wpad, "trellis": tr,
+                                     "levels": trellis[b["bits"]] if tr else _levels(b["bits"])})
         self.bucket_of, self.local_of = mx.array(bucket_of), mx.array(local_of)
         self.inv = mx.array(np.argsort(np.concatenate(order)).astype(np.int32))  # concatenated bucket outputs → token order
         self._one_kernel_lookup()
@@ -183,8 +194,11 @@ class LMTable(nn.Module):
         launch. The buckets' own arrays become views of it."""
         self.fast = self.block % 32 == 0
         if not self.fast:
+            assert not any(b.get("trellis") for b in self.buckets), "a trellis table needs a block that is a multiple of 32"
             return
         parts, binfo, scales, signs, woff, soff = [], [], [], [], 0, 0
+        tbits = sorted({b["bits"] for b in self.buckets if b.get("trellis")})
+        self.tvals = mx.stack([next(b["levels"] for b in self.buckets if b.get("trellis") and b["bits"] == k) for k in tbits]).reshape(-1) if tbits else mx.zeros((4096,), mx.float32)
         ones = mx.ones((self.slices, self.block), mx.float32)
         for b in self.buckets:
             if b["kind"] == "dense":
@@ -193,7 +207,7 @@ class LMTable(nn.Module):
             else:
                 words, rows, bits, sg = b["codes"], b["codes"].shape[0], b["bits"], b["rot"].s.reshape(self.slices, self.block)
                 scales.append(b["scales"].astype(mx.float16).reshape(-1))
-            binfo.append([bits, woff, words.shape[1], soff])
+            binfo.append([bits, woff, words.shape[1], soff, tbits.index(bits) + 1 if b.get("trellis") else 0])
             parts.append(words.reshape(-1)); signs.append(sg)
             woff += words.size
             soff += rows if b["kind"] != "dense" else 0
@@ -202,12 +216,12 @@ class LMTable(nn.Module):
         self.scales_all = mx.concatenate(scales) if scales else mx.zeros((1,), mx.float16)
         self.signs_all = mx.stack(signs).reshape(-1)
         lv = np.zeros((17, 256), np.float32)
-        for bits in {b["bits"] for b in self.buckets if b["kind"] == "lm"}:
+        for bits in {b["bits"] for b in self.buckets if b["kind"] == "lm" and not b["trellis"]}:
             lv[bits, : 2 ** bits] = np.array(_levels(bits))
         self.levels_all = mx.array(lv.reshape(-1))
         rot = next((b["rot"] for b in self.buckets if b["kind"] == "lm"), lamq.Rot(np.ones(self.block)))
         self.A, self.p, self.Pm_bwd = rot.A, rot.p, rot.Pm_bwd
-        for (bits, w0, stride, _), b in zip(binfo, self.buckets):  # the per-bucket arrays (the output head reads them) share the buffer
+        for (bits, w0, stride, *_), b in zip(binfo, self.buckets):  # the per-bucket arrays (the output head reads them) share the buffer
             if b["kind"] == "lm":
                 b["codes"] = self.codes_all[w0 : w0 + b["codes"].size].reshape(-1, stride)
         mx.eval(self.codes_all, self.scales_all, self.signs_all, *[b["codes"] for b in self.buckets if b["kind"] == "lm"])
@@ -228,7 +242,7 @@ class LMTable(nn.Module):
         if self.fast:
             T = flat.shape[0]
             out = _lookup(inputs=[flat.astype(mx.int32), self.bucket_of, self.local_of, self.binfo, self.codes_all, self.scales_all, self.levels_all,
-                                  self.signs_all, self.Pm_bwd],
+                                  self.tvals, self.signs_all, self.Pm_bwd],
                           template=[("WIDTH", self.block), ("SLICES", self.slices), ("D", self.d), ("A", self.A), ("P", self.p)],
                           grid=(self.slices * self.nt, T, 1), threadgroup=(self.nt, 1, 1), output_shapes=[(T, self.d)], output_dtypes=[mx.bfloat16])[0]
             return out.reshape(*shp, self.d)
@@ -252,13 +266,14 @@ class LMTable(nn.Module):
                 continue
             xr = b["rot"].many(x) if x.shape[0] > 1 else b["rot"].fwd(x).astype(mx.float16)
             m = b["codes"].shape[0]
+            code = (b["codes"], b["levels"], b["scales"][:, 0].astype(mx.float16), m, self.d, b["bits"])
+            gemv, gemm, dequant = (lamq.tr_gemv, lamq.tr_gemm_few, lamq.tr_dequant) if b["trellis"] else (lamq.lm_gemv, lamq.lm_gemm_few, lamq.lm_dequant)
             if x.shape[0] == 1:
-                outs.append(lamq.lm_gemv(xr.reshape(-1), b["codes"], b["levels"], b["scales"][:, 0].astype(mx.float16), m, self.d, b["bits"])[None].astype(mx.float32))
+                outs.append(gemv(xr.reshape(-1), *code)[None].astype(mx.float32))
             elif x.shape[0] <= lamq.GEMM_MAX_T:  # a short prompt: from the codes
-                outs.append(lamq.lm_gemm_few(xr, b["codes"], b["levels"], b["scales"][:, 0].astype(mx.float16), m, self.d, b["bits"]))
+                outs.append(gemm(xr, *code))
             else:
-                Wb = lamq.lm_dequant(b["codes"], b["levels"], b["scales"][:, 0].astype(mx.float16), m, self.d, b["bits"])
-                outs.append((xr @ Wb.T).astype(mx.float32))
+                outs.append((xr @ dequant(*code).T).astype(mx.float32))
         y = mx.concatenate(outs, axis=-1)[:, self.inv]
         return y.reshape(*lead, self.V).astype(h.dtype)
 
@@ -283,12 +298,14 @@ def load(path):
     model = model_class(args_class.from_dict(config))
     aux = (".codes", ".scales", ".s_in", ".s_out", ".rows", ".signs", ".dense")
     coded = set(meta["matrices"]) | set(meta["tables"])
-    dense = {k: v for k, v in W.items() if k not in coded and not k.endswith(aux)}
+    trellis = {int(k[len("trellis.k"):]): v.astype(mx.float32) for k, v in W.items() if k.startswith("trellis.")}  # state values, by k
+    dense = {k: v for k, v in W.items() if k not in coded and not k.endswith(aux) and not k.startswith("trellis.")}
     model.load_weights(list(model.sanitize(dense).items()), strict=False)
     rename = lambda n: next(iter(model.sanitize({n: mx.zeros((1,))})))  # Hugging Face name → mlx_lm name
     for name, m in meta["matrices"].items():
-        _set(model, rename(name).removesuffix(".weight"), LMLinear(W[f"{name}.codes"], W[f"{name}.scales"], W[f"{name}.s_in"], W.get(f"{name}.s_out"), m["bits"]))
+        _set(model, rename(name).removesuffix(".weight"), LMLinear(W[f"{name}.codes"], W[f"{name}.scales"], W[f"{name}.s_in"], W.get(f"{name}.s_out"), m["bits"],
+                                                                   trellis[m["bits"]] if m.get("family") == "tr" else None))
     for name, t in meta["tables"].items():
-        _set(model, rename(name).removesuffix(".weight"), LMTable(W, name, t))
+        _set(model, rename(name).removesuffix(".weight"), LMTable(W, name, t, trellis))
     model.eval()
     return model, load_tokenizer(path)

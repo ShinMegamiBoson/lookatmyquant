@@ -1,4 +1,4 @@
-"""LookAtMyQuant runtime for Apple Silicon (MLX): Lloyd–Max codes with randomized Hadamard rotations.
+"""LookAtMyQuant runtime for Apple Silicon (MLX): Lloyd–Max and trellis codes with randomized Hadamard rotations.
 
 A matrix W is stored as W ≈ R_outᵀ · diag(S) · L[Q] · R_in, where
   Q          b-bit codes, packed 32 to a group of b uint32 words,
@@ -7,6 +7,10 @@ A matrix W is stored as W ≈ R_outᵀ · diag(S) · L[Q] · R_in, where
   R = H·diag(s)  a randomized Hadamard transform, stored as its signs s;
                  H = kron(A, P)/√n with A a Sylvester Hadamard of order 2^a and P = 1, [[1,1],[1,−1]] or a Paley matrix.
 y = W x is computed as: x' = R_in x  →  y' = S ⊙ (L[Q] x')  →  y = R_outᵀ y'.
+
+A trellis matrix replaces L[Q] with V[state]: V holds the code's 4,096 state values. A row is one stream of k-bit symbols
+with later columns at lower bits, its runs of 32 stored last column first, so an entry's state is the 12 bits at its place in
+the stream: reading it touches no other row, and at most one word of the run before.
 """
 
 from __future__ import annotations
@@ -224,6 +228,43 @@ def pack_codes(Q: np.ndarray, bits: int) -> np.ndarray:
 
 # ----------------------------------------------------------------------------- kernels
 
+TRELLIS_HEADER = """
+// The state of entry k of run g, whose words start at gw. Nothing comes before a row's first run: its path starts from state 0.
+inline uint lamq_tr_state(const device uint* gw, uint bits, uint g, uint k) {
+    const uint bit = (31 - k) * bits, wi = bit >> 5, off = bit & 31u;
+    uint s = gw[wi] >> off;
+    if (off + 12 > 32 && (wi + 1 < bits || g > 0)) s |= gw[wi + 1] << (32 - off);
+    return s & 4095u;
+}
+"""
+
+_TR_GEMV_SRC = """
+    const uint m = dims[0], n = dims[1], wpr = dims[2], G = n / 32;
+    const uint lane = thread_index_in_simdgroup;
+    const uint sub = lane / LPR, sl = lane % LPR;
+    const uint row = (threadgroup_position_in_grid.x * ROWS + simdgroup_index_in_threadgroup) * (32 / LPR) + sub;
+    const bool live = row < m;
+    const device uint* rc = codes + (ulong)(live ? row : 0) * wpr;
+    const uint ngroups = live ? G : 0;
+    float acc = 0.0f;
+    for (uint g = sl; g < ngroups; g += LPR) {
+        const device uint* gw = rc + (G - 1 - g) * BITS;
+        const device T* xg = x + g * 32;
+        #pragma unroll
+        for (uint k = 0; k < 32; k++) acc += values[lamq_tr_state(gw, BITS, g, k)] * (float)xg[k];
+    }
+    for (uint d = LPR / 2; d > 0; d /= 2) acc += simd_shuffle_xor(acc, d);
+    if (live && sl == 0) y[row] = (T)(acc * (float)scales[row]);
+"""
+
+_TR_DEQ_SRC = """
+    const uint n = dims[1], G = n / 32;
+    const uint row = thread_position_in_grid.y, k = thread_position_in_grid.x & 31u, g = thread_position_in_grid.x >> 5;
+    if (row >= dims[0] || g >= G) return;
+    const device uint* gw = codes + (ulong)row * dims[2] + (G - 1 - g) * BITS;
+    w[(ulong)row * n + g * 32 + k] = (T)(values[lamq_tr_state(gw, BITS, g, k)] * (float)scales[row]);
+"""
+
 _GEMV_SRC = """
     // LPR lanes per row: a simdgroup handles 32/LPR rows, so short rows still keep every lane busy
     const uint m = dims[0], n = dims[1], wpr = dims[2];
@@ -336,6 +377,8 @@ _ROT_GEMV_SRC = """
     }
 """
 
+_tr_gemv = mx.fast.metal_kernel(name="lamq_tr_gemv", input_names=["x", "codes", "values", "scales", "dims"], output_names=["y"], source=_TR_GEMV_SRC, header=TRELLIS_HEADER)
+_tr_deq = mx.fast.metal_kernel(name="lamq_tr_dequant", input_names=["codes", "values", "scales", "dims"], output_names=["w"], source=_TR_DEQ_SRC, header=TRELLIS_HEADER)
 _gemv = mx.fast.metal_kernel(name="lamq_gemv", input_names=["x", "codes", "levels", "scales", "dims"], output_names=["y"], source=_GEMV_SRC)
 _rot_gemv = mx.fast.metal_kernel(name="lamq_rot_gemv", input_names=["x", "s", "Pm", "codes", "levels", "scales", "dims"], output_names=["y"],
                                  source=_ROT_GEMV_SRC)
@@ -359,6 +402,23 @@ def lm_gemv(x, codes, levels, scales, m, n, bits, dtype=mx.float16, lpr=None):
     return _gemv(inputs=[x, codes, levels, scales, dims], template=[("T", dtype), ("BITS", bits), ("ROWS", ROWS), ("LPR", lpr)],
                  grid=((m + rows_per_tg - 1) // rows_per_tg * ROWS * 32, 1, 1), threadgroup=(ROWS * 32, 1, 1),
                  output_shapes=[(m,)], output_dtypes=[dtype])[0]
+
+
+def tr_gemv(x, codes, values, scales, m, n, k, dtype=mx.float16):
+    """y' = S ⊙ (V[state] x) for one input vector x (already rotated)."""
+    lpr = lanes_per_row(n)
+    rows_per_tg = ROWS * (32 // lpr)
+    return _tr_gemv(inputs=[x, codes, values, scales, mx.array([m, n, codes.shape[1]], dtype=mx.uint32)],
+                    template=[("T", dtype), ("BITS", k), ("ROWS", ROWS), ("LPR", lpr)],
+                    grid=((m + rows_per_tg - 1) // rows_per_tg * ROWS * 32, 1, 1), threadgroup=(ROWS * 32, 1, 1),
+                    output_shapes=[(m,)], output_dtypes=[dtype])[0]
+
+
+def tr_dequant(codes, values, scales, m, n, k, dtype=mx.float16):
+    """S ⊙ V[state] as a dense (m, n) matrix (for inputs of more than one token)."""
+    return _tr_deq(inputs=[codes, values, scales, mx.array([m, n, codes.shape[1]], dtype=mx.uint32)],
+                   template=[("T", dtype), ("BITS", k)],
+                   grid=(n, m, 1), threadgroup=(min(n, 256), 1, 1), output_shapes=[(m, n)], output_dtypes=[dtype])[0]
 
 
 class RotGemv:
@@ -429,6 +489,15 @@ _GEMM_SRC = """
         for (uint tt = 0; tt < TT; tt++) simdgroup_store(acc[tt], y + ((ulong)ks * TP + tt * 8) * m + row0, m);
 """
 _gemm = mx.fast.metal_kernel(name="lamq_gemm_few", input_names=["x", "codes", "levels", "scales", "dims"], output_names=["y"], source=_GEMM_SRC)
+_TR_GEMM_SRC = _GEMM_SRC.replace("""    threadgroup float lv[256];
+""", "").replace("""    for (uint i = tid; i < (1u << BITS); i += NT) lv[i] = levels[i];
+""", "").replace("const device uint* gw = rc + g * BITS;", "const device uint* gw = rc + (ng - 1 - g) * BITS;").replace("""            const uint bit = (j0 + q) * BITS, wi = bit >> 5, off = bit & 31u;
+            uint c = gw[wi] >> off;
+            if (off + BITS > 32) c |= gw[wi + 1] << (32 - off);
+            w_[r * 32 + j0 + q] = lv[c & ((1u << BITS) - 1u)] * sc;
+""", """            w_[r * 32 + j0 + q] = values[lamq_tr_state(gw, BITS, g, j0 + q)] * sc;
+""").replace("L[Q]", "V[state]")
+_tr_gemm = mx.fast.metal_kernel(name="lamq_tr_gemm_few", input_names=["x", "codes", "values", "scales", "dims"], output_names=["y"], source=_TR_GEMM_SRC, header=TRELLIS_HEADER)
 GEMM_TG = 160  # threadgroups the few-token product aims for (by splitting the columns)
 GEMM_MAX_T = 32  # prompts up to this many tokens multiply from the codes; longer ones expand the codes to 16 bits first
 
@@ -444,6 +513,19 @@ def lm_gemm_few(x, codes, levels, scales, m, n, bits, sg=4):
     ks = max(1, min(n // 32 // 8, -(-GEMM_TG // tgs)))  # enough threadgroups to fill the GPU, at least 8 runs of 32 columns each
     y = _gemm(inputs=[x, codes, levels, scales, dims], template=[("BITS", bits), ("TT", tt), ("SG", sg)],
               grid=(tgs * sg * 32, ks, 1), threadgroup=(sg * 32, 1, 1), output_shapes=[(ks, tt * 8, m)], output_dtypes=[mx.float32])[0]
+    return (y.sum(0) if ks > 1 else y[0])[:T]
+
+
+def tr_gemm_few(x, codes, values, scales, m, n, k, sg=4):
+    """y = x · (S ⊙ V[state])ᵀ for x of at most GEMM_MAX_T rows (already rotated), as float32."""
+    T = x.shape[0]
+    tt = -(-T // 8)
+    if tt * 8 != T:
+        x = mx.concatenate([x, mx.zeros((tt * 8 - T, n), x.dtype)])
+    tgs = -(-m // (8 * sg))
+    ks = max(1, min(n // 32 // 8, -(-GEMM_TG // tgs)))
+    y = _tr_gemm(inputs=[x, codes, values, scales, mx.array([m, n, codes.shape[1]], dtype=mx.uint32)], template=[("BITS", k), ("TT", tt), ("SG", sg)],
+                 grid=(tgs * sg * 32, ks, 1), threadgroup=(sg * 32, 1, 1), output_shapes=[(ks, tt * 8, m)], output_dtypes=[mx.float32])[0]
     return (y.sum(0) if ks > 1 else y[0])[:T]
 
 
