@@ -1,0 +1,16 @@
+original: ppl 15.3147
+AWQ w4 g64  [sequential]
+  [AWQ w4 g64] reference + per-layer frame check: layer 8/32 (177s)
+  [AWQ w4 g64] reference + per-layer frame check: layer 16/32 (361s)
+  [AWQ w4 g64] reference + per-layer frame check: layer 24/32 (550s)
+  [AWQ w4 g64] reference + per-layer frame check: layer 32/32 (733s)
+  [AWQ w4 g64] frame end-to-end done (1298s)
+  => AWQ w4 g64: ppl ref 16.7094 | frame 16.7094 | max logit gap 1.23e-04 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final {'codes': 1.0, 'weights': 2.335010407250593e-09} | 4.31 bits/weight
+AWQ w3 g64  [sequential]
+  [AWQ w3 g64] reference + per-layer frame check: layer 8/32 (162s)
+  [AWQ w3 g64] reference + per-layer frame check: layer 16/32 (372s)
+  [AWQ w3 g64] reference + per-layer frame check: layer 24/32 (555s)
+  [AWQ w3 g64] reference + per-layer frame check: layer 32/32 (760s)
+  [AWQ w3 g64] frame end-to-end done (1501s)
+  => AWQ w3 g64: ppl ref 25.1789 | frame 25.1789 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final {'codes': 1.0, 'weights': 0.0} | 3.30 bits/weight
+done

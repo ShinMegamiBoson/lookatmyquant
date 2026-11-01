@@ -1,2 +1,10 @@
+__pycache__/
 .DS_Store
 .wrangler/
+cache/
+*.pt
+*.safetensors
+*.gguf
+*.log
+!results/completeness_*.log
+runtime_mlx/ref/

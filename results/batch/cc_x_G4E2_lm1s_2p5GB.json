@@ -1,0 +1,245 @@
+{
+ "program": "plan",
+ "model": "gemma-4-E2B-it",
+ "args": {
+  "program": "plan",
+  "model_path": "",
+  "size": "4B",
+  "model": "google/gemma-4-E2B-it",
+  "ctx": "512,2048",
+  "calib_len": 512,
+  "calib_source": "wikitext",
+  "rotation": "none",
+  "check_only": false,
+  "tasks": "",
+  "task_limit": 0,
+  "task_limits": "",
+  "hellaswag_n": 2000,
+  "task_bs": 0,
+  "calib": 64,
+  "eval": 64,
+  "chunk": 8,
+  "ft_epochs": 0,
+  "ft_lr": 3e-06,
+  "ft_lr_scale": 0.0003,
+  "ft_valid": 8,
+  "ft_input": "quant",
+  "layers": 0,
+  "dense": "",
+  "plan": "results/compiler/plans/x_G4E2_lm1s_2p5GB.json",
+  "gauges": "",
+  "gauge_alphas": "0,0.25,0.5",
+  "seeds": 1,
+  "data": "mix",
+  "eval_mix": 0,
+  "dtype": "float32",
+  "rot": "in-shared",
+  "export": "lamq/x_G4E2_lm1s_2p5GB",
+  "save": "compiler_plans/x_G4E2_lm1s_2p5GB.pt",
+  "out": "results/batch/cc_x_G4E2_lm1s_2p5GB.json"
+ },
+ "stages": "self_attn.q_proj+self_attn.k_proj+self_attn.v_proj → self_attn.o_proj → mlp.gate_proj+mlp.up_proj → mlp.down_proj → per_layer_input_gate → per_layer_projection | last layer: self_attn.q_proj → self_attn.o_proj → mlp.gate_proj+mlp.up_proj → mlp.down_proj → per_layer_input_gate → per_layer_projection",
+ "bits per weight (quantized linears)": 5.838118173543689,
+ "quantized weights": 1863057408.0,
+ "seconds per layer": [
+  21.3,
+  20.5,
+  20.6,
+  18.3,
+  25.5,
+  19.8,
+  23.0,
+  22.0,
+  20.6,
+  25.7,
+  21.6,
+  21.6,
+  20.6,
+  19.8,
+  23.1,
+  60.0,
+  70.1,
+  65.7,
+  53.5,
+  57.6,
+  57.3,
+  58.5,
+  56.0,
+  58.1,
+  64.0,
+  58.2,
+  55.1,
+  54.5,
+  57.2,
+  57.0,
+  58.2,
+  57.8,
+  53.9,
+  56.4,
+  59.7
+ ],
+ "quantize seconds": 1687,
+ "embedding bits per weight": 3.2309451219512195,
+ "embedding weights": 2751463424,
+ "bits per weight (linears and embedding)": 4.283559953381526,
+ "text weights": {
+  "weights": 4628569344,
+  "bits": 19991352832.0,
+  "GB": 2.498919104,
+  "bits per weight": 4.319121384216643
+ },
+ "plan": {
+  "target": "disk",
+  "target spec": {
+   "batch": 1,
+   "ctx": 0,
+   "ops": 0.0
+  },
+  "budget": 19775223808.0,
+  "cost": 19767631872.0,
+  "predicted kl": 0.02171955528299001,
+  "summary": {
+   "all linears": 5.839,
+   "layer 00": 7.314,
+   "layer 01": 6.097,
+   "layer 02": 6.097,
+   "layer 03": 6.075,
+   "layer 04": 6.991,
+   "layer 05": 6.097,
+   "layer 06": 7.14,
+   "layer 07": 6.271,
+   "layer 08": 6.097,
+   "layer 09": 6.118,
+   "layer 10": 6.097,
+   "layer 11": 6.075,
+   "layer 12": 6.249,
+   "layer 13": 6.335,
+   "layer 14": 6.409,
+   "layer 15": 6.003,
+   "layer 16": 5.41,
+   "layer 17": 5.416,
+   "layer 18": 5.712,
+   "layer 19": 5.469,
+   "layer 20": 5.725,
+   "layer 21": 5.428,
+   "layer 22": 6.021,
+   "layer 23": 6.021,
+   "layer 24": 5.744,
+   "layer 25": 5.663,
+   "layer 26": 5.91,
+   "layer 27": 5.91,
+   "layer 28": 5.91,
+   "layer 29": 5.559,
+   "layer 30": 5.317,
+   "layer 31": 5.317,
+   "layer 32": 5.021,
+   "layer 33": 5.033,
+   "layer 34": 5.582,
+   "role mlp.down_proj": 6.039,
+   "role mlp.gate_proj": 5.538,
+   "role mlp.up_proj": 5.793,
+   "role per_layer_input_gate": 6.729,
+   "role per_layer_projection": 7.437,
+   "role self_attn.k_proj": 8.014,
+   "role self_attn.o_proj": 5.984,
+   "role self_attn.q_proj": 5.773,
+   "role self_attn.v_proj": 8.014,
+   "embed programs by bucket (most frequent first)": [
+    "lm8",
+    "lm8",
+    "lm8",
+    "lm8",
+    "lm8",
+    "lm8",
+    "lm8",
+    "lm6",
+    "lm5",
+    "lm5",
+    "lm4"
+   ],
+   "embed bits per weight": 4.76,
+   "ple programs by bucket (most frequent first)": [
+    "lm8",
+    "lm8",
+    "lm6",
+    "lm5",
+    "lm6",
+    "lm6",
+    "lm5",
+    "lm5",
+    "lm4",
+    "lm3",
+    "lm2"
+   ],
+   "ple bits per weight": 2.969
+  }
+ },
+ "ppl": 1203508.995296106,
+ "kl": 0.15794544480741024,
+ "by ctx": {
+  "512": {
+   "ppl": 1203508.995296106,
+   "kl": 0.15794544480741024
+  },
+  "2048": {
+   "ppl": 555167.5108543553,
+   "kl": 0.16716020391322672
+  }
+ },
+ "mix": {
+  "arb_Arab": {
+   "ppl": 110.48144638353394,
+   "kl": 0.019600660540163517
+  },
+  "chat": {
+   "ppl": 40.95413852030848,
+   "kl": 0.028294378891587257
+  },
+  "cmn_Hani": {
+   "ppl": 330.98676721434987,
+   "kl": 0.02898057270795107
+  },
+  "code": {
+   "ppl": 11.597877962817797,
+   "kl": 0.01909608021378517
+  },
+  "deu_Latn": {
+   "ppl": 173.49490534072712,
+   "kl": 0.036211082711815834
+  },
+  "en": {
+   "ppl": 159.40009204879695,
+   "kl": 0.025434996001422405
+  },
+  "fra_Latn": {
+   "ppl": 118.79861500512854,
+   "kl": 0.026387633755803108
+  },
+  "hin_Deva": {
+   "ppl": 157.2346472104924,
+   "kl": 0.022080532275140285
+  },
+  "jpn_Jpan": {
+   "ppl": 170.72858723178047,
+   "kl": 0.026427303440868855
+  },
+  "kor_Hang": {
+   "ppl": 76.98751134211072,
+   "kl": 0.026525022462010384
+  },
+  "por_Latn": {
+   "ppl": 133.58205166092316,
+   "kl": 0.028588457964360714
+  },
+  "rus_Cyrl": {
+   "ppl": 130.98951641199878,
+   "kl": 0.028268786147236824
+  },
+  "spa_Latn": {
+   "ppl": 166.60928633322942,
+   "kl": 0.028732139617204666
+  }
+ },
+ "mix kl": 0.026509818979180776,
+ "eval seconds": 52
+}

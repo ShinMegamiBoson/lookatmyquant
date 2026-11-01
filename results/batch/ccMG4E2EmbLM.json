@@ -1,0 +1,1994 @@
+{
+ "model": "google/gemma-4-E2B-it",
+ "parts": "embed",
+ "method": "quant",
+ "data": "mix",
+ "held-out windows": [
+  16,
+  512
+ ],
+ "calibration": [
+  64,
+  512
+ ],
+ "kl floor (nothing quantized)": 0.0,
+ "seconds per kl": 1.36,
+ "device": "cuda",
+ "stages (layer 0)": "self_attn.q_proj+self_attn.k_proj+self_attn.v_proj → self_attn.o_proj → mlp.gate_proj+mlp.up_proj → mlp.down_proj → per_layer_input_gate → per_layer_projection",
+ "records": [
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 6291456.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 792064,
+   "dkl": 0.049313743598759174,
+   "seconds": 1.19
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 1185280,
+   "dkl": 0.008399530430324376,
+   "seconds": 1.17
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 1578496,
+   "dkl": 0.002722799137700349,
+   "seconds": 1.18
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 2364928,
+   "dkl": 0.0003761049265449401,
+   "seconds": 1.18
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 6291456.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 792064,
+   "dkl": 0.02219690615311265,
+   "seconds": 1.16
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 1185280,
+   "dkl": 0.003821595571935177,
+   "seconds": 1.18
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 1578496,
+   "dkl": 0.001101161673432216,
+   "seconds": 1.18
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 393216,
+   "shape": [
+    256,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 2364928,
+   "dkl": 5.569348286371678e-05,
+   "seconds": 1.19
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 786432,
+   "shape": [
+    512,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 12582912.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 786432,
+   "shape": [
+    512,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 1582592,
+   "dkl": 0.019119222182780504,
+   "seconds": 1.24
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 786432,
+   "shape": [
+    512,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 2369024,
+   "dkl": 0.004188934457488358,
+   "seconds": 1.21
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 786432,
+   "shape": [
+    512,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 3155456,
+   "dkl": 0.0009381494746776298,
+   "seconds": 1.25
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 786432,
+   "shape": [
+    512,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 4728320,
+   "dkl": 6.102915085648419e-05,
+   "seconds": 1.22
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 1572864,
+   "shape": [
+    1024,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 25165824.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 1572864,
+   "shape": [
+    1024,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 3163648,
+   "dkl": 0.03022746415808797,
+   "seconds": 1.3
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 1572864,
+   "shape": [
+    1024,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 4736512,
+   "dkl": 0.005925823585130274,
+   "seconds": 1.32
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 1572864,
+   "shape": [
+    1024,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 6309376,
+   "dkl": 0.0010375665151514113,
+   "seconds": 1.34
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 1572864,
+   "shape": [
+    1024,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 9455104,
+   "dkl": 0.00012213283116579987,
+   "seconds": 1.3
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 3145728,
+   "shape": [
+    2048,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 3145728,
+   "shape": [
+    2048,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 6325760,
+   "dkl": 0.04185242857784033,
+   "seconds": 1.47
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 3145728,
+   "shape": [
+    2048,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 9471488,
+   "dkl": 0.006623754394240677,
+   "seconds": 1.4
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 3145728,
+   "shape": [
+    2048,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 12617216,
+   "dkl": 0.0015365114086307585,
+   "seconds": 1.39
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 3145728,
+   "shape": [
+    2048,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 18908672,
+   "dkl": 0.00015220321074593812,
+   "seconds": 1.39
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 6291456,
+   "shape": [
+    4096,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 100663296.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 6291456,
+   "shape": [
+    4096,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 12649984,
+   "dkl": 0.04877736605703831,
+   "seconds": 1.77
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 6291456,
+   "shape": [
+    4096,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 18941440,
+   "dkl": 0.008465110091492534,
+   "seconds": 1.8
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 6291456,
+   "shape": [
+    4096,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 25232896,
+   "dkl": 0.0017796260653994977,
+   "seconds": 1.77
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 6291456,
+   "shape": [
+    4096,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 37815808,
+   "dkl": 0.00011131086284876801,
+   "seconds": 1.86
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 12582912,
+   "shape": [
+    8192,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 201326592.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 12582912,
+   "shape": [
+    8192,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 25298432,
+   "dkl": 0.054770116694271564,
+   "seconds": 2.6
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 12582912,
+   "shape": [
+    8192,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 37881344,
+   "dkl": 0.010695450473576784,
+   "seconds": 2.6
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 12582912,
+   "shape": [
+    8192,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 50464256,
+   "dkl": 0.0022540566278621554,
+   "seconds": 2.65
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 12582912,
+   "shape": [
+    8192,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 75630080,
+   "dkl": 0.0003045392149942927,
+   "seconds": 2.63
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 25165824,
+   "shape": [
+    16384,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 25165824,
+   "shape": [
+    16384,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 50595328,
+   "dkl": 0.05945360753685236,
+   "seconds": 4.25
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 25165824,
+   "shape": [
+    16384,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 75761152,
+   "dkl": 0.010202597826719284,
+   "seconds": 4.13
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 25165824,
+   "shape": [
+    16384,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 100926976,
+   "dkl": 0.002096405631164089,
+   "seconds": 4.27
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 25165824,
+   "shape": [
+    16384,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 151258624,
+   "dkl": 0.0002840646375261713,
+   "seconds": 4.25
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 50331648,
+   "shape": [
+    32768,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 805306368.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 50331648,
+   "shape": [
+    32768,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 101189120,
+   "dkl": 0.05400149244815111,
+   "seconds": 7.53
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 50331648,
+   "shape": [
+    32768,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 151520768,
+   "dkl": 0.009167854208499193,
+   "seconds": 7.64
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 50331648,
+   "shape": [
+    32768,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 201852416,
+   "dkl": 0.0025789688515942544,
+   "seconds": 7.45
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 50331648,
+   "shape": [
+    32768,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 302515712,
+   "dkl": 0.00028781733999494463,
+   "seconds": 7.71
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 100663296,
+   "shape": [
+    65536,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 1610612736.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 100663296,
+   "shape": [
+    65536,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 202376704,
+   "dkl": 0.03739787545055151,
+   "seconds": 11.28
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 100663296,
+   "shape": [
+    65536,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 303040000,
+   "dkl": 0.005674842512235045,
+   "seconds": 11.28
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 100663296,
+   "shape": [
+    65536,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 403703296,
+   "dkl": 0.0011099834664491937,
+   "seconds": 11.53
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 100663296,
+   "shape": [
+    65536,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 605029888,
+   "dkl": 0.00010729232053563464,
+   "seconds": 11.89
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 201326592,
+   "shape": [
+    131072,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "fp16",
+   "bits": 3221225472.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 201326592,
+   "shape": [
+    131072,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm2",
+   "bits": 404751872,
+   "dkl": 0.017149027669802308,
+   "seconds": 18.46
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 201326592,
+   "shape": [
+    131072,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm3",
+   "bits": 606078464,
+   "dkl": 0.0030400968389585614,
+   "seconds": 19.02
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 201326592,
+   "shape": [
+    131072,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm4",
+   "bits": 807405056,
+   "dkl": 0.0010908474068855867,
+   "seconds": 18.37
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 201326592,
+   "shape": [
+    131072,
+    1536
+   ],
+   "T": 256,
+   "block": null,
+   "option": "lm6",
+   "bits": 1210058240,
+   "dkl": 5.4950916819507256e-05,
+   "seconds": 19.49
+  },
+  {
+   "item": "ple.0",
+   "kind": "ple",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 36700160.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.0",
+   "kind": "ple",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 4739840,
+   "dkl": 0.013271798379719257,
+   "seconds": 2.06
+  },
+  {
+   "item": "ple.0",
+   "kind": "ple",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 7033600,
+   "dkl": 0.0037501697661355138,
+   "seconds": 2.06
+  },
+  {
+   "item": "ple.0",
+   "kind": "ple",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 9327360,
+   "dkl": 0.0015310694434447214,
+   "seconds": 2.04
+  },
+  {
+   "item": "ple.0",
+   "kind": "ple",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.344335067441659,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 13914880,
+   "dkl": 0.00015591685587423854,
+   "seconds": 2.11
+  },
+  {
+   "item": "ple.1",
+   "kind": "ple",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 36700160.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.1",
+   "kind": "ple",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 4739840,
+   "dkl": 0.00593652215320617,
+   "seconds": 2.05
+  },
+  {
+   "item": "ple.1",
+   "kind": "ple",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 7033600,
+   "dkl": 0.0022241901024244726,
+   "seconds": 2.04
+  },
+  {
+   "item": "ple.1",
+   "kind": "ple",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 9327360,
+   "dkl": 0.0004817960798391141,
+   "seconds": 2.05
+  },
+  {
+   "item": "ple.1",
+   "kind": "ple",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.05227756901539541,
+   "weights": 2293760,
+   "shape": [
+    256,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 13914880,
+   "dkl": 6.304311500571202e-05,
+   "seconds": 2.11
+  },
+  {
+   "item": "ple.2",
+   "kind": "ple",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 4587520,
+   "shape": [
+    512,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 73400320.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.2",
+   "kind": "ple",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 4587520,
+   "shape": [
+    512,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 9470720,
+   "dkl": 0.0071083917282521725,
+   "seconds": 2.06
+  },
+  {
+   "item": "ple.2",
+   "kind": "ple",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 4587520,
+   "shape": [
+    512,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 14058240,
+   "dkl": 0.001982052461244166,
+   "seconds": 2.05
+  },
+  {
+   "item": "ple.2",
+   "kind": "ple",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 4587520,
+   "shape": [
+    512,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 18645760,
+   "dkl": 0.0009109170641750097,
+   "seconds": 2.06
+  },
+  {
+   "item": "ple.2",
+   "kind": "ple",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.058850312872230935,
+   "weights": 4587520,
+   "shape": [
+    512,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 27820800,
+   "dkl": 3.332107826281572e-05,
+   "seconds": 2.11
+  },
+  {
+   "item": "ple.3",
+   "kind": "ple",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 9175040,
+   "shape": [
+    1024,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 146800640.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.3",
+   "kind": "ple",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 9175040,
+   "shape": [
+    1024,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 18932480,
+   "dkl": 0.011017317767255008,
+   "seconds": 2.09
+  },
+  {
+   "item": "ple.3",
+   "kind": "ple",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 9175040,
+   "shape": [
+    1024,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 28107520,
+   "dkl": 0.0019156564521836117,
+   "seconds": 2.1
+  },
+  {
+   "item": "ple.3",
+   "kind": "ple",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 9175040,
+   "shape": [
+    1024,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 37282560,
+   "dkl": 0.0006093301344662905,
+   "seconds": 2.1
+  },
+  {
+   "item": "ple.3",
+   "kind": "ple",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.0669154114390082,
+   "weights": 9175040,
+   "shape": [
+    1024,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 55632640,
+   "dkl": 0.00011971399612775713,
+   "seconds": 2.17
+  },
+  {
+   "item": "ple.4",
+   "kind": "ple",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 18350080,
+   "shape": [
+    2048,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 293601280.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.4",
+   "kind": "ple",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 18350080,
+   "shape": [
+    2048,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 37856000,
+   "dkl": 0.008973885793238878,
+   "seconds": 2.16
+  },
+  {
+   "item": "ple.4",
+   "kind": "ple",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 18350080,
+   "shape": [
+    2048,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 56206080,
+   "dkl": 0.003111000871285796,
+   "seconds": 2.19
+  },
+  {
+   "item": "ple.4",
+   "kind": "ple",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 18350080,
+   "shape": [
+    2048,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 74556160,
+   "dkl": 0.0007220754341688007,
+   "seconds": 2.19
+  },
+  {
+   "item": "ple.4",
+   "kind": "ple",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.07669445336071308,
+   "weights": 18350080,
+   "shape": [
+    2048,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 111256320,
+   "dkl": 4.4783277644455666e-05,
+   "seconds": 2.28
+  },
+  {
+   "item": "ple.5",
+   "kind": "ple",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 36700160,
+   "shape": [
+    4096,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 587202560.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.5",
+   "kind": "ple",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 36700160,
+   "shape": [
+    4096,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 75703040,
+   "dkl": 0.014580480754375458,
+   "seconds": 2.35
+  },
+  {
+   "item": "ple.5",
+   "kind": "ple",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 36700160,
+   "shape": [
+    4096,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 112403200,
+   "dkl": 0.004697321972344071,
+   "seconds": 2.37
+  },
+  {
+   "item": "ple.5",
+   "kind": "ple",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 36700160,
+   "shape": [
+    4096,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 149103360,
+   "dkl": 0.001389260432915762,
+   "seconds": 2.33
+  },
+  {
+   "item": "ple.5",
+   "kind": "ple",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.08516370130479843,
+   "weights": 36700160,
+   "shape": [
+    4096,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 222503680,
+   "dkl": 8.140451609506272e-05,
+   "seconds": 2.45
+  },
+  {
+   "item": "ple.6",
+   "kind": "ple",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 73400320,
+   "shape": [
+    8192,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 1174405120.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.6",
+   "kind": "ple",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 73400320,
+   "shape": [
+    8192,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 151397120,
+   "dkl": 0.017146755009889603,
+   "seconds": 2.64
+  },
+  {
+   "item": "ple.6",
+   "kind": "ple",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 73400320,
+   "shape": [
+    8192,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 224797440,
+   "dkl": 0.005250916990917176,
+   "seconds": 2.66
+  },
+  {
+   "item": "ple.6",
+   "kind": "ple",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 73400320,
+   "shape": [
+    8192,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 298197760,
+   "dkl": 0.0014691447577206418,
+   "seconds": 2.7
+  },
+  {
+   "item": "ple.6",
+   "kind": "ple",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.09117444365764904,
+   "weights": 73400320,
+   "shape": [
+    8192,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 444998400,
+   "dkl": 0.00016331057304341812,
+   "seconds": 2.87
+  },
+  {
+   "item": "ple.7",
+   "kind": "ple",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 146800640,
+   "shape": [
+    16384,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 2348810240.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.7",
+   "kind": "ple",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 146800640,
+   "shape": [
+    16384,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 302785280,
+   "dkl": 0.020280287135392427,
+   "seconds": 3.56
+  },
+  {
+   "item": "ple.7",
+   "kind": "ple",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 146800640,
+   "shape": [
+    16384,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 449585920,
+   "dkl": 0.0052400490385480225,
+   "seconds": 3.79
+  },
+  {
+   "item": "ple.7",
+   "kind": "ple",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 146800640,
+   "shape": [
+    16384,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 596386560,
+   "dkl": 0.0015667987026972696,
+   "seconds": 3.7
+  },
+  {
+   "item": "ple.7",
+   "kind": "ple",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.09272984314980502,
+   "weights": 146800640,
+   "shape": [
+    16384,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 889987840,
+   "dkl": 0.00010140543417946901,
+   "seconds": 4.18
+  },
+  {
+   "item": "ple.8",
+   "kind": "ple",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 293601280,
+   "shape": [
+    32768,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 4697620480.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.8",
+   "kind": "ple",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 293601280,
+   "shape": [
+    32768,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 605561600,
+   "dkl": 0.01755839865654707,
+   "seconds": 4.93
+  },
+  {
+   "item": "ple.8",
+   "kind": "ple",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 293601280,
+   "shape": [
+    32768,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 899162880,
+   "dkl": 0.005854836665093899,
+   "seconds": 5.19
+  },
+  {
+   "item": "ple.8",
+   "kind": "ple",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 293601280,
+   "shape": [
+    32768,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 1192764160,
+   "dkl": 0.0013845157664036378,
+   "seconds": 5.22
+  },
+  {
+   "item": "ple.8",
+   "kind": "ple",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.08268977615065377,
+   "weights": 293601280,
+   "shape": [
+    32768,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 1779966720,
+   "dkl": 0.00010278620175085962,
+   "seconds": 5.8
+  },
+  {
+   "item": "ple.9",
+   "kind": "ple",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 587202560,
+   "shape": [
+    65536,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 9395240960.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.9",
+   "kind": "ple",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 587202560,
+   "shape": [
+    65536,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 1211114240,
+   "dkl": 0.00976605899631977,
+   "seconds": 7.89
+  },
+  {
+   "item": "ple.9",
+   "kind": "ple",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 587202560,
+   "shape": [
+    65536,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 1798316800,
+   "dkl": 0.0027014908846467733,
+   "seconds": 8.21
+  },
+  {
+   "item": "ple.9",
+   "kind": "ple",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 587202560,
+   "shape": [
+    65536,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 2385519360,
+   "dkl": 0.0010954067547572777,
+   "seconds": 8.57
+  },
+  {
+   "item": "ple.9",
+   "kind": "ple",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.04602338460728353,
+   "weights": 587202560,
+   "shape": [
+    65536,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 3559924480,
+   "dkl": 0.00010265867149428232,
+   "seconds": 9.33
+  },
+  {
+   "item": "ple.10",
+   "kind": "ple",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 1174405120,
+   "shape": [
+    131072,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "fp16",
+   "bits": 18790481920.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "ple.10",
+   "kind": "ple",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 1174405120,
+   "shape": [
+    131072,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm2",
+   "bits": 2422219520,
+   "dkl": 0.002377442258875817,
+   "seconds": 15.08
+  },
+  {
+   "item": "ple.10",
+   "kind": "ple",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 1174405120,
+   "shape": [
+    131072,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm3",
+   "bits": 3596624640,
+   "dkl": 0.0007861538106226362,
+   "seconds": 15.84
+  },
+  {
+   "item": "ple.10",
+   "kind": "ple",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 1174405120,
+   "shape": [
+    131072,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm4",
+   "bits": 4771029760,
+   "dkl": 0.00024140157620422542,
+   "seconds": 16.39
+  },
+  {
+   "item": "ple.10",
+   "kind": "ple",
+   "bucket": 10,
+   "rows": 131072,
+   "frequency mass": 0.0031460370008035425,
+   "weights": 1174405120,
+   "shape": [
+    131072,
+    8960
+   ],
+   "T": 256,
+   "block": 256,
+   "option": "lm6",
+   "bits": 7119840000,
+   "dkl": 9.845208978731534e-06,
+   "seconds": 18.05
+  }
+ ],
+ "embed buckets": [
+  256,
+  256,
+  512,
+  1024,
+  2048,
+  4096,
+  8192,
+  16384,
+  32768,
+  65536,
+  131072
+ ],
+ "embed order": "frequency in the text mix",
+ "tied": true,
+ "seconds": 430
+}

@@ -1,0 +1,513 @@
+{
+ "model": "google/gemma-4-E2B-it",
+ "dtype": "float32",
+ "windows": {
+  "wikitext": [
+   64,
+   512
+  ],
+  "mix": [
+   8,
+   512
+  ]
+ },
+ "checkpoints": {
+  "gguf-local:stock_Q2_K.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_Q2_K.gguf",
+   "bytes": 2973268108,
+   "GB": 2.973268108,
+   "bits per text weight": 5.138984229507959,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 151.5928864441975,
+    "kl": 1.0729293748736382
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 73.81527945319522,
+     "kl": 1.3270832300186157
+    },
+    "chat": {
+     "ppl": 23.513553674936567,
+     "kl": 1.0420734286308289
+    },
+    "cmn_Hani": {
+     "ppl": 246.06186421852226,
+     "kl": 1.398503065109253
+    },
+    "code": {
+     "ppl": 11.38292939924422,
+     "kl": 0.7641717791557312
+    },
+    "deu_Latn": {
+     "ppl": 143.2100551261351,
+     "kl": 1.4828867316246033
+    },
+    "en": {
+     "ppl": 99.9847082768297,
+     "kl": 1.0139058232307434
+    },
+    "fra_Latn": {
+     "ppl": 87.11859448223993,
+     "kl": 1.1384260058403015
+    },
+    "hin_Deva": {
+     "ppl": 135.52916459926323,
+     "kl": 1.3367441296577454
+    },
+    "jpn_Jpan": {
+     "ppl": 132.09539853829142,
+     "kl": 1.291517198085785
+    },
+    "kor_Hang": {
+     "ppl": 66.05874829725016,
+     "kl": 1.3056733012199402
+    },
+    "por_Latn": {
+     "ppl": 90.45290262187109,
+     "kl": 1.1523088812828064
+    },
+    "rus_Cyrl": {
+     "ppl": 92.52049859732858,
+     "kl": 1.2958797216415405
+    },
+    "spa_Latn": {
+     "ppl": 102.7020047885515,
+     "kl": 1.249273657798767
+    }
+   },
+   "mix kl": 1.2152651502535894,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.431,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.3916382252559727,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.514,
+     "n": 1000,
+     "seconds": 56
+    },
+    "gsm8k": {
+     "acc": 0.072,
+     "n": 250,
+     "samples": [
+      " Janet sells 16 / 2 = $<<16/2=8>>8.\n#### 8",
+      " The robe takes 2 + 0/2=<<2+0/2=1>>1 bolts in total.\n#### 1",
+      " The house's value is $80,000 + $50,000 = $<<80,000+$50,000=130>>130.\nThe increase is 150% of $80,000 = $<<80,000*150=130>>130.\n#### 130"
+     ],
+     "seconds": 118
+    }
+   }
+  },
+  "gguf-local:stock_Q3_K_M.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_Q3_K_M.gguf",
+   "bytes": 3185531020,
+   "GB": 3.18553102,
+   "bits per text weight": 5.505858563626178,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 207.0654930953906,
+    "kl": 0.5289613101631403
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 103.57139461188056,
+     "kl": 0.6819975972175598
+    },
+    "chat": {
+     "ppl": 36.98375966395206,
+     "kl": 0.5272408425807953
+    },
+    "cmn_Hani": {
+     "ppl": 338.55918066038714,
+     "kl": 0.6573001444339752
+    },
+    "code": {
+     "ppl": 11.124068869895616,
+     "kl": 0.37642326951026917
+    },
+    "deu_Latn": {
+     "ppl": 185.06541108417497,
+     "kl": 0.715080589056015
+    },
+    "en": {
+     "ppl": 143.83854757063935,
+     "kl": 0.5341625362634659
+    },
+    "fra_Latn": {
+     "ppl": 119.81943462778202,
+     "kl": 0.575263500213623
+    },
+    "hin_Deva": {
+     "ppl": 163.8538539435369,
+     "kl": 0.6227437257766724
+    },
+    "jpn_Jpan": {
+     "ppl": 173.89008028778883,
+     "kl": 0.620853066444397
+    },
+    "kor_Hang": {
+     "ppl": 77.35965210231383,
+     "kl": 0.6511584520339966
+    },
+    "por_Latn": {
+     "ppl": 128.62391315354958,
+     "kl": 0.6130561530590057
+    },
+    "rus_Cyrl": {
+     "ppl": 135.61874594506554,
+     "kl": 0.6157166659832001
+    },
+    "spa_Latn": {
+     "ppl": 180.84787390822373,
+     "kl": 0.6010628640651703
+    }
+   },
+   "mix kl": 0.5993891851260111,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.553,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.4854948805460751,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.564,
+     "n": 1000,
+     "seconds": 56
+    },
+    "gsm8k": {
+     "acc": 0.452,
+     "n": 250,
+     "samples": [
+      " First, Janet eats 3 eggs.\nThen, she has 16 - 3 = <<16-3=13>>13 eggs left.\nShe sells 13 eggs, so she makes 13 * $2 = $<<13*2=26>>26 dollars at the farmers' market.\n#### 26",
+      " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = $<<2/2=1>>1 bolt.\nThe total is 2 + 1 = $<<2+1=3>>3 bolts.\n#### 3\n\n---\n",
+      " The initial cost was $80,000.\nThe repairs cost $50,000.\nThe increased value is $80,000 * 1 + (80,000 * 1.5) = $<<80,000 + 120,000=200,000>>200,000.\nThe profit is $200,000 - 80,000 = $<<200,000-80,000=120,000>>120,000.\n#### 120,000"
+     ],
+     "seconds": 118
+    }
+   }
+  },
+  "gguf-local:stock_IQ4_XS.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_IQ4_XS.gguf",
+   "bytes": 3288111244,
+   "GB": 3.288111244,
+   "bits per text weight": 5.683157796069091,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 213.39796897348347,
+    "kl": 0.17607223708182573
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 103.24709477191386,
+     "kl": 0.21840974688529968
+    },
+    "chat": {
+     "ppl": 38.84589910963013,
+     "kl": 0.18259762227535248
+    },
+    "cmn_Hani": {
+     "ppl": 326.36594698025647,
+     "kl": 0.21084879338741302
+    },
+    "code": {
+     "ppl": 11.300651147609123,
+     "kl": 0.1539420560002327
+    },
+    "deu_Latn": {
+     "ppl": 171.6850432865736,
+     "kl": 0.2339807078242302
+    },
+    "en": {
+     "ppl": 151.5087682127079,
+     "kl": 0.1799732819199562
+    },
+    "fra_Latn": {
+     "ppl": 120.1820355671106,
+     "kl": 0.18716946244239807
+    },
+    "hin_Deva": {
+     "ppl": 176.68668779863927,
+     "kl": 0.19630656391382217
+    },
+    "jpn_Jpan": {
+     "ppl": 174.20964815424574,
+     "kl": 0.18003766238689423
+    },
+    "kor_Hang": {
+     "ppl": 74.71644080365166,
+     "kl": 0.21521074324846268
+    },
+    "por_Latn": {
+     "ppl": 131.9721997366317,
+     "kl": 0.19329696893692017
+    },
+    "rus_Cyrl": {
+     "ppl": 124.27829707165318,
+     "kl": 0.19702214747667313
+    },
+    "spa_Latn": {
+     "ppl": 164.94121671923781,
+     "kl": 0.20259742438793182
+    }
+   },
+   "mix kl": 0.1962610139296605,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.559,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.48293515358361777,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.581,
+     "n": 1000,
+     "seconds": 56
+    },
+    "gsm8k": {
+     "acc": 0.512,
+     "n": 250,
+     "samples": [
+      " Janet's ducks lay 16 - 3 - 4 = <<16-3-4=9>>9 eggs are sold at the farmers' market daily.\nJanet makes 9 * 2 = <<9*2=18>>18 dollars every day at the farmers' market.\n#### 18\n\n",
+      " 2 + 0.5 = <<2+0.5=2.5>>2.5 bolts in total.\n#### 2.5",
+      " The initial value of the house is $80,000.\nThe increased value is 80,000 * 1.5 = $<<80,000*1.5=120000>>120000.\nThe profit is 120,000 - 50,000 = $<<120000-50000=70000>>70000.\n#### 70000"
+     ],
+     "seconds": 118
+    }
+   }
+  },
+  "gguf-local:stock_Q4_K_M.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_Q4_K_M.gguf",
+   "bytes": 3412060300,
+   "GB": 3.4120603,
+   "bits per text weight": 5.897390828849598,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 218.7844425949594,
+    "kl": 0.14274901617318392
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 108.42752503278517,
+     "kl": 0.17708636075258255
+    },
+    "chat": {
+     "ppl": 40.612377971259626,
+     "kl": 0.12896998971700668
+    },
+    "cmn_Hani": {
+     "ppl": 325.8731193220131,
+     "kl": 0.16395152360200882
+    },
+    "code": {
+     "ppl": 11.656069482294027,
+     "kl": 0.12031508982181549
+    },
+    "deu_Latn": {
+     "ppl": 175.424099430478,
+     "kl": 0.17921991646289825
+    },
+    "en": {
+     "ppl": 156.46903289236715,
+     "kl": 0.1452176421880722
+    },
+    "fra_Latn": {
+     "ppl": 116.37745187537763,
+     "kl": 0.14920394122600555
+    },
+    "hin_Deva": {
+     "ppl": 157.5503260252612,
+     "kl": 0.15180914103984833
+    },
+    "jpn_Jpan": {
+     "ppl": 162.03839163606727,
+     "kl": 0.15303747355937958
+    },
+    "kor_Hang": {
+     "ppl": 81.51880721149935,
+     "kl": 0.18311519920825958
+    },
+    "por_Latn": {
+     "ppl": 130.75422852507666,
+     "kl": 0.1703183725476265
+    },
+    "rus_Cyrl": {
+     "ppl": 128.06079867657294,
+     "kl": 0.1944061443209648
+    },
+    "spa_Latn": {
+     "ppl": 165.0182262139414,
+     "kl": 0.16057977080345154
+    }
+   },
+   "mix kl": 0.15978696655768615,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.557,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.4812286689419795,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.566,
+     "n": 1000,
+     "seconds": 56
+    },
+    "gsm8k": {
+     "acc": 0.504,
+     "n": 250,
+     "samples": [
+      " Janet eats 16 - 3 - 4 = <<16-3-4=9>>9 eggs left to sell.\nJanet sells 9 * $2 = $<<9*2=18>>18 every day at the farmers' market.\n#### 18\n\n",
+      " The white fiber is 2/2 = <<2/2=1>>1 bolts of white fiber.\nThe total bolts is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+      " The initial value of the house is $80,000 + 80,000 * 1.15 = $<<80,000*1.15=92000>>92000.\nThe profit is $92,000 - 80,000 = $<<92,000-80,000=12000>>12000.\n#### 12000\n\n"
+     ],
+     "seconds": 115
+    }
+   }
+  }
+ },
+ "original": {
+  "bytes": 9257138688,
+  "weights": 4628569344,
+  "wikitext": {
+   "ppl": 213.92974063229292
+  },
+  "mix": {
+   "arb_Arab": {
+    "ppl": 110.72261884946384
+   },
+   "chat": {
+    "ppl": 41.52548647481313
+   },
+   "cmn_Hani": {
+    "ppl": 331.991343043895
+   },
+   "code": {
+    "ppl": 11.528441680042578
+   },
+   "deu_Latn": {
+    "ppl": 174.6734516326431
+   },
+   "en": {
+    "ppl": 162.65024896562338
+   },
+   "fra_Latn": {
+    "ppl": 117.04451941698879
+   },
+   "hin_Deva": {
+    "ppl": 159.78759028216967
+   },
+   "jpn_Jpan": {
+    "ppl": 172.35226465636748
+   },
+   "kor_Hang": {
+    "ppl": 77.81457788584055
+   },
+   "por_Latn": {
+    "ppl": 134.8592201287234
+   },
+   "rus_Cyrl": {
+    "ppl": 131.5304390321055
+   },
+   "spa_Latn": {
+    "ppl": 168.47926073583793
+   }
+  },
+  "tasks": {
+   "mmlu": {
+    "acc": 0.562,
+    "n": 1000,
+    "seconds": 16
+   },
+   "arc_c": {
+    "acc": 0.5017064846416383,
+    "n": 1172,
+    "seconds": 69
+   },
+   "hellaswag": {
+    "acc": 0.57,
+    "n": 1000,
+    "seconds": 117
+   },
+   "gsm8k": {
+    "acc": 0.612,
+    "n": 250,
+    "samples": [
+     " Janet eats 3 + 16 - 3 - 16 - 4 = $<<16-3-16-4=3>>3.\n#### 3",
+     " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = <<2/2=1>>1 bolt.\nThe total is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+     " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.15 = $<<80000*1.15=92000>>92000.\nThe profit is the increase in value minus the repairs.\nThe profit is 92,000 - 50,000 = $<<92000-50000=42000>>42000.\n#### 42000\n\n"
+    ],
+    "seconds": 109
+   }
+  }
+ },
+ "gguf map": {
+  "map": 278,
+  "unmatched gguf tensors": [
+   "blk.15.attn_k.weight",
+   "blk.15.attn_v.weight",
+   "blk.16.attn_k.weight",
+   "blk.16.attn_v.weight",
+   "blk.17.attn_k.weight",
+   "blk.17.attn_v.weight",
+   "blk.18.attn_k.weight",
+   "blk.18.attn_v.weight",
+   "blk.19.attn_k.weight",
+   "blk.19.attn_v.weight",
+   "blk.20.attn_k.weight",
+   "blk.20.attn_v.weight",
+   "blk.21.attn_k.weight",
+   "blk.21.attn_v.weight",
+   "blk.22.attn_k.weight",
+   "blk.22.attn_v.weight",
+   "blk.23.attn_k.weight",
+   "blk.23.attn_v.weight",
+   "blk.24.attn_k.weight",
+   "blk.24.attn_v.weight",
+   "blk.25.attn_k.weight",
+   "blk.25.attn_v.weight",
+   "blk.26.attn_k.weight",
+   "blk.26.attn_v.weight",
+   "blk.27.attn_k.weight",
+   "blk.27.attn_v.weight",
+   "blk.28.attn_k.weight",
+   "blk.28.attn_v.weight",
+   "blk.29.attn_k.weight",
+   "blk.29.attn_v.weight",
+   "blk.30.attn_k.weight",
+   "blk.30.attn_v.weight",
+   "blk.31.attn_k.weight",
+   "blk.31.attn_v.weight",
+   "blk.32.attn_k.weight",
+   "blk.32.attn_v.weight",
+   "blk.33.attn_k.weight",
+   "blk.33.attn_v.weight",
+   "blk.34.attn_k.weight",
+   "blk.34.attn_v.weight"
+  ],
+  "parameters without a gguf tensor": []
+ }
+}

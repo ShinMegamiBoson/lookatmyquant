@@ -1,0 +1,6098 @@
+{
+ "model": "unsloth/Llama-3.2-3B",
+ "parts": "linear",
+ "method": "noise",
+ "data": "mix",
+ "held-out windows": [
+  16,
+  512
+ ],
+ "calibration": [
+  64,
+  512
+ ],
+ "kl floor (nothing quantized)": 0.0,
+ "seconds per kl": 1.551,
+ "device": "cuda",
+ "stages (layer 0)": "self_attn.q_proj+self_attn.k_proj+self_attn.v_proj → self_attn.o_proj → mlp.gate_proj+mlp.up_proj → mlp.down_proj",
+ "records": [
+  {
+   "item": "0.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 1.1672412028929102e-05,
+   "seconds": 2.33
+  },
+  {
+   "item": "0.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 1.7307191683357814e-05,
+   "seconds": 1.75
+  },
+  {
+   "item": "0.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004734457324957475,
+   "seconds": 1.76
+  },
+  {
+   "item": "0.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004450951819308102,
+   "seconds": 2.34
+  },
+  {
+   "item": "0.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008747276588110253,
+   "seconds": 4.67
+  },
+  {
+   "item": "0.mlp.up_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.mlp.up_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000941234640777111,
+   "seconds": 4.69
+  },
+  {
+   "item": "0.mlp.down_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "0.mlp.down_proj",
+   "kind": "linear",
+   "layer": 0,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00166708133474458,
+   "seconds": 9.89
+  },
+  {
+   "item": "1.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.0649077820708044e-05,
+   "seconds": 2.32
+  },
+  {
+   "item": "1.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.758330346201546e-05,
+   "seconds": 1.77
+  },
+  {
+   "item": "1.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004956041084369645,
+   "seconds": 1.75
+  },
+  {
+   "item": "1.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00038545461575267836,
+   "seconds": 2.35
+  },
+  {
+   "item": "1.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007145570052671246,
+   "seconds": 4.75
+  },
+  {
+   "item": "1.mlp.up_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.mlp.up_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008531074709026143,
+   "seconds": 4.76
+  },
+  {
+   "item": "1.mlp.down_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "1.mlp.down_proj",
+   "kind": "linear",
+   "layer": 1,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0012431541254045442,
+   "seconds": 10.05
+  },
+  {
+   "item": "2.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001658502314967336,
+   "seconds": 2.33
+  },
+  {
+   "item": "2.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00011501429071358871,
+   "seconds": 1.75
+  },
+  {
+   "item": "2.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005937109599472024,
+   "seconds": 1.76
+  },
+  {
+   "item": "2.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00011574492600630037,
+   "seconds": 2.33
+  },
+  {
+   "item": "2.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008134796080412343,
+   "seconds": 4.65
+  },
+  {
+   "item": "2.mlp.up_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.mlp.up_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008622049208497629,
+   "seconds": 4.76
+  },
+  {
+   "item": "2.mlp.down_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "2.mlp.down_proj",
+   "kind": "linear",
+   "layer": 2,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0012565395736601204,
+   "seconds": 10.13
+  },
+  {
+   "item": "3.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00024409777688561007,
+   "seconds": 2.35
+  },
+  {
+   "item": "3.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001797088589228224,
+   "seconds": 1.77
+  },
+  {
+   "item": "3.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007085616962285712,
+   "seconds": 1.77
+  },
+  {
+   "item": "3.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00024244181622634642,
+   "seconds": 2.36
+  },
+  {
+   "item": "3.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000537084139068611,
+   "seconds": 4.7
+  },
+  {
+   "item": "3.mlp.up_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.mlp.up_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008518792456015944,
+   "seconds": 4.7
+  },
+  {
+   "item": "3.mlp.down_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "3.mlp.down_proj",
+   "kind": "linear",
+   "layer": 3,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008643527398817241,
+   "seconds": 9.74
+  },
+  {
+   "item": "4.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001617533889657352,
+   "seconds": 2.34
+  },
+  {
+   "item": "4.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00012213097943458706,
+   "seconds": 1.77
+  },
+  {
+   "item": "4.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004012570789200254,
+   "seconds": 1.77
+  },
+  {
+   "item": "4.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019536256513674743,
+   "seconds": 2.34
+  },
+  {
+   "item": "4.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00040935405559139326,
+   "seconds": 4.7
+  },
+  {
+   "item": "4.mlp.up_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.mlp.up_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007013896538410336,
+   "seconds": 4.68
+  },
+  {
+   "item": "4.mlp.down_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "4.mlp.down_proj",
+   "kind": "linear",
+   "layer": 4,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008147971093421802,
+   "seconds": 9.72
+  },
+  {
+   "item": "5.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00012069246076862328,
+   "seconds": 2.33
+  },
+  {
+   "item": "5.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.543998567096423e-05,
+   "seconds": 1.73
+  },
+  {
+   "item": "5.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00021815278887515888,
+   "seconds": 1.74
+  },
+  {
+   "item": "5.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00014267836741055362,
+   "seconds": 2.4
+  },
+  {
+   "item": "5.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00035322288022143766,
+   "seconds": 4.65
+  },
+  {
+   "item": "5.mlp.up_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.mlp.up_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005962058348814026,
+   "seconds": 4.69
+  },
+  {
+   "item": "5.mlp.down_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "5.mlp.down_proj",
+   "kind": "linear",
+   "layer": 5,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007124036928871647,
+   "seconds": 9.86
+  },
+  {
+   "item": "6.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00012951137250638567,
+   "seconds": 2.28
+  },
+  {
+   "item": "6.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.377170135849155e-05,
+   "seconds": 1.74
+  },
+  {
+   "item": "6.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00020435748592717573,
+   "seconds": 1.75
+  },
+  {
+   "item": "6.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019416383292991668,
+   "seconds": 2.3
+  },
+  {
+   "item": "6.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00030079656789894216,
+   "seconds": 4.61
+  },
+  {
+   "item": "6.mlp.up_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.mlp.up_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005068497121101245,
+   "seconds": 4.61
+  },
+  {
+   "item": "6.mlp.down_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "6.mlp.down_proj",
+   "kind": "linear",
+   "layer": 6,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0006080648745410144,
+   "seconds": 9.75
+  },
+  {
+   "item": "7.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00013453975770971738,
+   "seconds": 2.34
+  },
+  {
+   "item": "7.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.567839879309759e-05,
+   "seconds": 1.74
+  },
+  {
+   "item": "7.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001545300765428692,
+   "seconds": 1.81
+  },
+  {
+   "item": "7.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00021138818556210026,
+   "seconds": 2.41
+  },
+  {
+   "item": "7.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00026436150074005127,
+   "seconds": 4.71
+  },
+  {
+   "item": "7.mlp.up_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.mlp.up_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00044736923882737756,
+   "seconds": 4.76
+  },
+  {
+   "item": "7.mlp.down_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "7.mlp.down_proj",
+   "kind": "linear",
+   "layer": 7,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005348941704141907,
+   "seconds": 9.93
+  },
+  {
+   "item": "8.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010350717093388084,
+   "seconds": 2.35
+  },
+  {
+   "item": "8.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.764241243217839e-05,
+   "seconds": 1.72
+  },
+  {
+   "item": "8.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00013979351388115901,
+   "seconds": 1.76
+  },
+  {
+   "item": "8.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00023320315085584298,
+   "seconds": 2.31
+  },
+  {
+   "item": "8.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00024433534053969197,
+   "seconds": 4.51
+  },
+  {
+   "item": "8.mlp.up_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.mlp.up_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004049107665196061,
+   "seconds": 4.65
+  },
+  {
+   "item": "8.mlp.down_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "8.mlp.down_proj",
+   "kind": "linear",
+   "layer": 8,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005069805120001547,
+   "seconds": 9.69
+  },
+  {
+   "item": "9.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00012132023039157502,
+   "seconds": 2.32
+  },
+  {
+   "item": "9.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.647553047718247e-05,
+   "seconds": 1.76
+  },
+  {
+   "item": "9.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019661770420498215,
+   "seconds": 1.73
+  },
+  {
+   "item": "9.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00022393265317077748,
+   "seconds": 2.37
+  },
+  {
+   "item": "9.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002132696972694248,
+   "seconds": 4.78
+  },
+  {
+   "item": "9.mlp.up_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.mlp.up_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00037775000237161294,
+   "seconds": 4.65
+  },
+  {
+   "item": "9.mlp.down_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "9.mlp.down_proj",
+   "kind": "linear",
+   "layer": 9,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00044234881352167577,
+   "seconds": 10.08
+  },
+  {
+   "item": "10.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010597525761113502,
+   "seconds": 2.31
+  },
+  {
+   "item": "10.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.667088407790288e-05,
+   "seconds": 1.74
+  },
+  {
+   "item": "10.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001277193150599487,
+   "seconds": 1.76
+  },
+  {
+   "item": "10.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00016903305368032306,
+   "seconds": 2.33
+  },
+  {
+   "item": "10.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002264870927319862,
+   "seconds": 4.66
+  },
+  {
+   "item": "10.mlp.up_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.mlp.up_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00036635348078561947,
+   "seconds": 4.6
+  },
+  {
+   "item": "10.mlp.down_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "10.mlp.down_proj",
+   "kind": "linear",
+   "layer": 10,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004392898626974784,
+   "seconds": 9.58
+  },
+  {
+   "item": "11.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010262397336191498,
+   "seconds": 2.32
+  },
+  {
+   "item": "11.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 8.243552474596072e-05,
+   "seconds": 1.76
+  },
+  {
+   "item": "11.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001789093112165574,
+   "seconds": 1.73
+  },
+  {
+   "item": "11.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00020800885977223516,
+   "seconds": 2.35
+  },
+  {
+   "item": "11.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002315188066859264,
+   "seconds": 4.61
+  },
+  {
+   "item": "11.mlp.up_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.mlp.up_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0003669729921966791,
+   "seconds": 4.65
+  },
+  {
+   "item": "11.mlp.down_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "11.mlp.down_proj",
+   "kind": "linear",
+   "layer": 11,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00040992746653500944,
+   "seconds": 9.63
+  },
+  {
+   "item": "12.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 8.949752373155206e-05,
+   "seconds": 2.32
+  },
+  {
+   "item": "12.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.5330705436063e-05,
+   "seconds": 1.76
+  },
+  {
+   "item": "12.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001680376626609359,
+   "seconds": 1.71
+  },
+  {
+   "item": "12.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019420174066908658,
+   "seconds": 2.32
+  },
+  {
+   "item": "12.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000235891027841717,
+   "seconds": 4.56
+  },
+  {
+   "item": "12.mlp.up_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.mlp.up_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00041441366920480505,
+   "seconds": 4.69
+  },
+  {
+   "item": "12.mlp.down_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "12.mlp.down_proj",
+   "kind": "linear",
+   "layer": 12,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000473996413347777,
+   "seconds": 9.51
+  },
+  {
+   "item": "13.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000136083350298577,
+   "seconds": 2.3
+  },
+  {
+   "item": "13.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.965865304664476e-05,
+   "seconds": 1.73
+  },
+  {
+   "item": "13.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001531172001705272,
+   "seconds": 1.74
+  },
+  {
+   "item": "13.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002099660414387472,
+   "seconds": 2.32
+  },
+  {
+   "item": "13.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002617500394990202,
+   "seconds": 4.65
+  },
+  {
+   "item": "13.mlp.up_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.mlp.up_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005081046256236732,
+   "seconds": 4.61
+  },
+  {
+   "item": "13.mlp.down_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "13.mlp.down_proj",
+   "kind": "linear",
+   "layer": 13,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005394459003582597,
+   "seconds": 9.76
+  },
+  {
+   "item": "14.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010564228614384774,
+   "seconds": 2.32
+  },
+  {
+   "item": "14.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 8.191002416424453e-05,
+   "seconds": 1.71
+  },
+  {
+   "item": "14.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00023772084387019277,
+   "seconds": 1.72
+  },
+  {
+   "item": "14.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00024253816809505224,
+   "seconds": 2.28
+  },
+  {
+   "item": "14.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0003010279397130944,
+   "seconds": 4.53
+  },
+  {
+   "item": "14.mlp.up_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.mlp.up_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005616925918729976,
+   "seconds": 4.55
+  },
+  {
+   "item": "14.mlp.down_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "14.mlp.down_proj",
+   "kind": "linear",
+   "layer": 14,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007264295927598141,
+   "seconds": 9.46
+  },
+  {
+   "item": "15.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010457108328409959,
+   "seconds": 2.24
+  },
+  {
+   "item": "15.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.910848242114298e-05,
+   "seconds": 1.72
+  },
+  {
+   "item": "15.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00025708621251396835,
+   "seconds": 1.68
+  },
+  {
+   "item": "15.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019161773161613382,
+   "seconds": 2.24
+  },
+  {
+   "item": "15.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00030421015253523365,
+   "seconds": 4.5
+  },
+  {
+   "item": "15.mlp.up_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.mlp.up_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005717744643334299,
+   "seconds": 4.54
+  },
+  {
+   "item": "15.mlp.down_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "15.mlp.down_proj",
+   "kind": "linear",
+   "layer": 15,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008291338017443195,
+   "seconds": 9.56
+  },
+  {
+   "item": "16.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.488984687777702e-05,
+   "seconds": 2.3
+  },
+  {
+   "item": "16.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.309025593509432e-05,
+   "seconds": 1.73
+  },
+  {
+   "item": "16.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00020371006394270808,
+   "seconds": 1.75
+  },
+  {
+   "item": "16.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00017672599278739654,
+   "seconds": 2.33
+  },
+  {
+   "item": "16.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000352389022737043,
+   "seconds": 4.58
+  },
+  {
+   "item": "16.mlp.up_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.mlp.up_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000631539718597196,
+   "seconds": 4.65
+  },
+  {
+   "item": "16.mlp.down_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "16.mlp.down_proj",
+   "kind": "linear",
+   "layer": 16,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0009260188235202804,
+   "seconds": 9.67
+  },
+  {
+   "item": "17.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010281169670633972,
+   "seconds": 2.32
+  },
+  {
+   "item": "17.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.333192348189186e-05,
+   "seconds": 1.77
+  },
+  {
+   "item": "17.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019990534565295093,
+   "seconds": 1.76
+  },
+  {
+   "item": "17.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.623189180274494e-05,
+   "seconds": 2.28
+  },
+  {
+   "item": "17.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000371945759980008,
+   "seconds": 4.55
+  },
+  {
+   "item": "17.mlp.up_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.mlp.up_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005745959060732275,
+   "seconds": 4.55
+  },
+  {
+   "item": "17.mlp.down_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "17.mlp.down_proj",
+   "kind": "linear",
+   "layer": 17,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008478932577418163,
+   "seconds": 9.56
+  },
+  {
+   "item": "18.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.110886276175734e-05,
+   "seconds": 2.32
+  },
+  {
+   "item": "18.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.288945885695284e-05,
+   "seconds": 1.72
+  },
+  {
+   "item": "18.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00019204249110771343,
+   "seconds": 1.75
+  },
+  {
+   "item": "18.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.020549765002215e-05,
+   "seconds": 2.39
+  },
+  {
+   "item": "18.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004338095968705602,
+   "seconds": 4.68
+  },
+  {
+   "item": "18.mlp.up_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.mlp.up_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0006209012935869396,
+   "seconds": 4.68
+  },
+  {
+   "item": "18.mlp.down_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "18.mlp.down_proj",
+   "kind": "linear",
+   "layer": 18,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0009235231336788274,
+   "seconds": 9.64
+  },
+  {
+   "item": "19.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00013746606055065058,
+   "seconds": 2.33
+  },
+  {
+   "item": "19.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.561681377410423e-05,
+   "seconds": 1.71
+  },
+  {
+   "item": "19.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00020894620320177637,
+   "seconds": 1.74
+  },
+  {
+   "item": "19.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00010127240238944069,
+   "seconds": 2.33
+  },
+  {
+   "item": "19.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004967044660588726,
+   "seconds": 4.61
+  },
+  {
+   "item": "19.mlp.up_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.mlp.up_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007037632603896782,
+   "seconds": 4.55
+  },
+  {
+   "item": "19.mlp.down_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "19.mlp.down_proj",
+   "kind": "linear",
+   "layer": 19,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0009126816876232624,
+   "seconds": 9.89
+  },
+  {
+   "item": "20.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.961196166026639e-05,
+   "seconds": 2.34
+  },
+  {
+   "item": "20.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 3.790659229707671e-05,
+   "seconds": 1.76
+  },
+  {
+   "item": "20.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00020777640747837722,
+   "seconds": 1.72
+  },
+  {
+   "item": "20.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.990332505869446e-05,
+   "seconds": 2.29
+  },
+  {
+   "item": "20.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0004658414254663512,
+   "seconds": 4.53
+  },
+  {
+   "item": "20.mlp.up_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.mlp.up_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000730948755517602,
+   "seconds": 4.53
+  },
+  {
+   "item": "20.mlp.down_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "20.mlp.down_proj",
+   "kind": "linear",
+   "layer": 20,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008467038351227529,
+   "seconds": 9.42
+  },
+  {
+   "item": "21.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.364723958540708e-05,
+   "seconds": 2.33
+  },
+  {
+   "item": "21.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 3.7556651932391105e-05,
+   "seconds": 1.71
+  },
+  {
+   "item": "21.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00023319750107475556,
+   "seconds": 1.71
+  },
+  {
+   "item": "21.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.784307333873585e-05,
+   "seconds": 2.27
+  },
+  {
+   "item": "21.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005466744441946503,
+   "seconds": 4.53
+  },
+  {
+   "item": "21.mlp.up_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.mlp.up_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005603731551673263,
+   "seconds": 4.57
+  },
+  {
+   "item": "21.mlp.down_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "21.mlp.down_proj",
+   "kind": "linear",
+   "layer": 21,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0008065509173320606,
+   "seconds": 9.35
+  },
+  {
+   "item": "22.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 8.625137525086757e-05,
+   "seconds": 2.26
+  },
+  {
+   "item": "22.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.881862736918265e-05,
+   "seconds": 1.75
+  },
+  {
+   "item": "22.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002660110803844873,
+   "seconds": 1.68
+  },
+  {
+   "item": "22.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.759354230074678e-05,
+   "seconds": 2.26
+  },
+  {
+   "item": "22.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005119184643262997,
+   "seconds": 4.64
+  },
+  {
+   "item": "22.mlp.up_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.mlp.up_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005764958696090616,
+   "seconds": 4.62
+  },
+  {
+   "item": "22.mlp.down_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "22.mlp.down_proj",
+   "kind": "linear",
+   "layer": 22,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007422468406730331,
+   "seconds": 9.91
+  },
+  {
+   "item": "23.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 8.744315528019797e-05,
+   "seconds": 2.33
+  },
+  {
+   "item": "23.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 3.581411419872893e-05,
+   "seconds": 1.72
+  },
+  {
+   "item": "23.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00020991523342672735,
+   "seconds": 1.69
+  },
+  {
+   "item": "23.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 8.76847370818723e-05,
+   "seconds": 2.34
+  },
+  {
+   "item": "23.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005703170099877752,
+   "seconds": 4.52
+  },
+  {
+   "item": "23.mlp.up_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.mlp.up_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000573075856664218,
+   "seconds": 4.64
+  },
+  {
+   "item": "23.mlp.down_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "23.mlp.down_proj",
+   "kind": "linear",
+   "layer": 23,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007115996413631365,
+   "seconds": 9.51
+  },
+  {
+   "item": "24.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.450181444961345e-05,
+   "seconds": 2.3
+  },
+  {
+   "item": "24.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 3.864981499646092e-05,
+   "seconds": 1.74
+  },
+  {
+   "item": "24.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0002043037093244493,
+   "seconds": 1.72
+  },
+  {
+   "item": "24.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.78255252953386e-05,
+   "seconds": 2.27
+  },
+  {
+   "item": "24.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0006804473523516208,
+   "seconds": 4.58
+  },
+  {
+   "item": "24.mlp.up_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.mlp.up_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0006237159395823255,
+   "seconds": 4.63
+  },
+  {
+   "item": "24.mlp.down_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "24.mlp.down_proj",
+   "kind": "linear",
+   "layer": 24,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0006997747404966503,
+   "seconds": 9.85
+  },
+  {
+   "item": "25.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00013235445840109605,
+   "seconds": 2.27
+  },
+  {
+   "item": "25.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 6.929736537131248e-05,
+   "seconds": 1.67
+  },
+  {
+   "item": "25.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00026479049483896233,
+   "seconds": 1.67
+  },
+  {
+   "item": "25.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001243104434252018,
+   "seconds": 2.28
+  },
+  {
+   "item": "25.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005837044300278649,
+   "seconds": 4.67
+  },
+  {
+   "item": "25.mlp.up_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.mlp.up_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0005988985139993019,
+   "seconds": 4.63
+  },
+  {
+   "item": "25.mlp.down_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "25.mlp.down_proj",
+   "kind": "linear",
+   "layer": 25,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007670216582482681,
+   "seconds": 10.01
+  },
+  {
+   "item": "26.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 5.842818700330099e-05,
+   "seconds": 2.32
+  },
+  {
+   "item": "26.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 4.101009017176693e-05,
+   "seconds": 1.72
+  },
+  {
+   "item": "26.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00023818227055016905,
+   "seconds": 1.75
+  },
+  {
+   "item": "26.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0001142248474934604,
+   "seconds": 2.35
+  },
+  {
+   "item": "26.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0006352657510433346,
+   "seconds": 4.66
+  },
+  {
+   "item": "26.mlp.up_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.mlp.up_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007466250099241734,
+   "seconds": 4.72
+  },
+  {
+   "item": "26.mlp.down_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "26.mlp.down_proj",
+   "kind": "linear",
+   "layer": 26,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007810300521668978,
+   "seconds": 9.73
+  },
+  {
+   "item": "27.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.self_attn.q_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.q_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 9.405251330463216e-05,
+   "seconds": 2.31
+  },
+  {
+   "item": "27.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.self_attn.k_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.k_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 7.054915204207646e-05,
+   "seconds": 1.74
+  },
+  {
+   "item": "27.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 50331648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.self_attn.v_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.v_proj",
+   "weights": 3145728,
+   "shape": [
+    1024,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000264998285274487,
+   "seconds": 1.71
+  },
+  {
+   "item": "27.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 150994944.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.self_attn.o_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "self_attn.o_proj",
+   "weights": 9437184,
+   "shape": [
+    3072,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.00012078071813448332,
+   "seconds": 2.31
+  },
+  {
+   "item": "27.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.mlp.gate_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "mlp.gate_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.0007076145993778482,
+   "seconds": 4.76
+  },
+  {
+   "item": "27.mlp.up_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.mlp.up_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "mlp.up_proj",
+   "weights": 25165824,
+   "shape": [
+    8192,
+    3072
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.001086100412067026,
+   "seconds": 4.63
+  },
+  {
+   "item": "27.mlp.down_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 402653184.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "27.mlp.down_proj",
+   "kind": "linear",
+   "layer": 27,
+   "role": "mlp.down_proj",
+   "weights": 25165824,
+   "shape": [
+    3072,
+    8192
+   ],
+   "T": 256,
+   "option": "noise",
+   "bits": 0.0,
+   "dkl": 0.000990267377346754,
+   "seconds": 9.8
+  }
+ ],
+ "noise d": 0.015,
+ "seconds": 823
+}

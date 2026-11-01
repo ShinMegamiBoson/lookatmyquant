@@ -1,0 +1,76 @@
+original: ppl 15.3147
+RTN w4 g64  [none]
+  [RTN w4 g64] reference + per-layer frame check: layer 8/32 (1s)
+  [RTN w4 g64] reference + per-layer frame check: layer 16/32 (3s)
+  [RTN w4 g64] reference + per-layer frame check: layer 24/32 (4s)
+  [RTN w4 g64] reference + per-layer frame check: layer 32/32 (6s)
+  [RTN w4 g64] frame end-to-end done (7s)
+  => RTN w4 g64: ppl ref 17.9178 | frame 17.9178 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final None | 4.31 bits/weight
+RTN w3 g64  [none]
+  [RTN w3 g64] reference + per-layer frame check: layer 8/32 (2s)
+  [RTN w3 g64] reference + per-layer frame check: layer 16/32 (4s)
+  [RTN w3 g64] reference + per-layer frame check: layer 24/32 (5s)
+  [RTN w3 g64] reference + per-layer frame check: layer 32/32 (7s)
+  [RTN w3 g64] frame end-to-end done (8s)
+  => RTN w3 g64: ppl ref 45.4496 | frame 45.4496 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final None | 3.30 bits/weight
+GPTQ w4 g64  [sequential]
+  [GPTQ w4 g64] reference + per-layer frame check: layer 8/32 (63s)
+  [GPTQ w4 g64] reference + per-layer frame check: layer 16/32 (130s)
+  [GPTQ w4 g64] reference + per-layer frame check: layer 24/32 (201s)
+  [GPTQ w4 g64] reference + per-layer frame check: layer 32/32 (269s)
+  [GPTQ w4 g64] frame end-to-end done (501s)
+  => GPTQ w4 g64: ppl ref 16.6588 | frame 16.6588 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final None | 4.31 bits/weight
+GPTQ w3 g64  [sequential]
+  [GPTQ w3 g64] reference + per-layer frame check: layer 8/32 (77s)
+  [GPTQ w3 g64] reference + per-layer frame check: layer 16/32 (147s)
+  [GPTQ w3 g64] reference + per-layer frame check: layer 24/32 (204s)
+  [GPTQ w3 g64] reference + per-layer frame check: layer 32/32 (270s)
+  [GPTQ w3 g64] frame end-to-end done (478s)
+  => GPTQ w3 g64: ppl ref 21.1618 | frame 21.1618 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final None | 3.30 bits/weight
+SVD keep 0.8  [none]
+  [SVD keep 0.8] reference + per-layer frame check: layer 8/32 (33s)
+  [SVD keep 0.8] reference + per-layer frame check: layer 16/32 (71s)
+  [SVD keep 0.8] reference + per-layer frame check: layer 24/32 (108s)
+  [SVD keep 0.8] reference + per-layer frame check: layer 32/32 (136s)
+  [SVD keep 0.8] frame end-to-end done (177s)
+  => SVD keep 0.8: ppl ref 890636.8443 | frame 890636.8443 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement None | final None | 12.79 bits/weight
+SVD-LLM keep 0.8  [profile]
+  [SVD-LLM keep 0.8] reference + per-layer frame check: layer 8/32 (45s)
+  [SVD-LLM keep 0.8] reference + per-layer frame check: layer 16/32 (79s)
+  [SVD-LLM keep 0.8] reference + per-layer frame check: layer 24/32 (113s)
+  [SVD-LLM keep 0.8] reference + per-layer frame check: layer 32/32 (146s)
+  [SVD-LLM keep 0.8] frame end-to-end done (218s)
+  => SVD-LLM keep 0.8: ppl ref 40.2549 | frame 40.2549 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement None | final None | 12.79 bits/weight
+Magnitude 50%  [none]
+  [Magnitude 50%] reference + per-layer frame check: layer 8/32 (6s)
+  [Magnitude 50%] reference + per-layer frame check: layer 16/32 (12s)
+  [Magnitude 50%] reference + per-layer frame check: layer 24/32 (17s)
+  [Magnitude 50%] reference + per-layer frame check: layer 32/32 (22s)
+  [Magnitude 50%] frame end-to-end done (27s)
+  => Magnitude 50%: ppl ref 2078.2701 | frame 2078.2701 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final None | 8.98 bits/weight
+Wanda 50%  [sequential]
+  [Wanda 50%] reference + per-layer frame check: layer 8/32 (6s)
+  [Wanda 50%] reference + per-layer frame check: layer 16/32 (11s)
+  [Wanda 50%] reference + per-layer frame check: layer 24/32 (16s)
+  [Wanda 50%] reference + per-layer frame check: layer 32/32 (21s)
+  [Wanda 50%] frame end-to-end done (41s)
+  => Wanda 50%: ppl ref 25.5225 | frame 25.5225 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement 1.0 | final None | 9.00 bits/weight
+SparseGPT 50%  [sequential]
+  [SparseGPT 50%] reference + per-layer frame check: layer 8/32 (83s)
+  [SparseGPT 50%] reference + per-layer frame check: layer 16/32 (164s)
+  [SparseGPT 50%] reference + per-layer frame check: layer 24/32 (247s)
+  [SparseGPT 50%] reference + per-layer frame check: layer 32/32 (339s)
+  [SparseGPT 50%] frame end-to-end done (622s)
+  => SparseGPT 50%: ppl ref 21.9255 | frame 21.9255 | max logit gap 1.91e-06 | max rel weight diff 1.15e-10 | arg agreement 1.0 | final None | 9.00 bits/weight
+GPTQ w3 g64, official blocksize 128 (reference only)
+  [GPTQ w3 g64, official blocksize 128 (reference only)] reference + per-layer frame check: layer 8/32 (123s)
+  [GPTQ w3 g64, official blocksize 128 (reference only)] reference + per-layer frame check: layer 16/32 (262s)
+  [GPTQ w3 g64, official blocksize 128 (reference only)] reference + per-layer frame check: layer 24/32 (383s)
+  [GPTQ w3 g64, official blocksize 128 (reference only)] reference + per-layer frame check: layer 32/32 (442s)
+  [GPTQ w3 g64, official blocksize 128 (reference only)] frame end-to-end done (588s)
+  => GPTQ w3 g64, official blocksize 128 (reference only): ppl ref 20.8067 | frame 21.1618 | max logit gap 1.62e+01 | max rel weight diff 3.08e-01 | arg agreement 0.7726505533854167 | final None | 3.30 bits/weight
+SliceGPT 25%
+  [SliceGPT] reference done (10s)
+  [SliceGPT] frame done (20s)
+  => SliceGPT 25%: ppl ref 78.8600 | frame 78.8600 | max logit gap 0.00e+00 | max rel weight diff 0.00e+00 | arg agreement None | final None | 13.69 bits/weight
+done

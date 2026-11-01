@@ -1,0 +1,701 @@
+{
+ "model": "google/gemma-4-E2B-it",
+ "dtype": "float32",
+ "windows": {
+  "wikitext": [
+   64,
+   512
+  ],
+  "mix": [
+   8,
+   512
+  ]
+ },
+ "checkpoints": {
+  "gguf-local:stock_Q5_K_M.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_Q5_K_M.gguf",
+   "bytes": 3614468236,
+   "GB": 3.614468236,
+   "bits per text weight": 6.2472318634446715,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 221.75865465179035,
+    "kl": 0.04647378856316209
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 107.5317564819997,
+     "kl": 0.050742728635668755
+    },
+    "chat": {
+     "ppl": 39.93613445602596,
+     "kl": 0.042397407814860344
+    },
+    "cmn_Hani": {
+     "ppl": 330.27836706637004,
+     "kl": 0.049838652834296227
+    },
+    "code": {
+     "ppl": 11.635899604652174,
+     "kl": 0.03436657786369324
+    },
+    "deu_Latn": {
+     "ppl": 170.35781047248898,
+     "kl": 0.057889776304364204
+    },
+    "en": {
+     "ppl": 158.72794585574565,
+     "kl": 0.04039426147937775
+    },
+    "fra_Latn": {
+     "ppl": 117.28589671338717,
+     "kl": 0.045154303312301636
+    },
+    "hin_Deva": {
+     "ppl": 159.5624263548991,
+     "kl": 0.04913000017404556
+    },
+    "jpn_Jpan": {
+     "ppl": 167.25434448886742,
+     "kl": 0.0439407154917717
+    },
+    "kor_Hang": {
+     "ppl": 74.07391938467742,
+     "kl": 0.06250792369246483
+    },
+    "por_Latn": {
+     "ppl": 133.21309924301946,
+     "kl": 0.045573169365525246
+    },
+    "rus_Cyrl": {
+     "ppl": 129.90508771821922,
+     "kl": 0.05332496762275696
+    },
+    "spa_Latn": {
+     "ppl": 166.17011062288765,
+     "kl": 0.050526807084679604
+    }
+   },
+   "mix kl": 0.048137483975062005,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.563,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.48890784982935154,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.591,
+     "n": 1000,
+     "seconds": 58
+    },
+    "gsm8k": {
+     "acc": 0.6,
+     "n": 250,
+     "samples": [
+      " Janet has 16 - 3 - 4 = <<16-3-4=9>>9 eggs left to sell.\nJanet makes 9 x 2 = <<9*2=18>>18 dollars every day at the farmers' market.\n#### 18",
+      " The robe takes 2 + 0.5 = <<2+0.5=2.5>>2.5 bolts in total.\n#### 2.5",
+      " The initial value of the house is $80,000.\nThe increase in value is $80,000 * 1.5 = $<<80,000*1.5=120,000>>120,000.\nThe profit is the increase in value minus the repairs.\nThe profit is $120,000 - $50,000 = $<<120,000-50,000=70,000>>70,000.\n#### 70,000\n\n"
+     ],
+     "seconds": 115
+    }
+   }
+  },
+  "gguf-local:stock_Q6_K.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_Q6_K.gguf",
+   "bytes": 3829526668,
+   "GB": 3.829526668,
+   "bits per text weight": 6.618937962701937,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 209.3365779686636,
+    "kl": 0.017302958760410547
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 107.40349708528944,
+     "kl": 0.02048977091908455
+    },
+    "chat": {
+     "ppl": 40.34668712415489,
+     "kl": 0.015990417450666428
+    },
+    "cmn_Hani": {
+     "ppl": 323.6770365777827,
+     "kl": 0.01994368154555559
+    },
+    "code": {
+     "ppl": 11.464064827147963,
+     "kl": 0.014800139237195253
+    },
+    "deu_Latn": {
+     "ppl": 168.93426485359842,
+     "kl": 0.023323853500187397
+    },
+    "en": {
+     "ppl": 160.47921233983837,
+     "kl": 0.015347441658377647
+    },
+    "fra_Latn": {
+     "ppl": 114.7600285325703,
+     "kl": 0.01774216629564762
+    },
+    "hin_Deva": {
+     "ppl": 154.34193158630768,
+     "kl": 0.01915836241096258
+    },
+    "jpn_Jpan": {
+     "ppl": 169.2013896646092,
+     "kl": 0.017752659507095814
+    },
+    "kor_Hang": {
+     "ppl": 75.54794359284506,
+     "kl": 0.023387331515550613
+    },
+    "por_Latn": {
+     "ppl": 130.70204484879113,
+     "kl": 0.01805200520902872
+    },
+    "rus_Cyrl": {
+     "ppl": 128.15024980261506,
+     "kl": 0.0183858135715127
+    },
+    "spa_Latn": {
+     "ppl": 163.5987669366225,
+     "kl": 0.022717224434018135
+    }
+   },
+   "mix kl": 0.019006989788837157,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.569,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.4991467576791809,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.57,
+     "n": 1000,
+     "seconds": 55
+    },
+    "gsm8k": {
+     "acc": 0.616,
+     "n": 250,
+     "samples": [
+      " Janet eats 3 + 4 = <<3+4=7>>7 eggs daily.\nThe remainder is 16 - 7 = <<16-7=9>>9 eggs remaining.\nShe sells 9 x $2 = $<<9*2=18>>18 every day at the farmers' market.\n#### 18",
+      " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = <<2/2=1>>1 bolt.\nThe total is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+      " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.5 = $<<80000*1.5=120000>>120000.\nThe profit is the increase in value minus the repairs: 120,000 - 50,000 = $<<120000-50000=70000>>70000.\n#### 70000\n\n"
+     ],
+     "seconds": 111
+    }
+   }
+  },
+  "gguf-local:stock_Q8_0.gguf": {
+   "kind": "gguf-local",
+   "source": "stock_Q8_0.gguf",
+   "bytes": 4951677068,
+   "GB": 4.951677068,
+   "bits per text weight": 8.558458046080858,
+   "tensors loaded": 278,
+   "wikitext": {
+    "ppl": 216.68590758485362,
+    "kl": 0.002818390668835491
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 110.92835261920453,
+     "kl": 0.0026460837107151747
+    },
+    "chat": {
+     "ppl": 41.6016412565447,
+     "kl": 0.0021578166633844376
+    },
+    "cmn_Hani": {
+     "ppl": 333.76956948917103,
+     "kl": 0.0031489242101088166
+    },
+    "code": {
+     "ppl": 11.523610845898064,
+     "kl": 0.0028030414250679314
+    },
+    "deu_Latn": {
+     "ppl": 175.47372340368574,
+     "kl": 0.005003855563700199
+    },
+    "en": {
+     "ppl": 163.46973226234644,
+     "kl": 0.0024378745583817363
+    },
+    "fra_Latn": {
+     "ppl": 117.4436872717478,
+     "kl": 0.0034694072091951966
+    },
+    "hin_Deva": {
+     "ppl": 162.12833658860808,
+     "kl": 0.0030461230780929327
+    },
+    "jpn_Jpan": {
+     "ppl": 173.67997460576777,
+     "kl": 0.00258094840683043
+    },
+    "kor_Hang": {
+     "ppl": 78.4926585504543,
+     "kl": 0.003159430343657732
+    },
+    "por_Latn": {
+     "ppl": 135.08930860157474,
+     "kl": 0.0031906517688184977
+    },
+    "rus_Cyrl": {
+     "ppl": 131.9775592992796,
+     "kl": 0.002916805795393884
+    },
+    "spa_Latn": {
+     "ppl": 169.78549012443324,
+     "kl": 0.0050500689540058374
+    }
+   },
+   "mix kl": 0.0032008485913348314,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.565,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.5,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.575,
+     "n": 1000,
+     "seconds": 55
+    },
+    "gsm8k": {
+     "acc": 0.584,
+     "n": 250,
+     "samples": [
+      " Janet eats 3 + 16 - 3 - 16 - 4 = $<<16-3-16-4=3>>3.\n#### 3",
+      " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = <<2/2=1>>1 bolt.\nThe total is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+      " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.15 = $<<80000*1.15=92000>>92000.\nThe profit is the increase in value minus the repairs.\nThe profit is 92,000 - 50,000 = $<<92000-50000=42000>>42000.\n#### 42000\n\n"
+     ],
+     "seconds": 111
+    }
+   }
+  },
+  "dense:compiler_plans/x_G4E2_2p0GB.pt": {
+   "kind": "dense",
+   "source": "compiler_plans/x_G4E2_2p0GB.pt",
+   "bytes": 1998682528.0,
+   "GB": 1.998682528,
+   "bits per text weight": 3.4545145671690296,
+   "tensors loaded": 276,
+   "wikitext": {
+    "ppl": 217.20599879850036,
+    "kl": 0.07996131642721593
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 109.59561998805802,
+     "kl": 0.06614378280937672
+    },
+    "chat": {
+     "ppl": 40.590467756715924,
+     "kl": 0.07494834810495377
+    },
+    "cmn_Hani": {
+     "ppl": 339.61318635044825,
+     "kl": 0.08355916664004326
+    },
+    "code": {
+     "ppl": 11.558688247708773,
+     "kl": 0.05417962372303009
+    },
+    "deu_Latn": {
+     "ppl": 173.933037702948,
+     "kl": 0.09607488662004471
+    },
+    "en": {
+     "ppl": 153.99081304043796,
+     "kl": 0.08613786473870277
+    },
+    "fra_Latn": {
+     "ppl": 114.5960975597697,
+     "kl": 0.06807493045926094
+    },
+    "hin_Deva": {
+     "ppl": 159.05642547717838,
+     "kl": 0.056918779388070107
+    },
+    "jpn_Jpan": {
+     "ppl": 169.60238287914083,
+     "kl": 0.06786595657467842
+    },
+    "kor_Hang": {
+     "ppl": 76.95340327334205,
+     "kl": 0.08060676977038383
+    },
+    "por_Latn": {
+     "ppl": 133.6238932302468,
+     "kl": 0.07305949181318283
+    },
+    "rus_Cyrl": {
+     "ppl": 131.18040805287046,
+     "kl": 0.0890912264585495
+    },
+    "spa_Latn": {
+     "ppl": 163.57293622600824,
+     "kl": 0.06562251783907413
+    }
+   },
+   "mix kl": 0.07402179576456547,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.56,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.4863481228668942,
+     "n": 1172,
+     "seconds": 33
+    },
+    "hellaswag": {
+     "acc": 0.556,
+     "n": 1000,
+     "seconds": 56
+    },
+    "gsm8k": {
+     "acc": 0.604,
+     "n": 250,
+     "samples": [
+      " Janet eats 16 - 3 - 4 = <<16-3-4=9>>9 eggs left to sell.\nJanet sells 9 x $2 = $<<9*2=18>>18 every day at the farmers' market.\n#### 18",
+      " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = <<2/2=1>>1 bolt.\nThe total is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+      " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.5 = $<<80000*1.5=120000>>120000.\nThe profit is the increase in value minus the repairs.\nThe profit is 120,000 - 50,000 = $<<120000-50000=70000>>70000.\n#### 70000\n\n"
+     ],
+     "seconds": 111
+    }
+   }
+  },
+  "dense:compiler_plans/x_G4E2_2p5GB.pt": {
+   "kind": "dense",
+   "source": "compiler_plans/x_G4E2_2p5GB.pt",
+   "bytes": 2498032544.0,
+   "GB": 2.498032544,
+   "bits per text weight": 4.317589057600602,
+   "tensors loaded": 276,
+   "wikitext": {
+    "ppl": 213.30867489473633,
+    "kl": 0.029912592959590256
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 109.91094882865728,
+     "kl": 0.01896700542420149
+    },
+    "chat": {
+     "ppl": 41.22295803636818,
+     "kl": 0.023105931468307972
+    },
+    "cmn_Hani": {
+     "ppl": 333.9293918605016,
+     "kl": 0.02719391416758299
+    },
+    "code": {
+     "ppl": 11.430806373041285,
+     "kl": 0.021350808441638947
+    },
+    "deu_Latn": {
+     "ppl": 175.67374458010127,
+     "kl": 0.029654039070010185
+    },
+    "en": {
+     "ppl": 159.05733738903223,
+     "kl": 0.03756394702941179
+    },
+    "fra_Latn": {
+     "ppl": 115.35101089175926,
+     "kl": 0.023329044692218304
+    },
+    "hin_Deva": {
+     "ppl": 159.075044713861,
+     "kl": 0.01999290194362402
+    },
+    "jpn_Jpan": {
+     "ppl": 167.90871881898366,
+     "kl": 0.02550458163022995
+    },
+    "kor_Hang": {
+     "ppl": 77.87164766859186,
+     "kl": 0.022545713931322098
+    },
+    "por_Latn": {
+     "ppl": 136.11318561567637,
+     "kl": 0.023894374258816242
+    },
+    "rus_Cyrl": {
+     "ppl": 128.38419480236624,
+     "kl": 0.03574309218674898
+    },
+    "spa_Latn": {
+     "ppl": 168.16000089090727,
+     "kl": 0.023047644644975662
+    }
+   },
+   "mix kl": 0.025530230683776047,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.558,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.4880546075085324,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.57,
+     "n": 1000,
+     "seconds": 55
+    },
+    "gsm8k": {
+     "acc": 0.568,
+     "n": 250,
+     "samples": [
+      " Janet eats 3 + 4 = <<3+4=7>>7 eggs daily.\nThe remainder is 16 - 7 = <<16-7=9>>9 eggs remaining.\nShe sells 9 x 2 = <<9*2=18>>18 eggs at the farmers' market daily.\nShe makes 18 x 2 = <<18*2=36>>36 dollars every day at the farmers' market.\n#### 36\n\n",
+      " 2 + 0.5 = <<2+0.5=2.5>>2.5 bolts in total.\n#### 2.5",
+      " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.15 = $<<80000*1.15=92000>>92000.\nThe profit is the increase in value minus the repairs: 92000 - 50000 = $<<92000-50000=42000>>42000.\n#### 42000\n\n"
+     ],
+     "seconds": 114
+    }
+   }
+  },
+  "dense:compiler_plans/x_G4E2_3p169GB.pt": {
+   "kind": "dense",
+   "source": "compiler_plans/x_G4E2_3p169GB.pt",
+   "bytes": 3165640544.0,
+   "GB": 3.165640544,
+   "bits per text weight": 5.47147994764924,
+   "tensors loaded": 269,
+   "wikitext": {
+    "ppl": 214.77286112075717,
+    "kl": 0.01331147609744221
+   },
+   "mix": {
+    "arb_Arab": {
+     "ppl": 110.62062179802632,
+     "kl": 0.0049244100227952
+    },
+    "chat": {
+     "ppl": 41.27296467217572,
+     "kl": 0.008128409273922443
+    },
+    "cmn_Hani": {
+     "ppl": 334.3370298061843,
+     "kl": 0.00919930450618267
+    },
+    "code": {
+     "ppl": 11.440572616146678,
+     "kl": 0.009498433908447623
+    },
+    "deu_Latn": {
+     "ppl": 174.45118881666986,
+     "kl": 0.010435540229082108
+    },
+    "en": {
+     "ppl": 161.79331967774687,
+     "kl": 0.009877469623461366
+    },
+    "fra_Latn": {
+     "ppl": 116.56066450562557,
+     "kl": 0.007682012394070625
+    },
+    "hin_Deva": {
+     "ppl": 158.79689529524214,
+     "kl": 0.006290798541158438
+    },
+    "jpn_Jpan": {
+     "ppl": 170.74685967648205,
+     "kl": 0.008549060672521591
+    },
+    "kor_Hang": {
+     "ppl": 77.92190891121072,
+     "kl": 0.007281842641532421
+    },
+    "por_Latn": {
+     "ppl": 135.65082306962324,
+     "kl": 0.007511684438213706
+    },
+    "rus_Cyrl": {
+     "ppl": 130.53273980594005,
+     "kl": 0.008994024712592363
+    },
+    "spa_Latn": {
+     "ppl": 166.3850819915157,
+     "kl": 0.011066698003560305
+    }
+   },
+   "mix kl": 0.008418437612887759,
+   "tasks": {
+    "mmlu": {
+     "acc": 0.571,
+     "n": 1000,
+     "seconds": 15
+    },
+    "arc_c": {
+     "acc": 0.49658703071672355,
+     "n": 1172,
+     "seconds": 32
+    },
+    "hellaswag": {
+     "acc": 0.57,
+     "n": 1000,
+     "seconds": 56
+    },
+    "gsm8k": {
+     "acc": 0.592,
+     "n": 250,
+     "samples": [
+      " Janet eats 16 - 3 - 4 = <<16-3-4=9>>9 eggs left to sell.\nJanet sells 9 x $2 = $<<9*2=18>>18 every day at the farmers' market.\n#### 18",
+      " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = <<2/2=1>>1 bolt.\nThe total is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+      " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.15 = $<<80000*1.15=92000>>92000.\nThe profit is the increase in value minus the repairs.\nThe profit is 92,000 - 50,000 = $<<92000-50000=42000>>42000.\n#### 42000\n\n"
+     ],
+     "seconds": 109
+    }
+   }
+  }
+ },
+ "original": {
+  "bytes": 9257138688,
+  "weights": 4628569344,
+  "wikitext": {
+   "ppl": 213.92974063229292
+  },
+  "mix": {
+   "arb_Arab": {
+    "ppl": 110.72261884946384
+   },
+   "chat": {
+    "ppl": 41.52548647481313
+   },
+   "cmn_Hani": {
+    "ppl": 331.991343043895
+   },
+   "code": {
+    "ppl": 11.528441680042578
+   },
+   "deu_Latn": {
+    "ppl": 174.6734516326431
+   },
+   "en": {
+    "ppl": 162.65024896562338
+   },
+   "fra_Latn": {
+    "ppl": 117.04451941698879
+   },
+   "hin_Deva": {
+    "ppl": 159.78759028216967
+   },
+   "jpn_Jpan": {
+    "ppl": 172.35226465636748
+   },
+   "kor_Hang": {
+    "ppl": 77.81457788584055
+   },
+   "por_Latn": {
+    "ppl": 134.8592201287234
+   },
+   "rus_Cyrl": {
+    "ppl": 131.5304390321055
+   },
+   "spa_Latn": {
+    "ppl": 168.47926073583793
+   }
+  },
+  "tasks": {
+   "mmlu": {
+    "acc": 0.562,
+    "n": 1000,
+    "seconds": 16
+   },
+   "arc_c": {
+    "acc": 0.5017064846416383,
+    "n": 1172,
+    "seconds": 69
+   },
+   "hellaswag": {
+    "acc": 0.57,
+    "n": 1000,
+    "seconds": 116
+   },
+   "gsm8k": {
+    "acc": 0.612,
+    "n": 250,
+    "samples": [
+     " Janet eats 3 + 16 - 3 - 16 - 4 = $<<16-3-16-4=3>>3.\n#### 3",
+     " The blue fiber is 2 bolts.\nThe white fiber is 2/2 = <<2/2=1>>1 bolt.\nThe total is 2 + 1 = <<2+1=3>>3 bolts in total.\n#### 3\n\n",
+     " The initial value of the house is $80,000.\nThe increase in value is 80,000 * 1.15 = $<<80000*1.15=92000>>92000.\nThe profit is the increase in value minus the repairs.\nThe profit is 92,000 - 50,000 = $<<92000-50000=42000>>42000.\n#### 42000\n\n"
+    ],
+    "seconds": 110
+   }
+  }
+ },
+ "gguf map": {
+  "map": 278,
+  "unmatched gguf tensors": [
+   "blk.15.attn_k.weight",
+   "blk.15.attn_v.weight",
+   "blk.16.attn_k.weight",
+   "blk.16.attn_v.weight",
+   "blk.17.attn_k.weight",
+   "blk.17.attn_v.weight",
+   "blk.18.attn_k.weight",
+   "blk.18.attn_v.weight",
+   "blk.19.attn_k.weight",
+   "blk.19.attn_v.weight",
+   "blk.20.attn_k.weight",
+   "blk.20.attn_v.weight",
+   "blk.21.attn_k.weight",
+   "blk.21.attn_v.weight",
+   "blk.22.attn_k.weight",
+   "blk.22.attn_v.weight",
+   "blk.23.attn_k.weight",
+   "blk.23.attn_v.weight",
+   "blk.24.attn_k.weight",
+   "blk.24.attn_v.weight",
+   "blk.25.attn_k.weight",
+   "blk.25.attn_v.weight",
+   "blk.26.attn_k.weight",
+   "blk.26.attn_v.weight",
+   "blk.27.attn_k.weight",
+   "blk.27.attn_v.weight",
+   "blk.28.attn_k.weight",
+   "blk.28.attn_v.weight",
+   "blk.29.attn_k.weight",
+   "blk.29.attn_v.weight",
+   "blk.30.attn_k.weight",
+   "blk.30.attn_v.weight",
+   "blk.31.attn_k.weight",
+   "blk.31.attn_v.weight",
+   "blk.32.attn_k.weight",
+   "blk.32.attn_v.weight",
+   "blk.33.attn_k.weight",
+   "blk.33.attn_v.weight",
+   "blk.34.attn_k.weight",
+   "blk.34.attn_v.weight"
+  ],
+  "parameters without a gguf tensor": []
+ }
+}

@@ -1,0 +1,146 @@
+{
+ "model": "Qwen/Qwen3.5-4B",
+ "parts": "embed",
+ "held-out windows": [
+  16,
+  512
+ ],
+ "calibration": [
+  64,
+  512
+ ],
+ "kl floor (nothing quantized)": 0.0,
+ "seconds per kl": 2.019,
+ "device": "cuda",
+ "records": [
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.056501506289141266,
+   "option": "tr2",
+   "weights": 20971520,
+   "bits": 42893312.0,
+   "dkl": 0.008472993620671332,
+   "seconds": 8.27
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.056501506289141266,
+   "option": "fp16",
+   "weights": 20971520,
+   "bits": 335544320.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.032596424254347965,
+   "option": "tr2",
+   "weights": 41943040,
+   "bits": 85786624.0,
+   "dkl": 0.005009719403460622,
+   "seconds": 9.32
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.032596424254347965,
+   "option": "fp16",
+   "weights": 41943040,
+   "bits": 671088640.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.00442728089369298,
+   "option": "tr2",
+   "weights": 83886080,
+   "bits": 171573248.0,
+   "dkl": 0.0024855919764377177,
+   "seconds": 14.49
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.00442728089369298,
+   "option": "fp16",
+   "weights": 83886080,
+   "bits": 1342177280.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.0,
+   "option": "tr2",
+   "weights": 167772160,
+   "bits": 343146496.0,
+   "dkl": 0.0005703387068933807,
+   "seconds": 24.43
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 65536,
+   "frequency mass": 0.0,
+   "option": "fp16",
+   "weights": 167772160,
+   "bits": 2684354560.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 117248,
+   "frequency mass": 0.0,
+   "option": "tr2",
+   "weights": 300154880,
+   "bits": 613910528.0,
+   "dkl": 0.00013333661991055124,
+   "seconds": 43.25
+  },
+  {
+   "item": "embed.10",
+   "kind": "embed",
+   "bucket": 10,
+   "rows": 117248,
+   "frequency mass": 0.0,
+   "option": "fp16",
+   "weights": 300154880,
+   "bits": 4802478080.0,
+   "dkl": 0.0
+  }
+ ],
+ "embed buckets": [
+  256,
+  256,
+  512,
+  1024,
+  2048,
+  4096,
+  8192,
+  16384,
+  32768,
+  65536,
+  117248
+ ],
+ "seconds": 128
+}

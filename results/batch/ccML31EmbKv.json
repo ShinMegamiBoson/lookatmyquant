@@ -1,0 +1,5299 @@
+{
+ "model": "unsloth/Meta-Llama-3.1-8B",
+ "parts": "embed,kv",
+ "method": "quant",
+ "data": "mix",
+ "held-out windows": [
+  16,
+  512
+ ],
+ "calibration": [
+  64,
+  512
+ ],
+ "kl floor (nothing quantized)": 0.0,
+ "seconds per kl": 3.245,
+ "device": "cuda",
+ "stages (layer 0)": "self_attn.q_proj+self_attn.k_proj+self_attn.v_proj → self_attn.o_proj → mlp.gate_proj+mlp.up_proj → mlp.down_proj",
+ "records": [
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 16777216.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 2146304.0,
+   "dkl": 0.00402459257747978,
+   "seconds": 11.45
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 3190784.0,
+   "dkl": 0.0009980405011447147,
+   "seconds": 11.09
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 5251072,
+   "dkl": 0.00010848738020285964,
+   "seconds": 4.22
+  },
+  {
+   "item": "embed.0",
+   "kind": "embed",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 8396800,
+   "dkl": 2.6565457460492325e-06,
+   "seconds": 4.42
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 16777216.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 2146304.0,
+   "dkl": 0.0016614274281891994,
+   "seconds": 11.09
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 3190784.0,
+   "dkl": 0.00039705773269815836,
+   "seconds": 10.94
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 5251072,
+   "dkl": 5.9079563925479306e-05,
+   "seconds": 4.24
+  },
+  {
+   "item": "embed.1",
+   "kind": "embed",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 8396800,
+   "dkl": 6.138390062915278e-07,
+   "seconds": 4.29
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 33554432.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 4288512.0,
+   "dkl": 0.0013497716572601348,
+   "seconds": 11.03
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 6377472.0,
+   "dkl": 0.0003418881897232495,
+   "seconds": 10.95
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 10498048,
+   "dkl": 3.9830696096032625e-05,
+   "seconds": 4.3
+  },
+  {
+   "item": "embed.2",
+   "kind": "embed",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 16789504,
+   "dkl": 8.634201265067531e-07,
+   "seconds": 4.44
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 67108864.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 8572928.0,
+   "dkl": 0.0018474335374776274,
+   "seconds": 11.22
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 12750848.0,
+   "dkl": 0.0003520782556734048,
+   "seconds": 11.41
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 20992000,
+   "dkl": 4.451435506780399e-05,
+   "seconds": 4.72
+  },
+  {
+   "item": "embed.3",
+   "kind": "embed",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 33574912,
+   "dkl": 1.172743168353918e-06,
+   "seconds": 4.8
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 134217728.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 17141760.0,
+   "dkl": 0.002426117251161486,
+   "seconds": 11.63
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 25497600.0,
+   "dkl": 0.0004726014085463248,
+   "seconds": 11.7
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 41979904,
+   "dkl": 7.332103541557444e-05,
+   "seconds": 5.19
+  },
+  {
+   "item": "embed.4",
+   "kind": "embed",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 67145728,
+   "dkl": 1.116742680551397e-06,
+   "seconds": 5.29
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 268435456.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 34279424.0,
+   "dkl": 0.002014345023781061,
+   "seconds": 12.33
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 50991104.0,
+   "dkl": 0.000457296751847025,
+   "seconds": 12.25
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 83955712,
+   "dkl": 6.125289746705675e-05,
+   "seconds": 6.79
+  },
+  {
+   "item": "embed.5",
+   "kind": "embed",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 134287360,
+   "dkl": 9.85285311116968e-07,
+   "seconds": 7.02
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 536870912.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 68554752.0,
+   "dkl": 0.0018528299988247454,
+   "seconds": 13.47
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 101978112.0,
+   "dkl": 0.00048533157678321004,
+   "seconds": 13.49
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 167907328,
+   "dkl": 7.75862208683975e-05,
+   "seconds": 10.4
+  },
+  {
+   "item": "embed.6",
+   "kind": "embed",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 268570624,
+   "dkl": 1.0654330537818169e-06,
+   "seconds": 10.69
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 1073741824.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 137105408.0,
+   "dkl": 0.0018916967819677666,
+   "seconds": 15.63
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 203952128.0,
+   "dkl": 0.0003411993311601691,
+   "seconds": 15.48
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 335810560,
+   "dkl": 4.5715334181295475e-05,
+   "seconds": 18.0
+  },
+  {
+   "item": "embed.7",
+   "kind": "embed",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 537137152,
+   "dkl": 6.697865018168159e-07,
+   "seconds": 18.34
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 2147483648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 274206720.0,
+   "dkl": 0.0009697878995211795,
+   "seconds": 25.26
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 407900160.0,
+   "dkl": 0.00019667531341838185,
+   "seconds": 24.31
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 671617024,
+   "dkl": 2.3076891011442058e-05,
+   "seconds": 31.04
+  },
+  {
+   "item": "embed.8",
+   "kind": "embed",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 1074270208,
+   "dkl": 4.594423899106914e-07,
+   "seconds": 31.63
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 4110417920.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 524845056.0,
+   "dkl": 0.00012349491498753196,
+   "seconds": 41.51
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 780742656.0,
+   "dkl": 3.576023078721846e-05,
+   "seconds": 39.86
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 1285513216,
+   "dkl": 2.71180991262554e-06,
+   "seconds": 44.37
+  },
+  {
+   "item": "embed.9",
+   "kind": "embed",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 2056216576,
+   "dkl": 5.28571320046467e-08,
+   "seconds": 45.45
+  },
+  {
+   "item": "head.0",
+   "kind": "head",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 16777216.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.0",
+   "kind": "head",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 2146304.0,
+   "dkl": 0.014851842308416963,
+   "seconds": 11.15
+  },
+  {
+   "item": "head.0",
+   "kind": "head",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 3190784.0,
+   "dkl": 0.0031106073583941907,
+   "seconds": 10.75
+  },
+  {
+   "item": "head.0",
+   "kind": "head",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 5251072,
+   "dkl": 0.0003380690177436918,
+   "seconds": 4.3
+  },
+  {
+   "item": "head.0",
+   "kind": "head",
+   "bucket": 0,
+   "rows": 256,
+   "frequency mass": 0.29306237798374324,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 8396800,
+   "dkl": 5.812609117583634e-06,
+   "seconds": 4.44
+  },
+  {
+   "item": "head.1",
+   "kind": "head",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 16777216.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.1",
+   "kind": "head",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 2146304.0,
+   "dkl": 0.005280687706544995,
+   "seconds": 11.2
+  },
+  {
+   "item": "head.1",
+   "kind": "head",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 3190784.0,
+   "dkl": 0.0008289767720270902,
+   "seconds": 10.73
+  },
+  {
+   "item": "head.1",
+   "kind": "head",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 5251072,
+   "dkl": 8.890896333468845e-05,
+   "seconds": 4.22
+  },
+  {
+   "item": "head.1",
+   "kind": "head",
+   "bucket": 1,
+   "rows": 256,
+   "frequency mass": 0.07175358361130298,
+   "weights": 1048576,
+   "shape": [
+    256,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 8396800,
+   "dkl": 1.4428105714614503e-06,
+   "seconds": 4.36
+  },
+  {
+   "item": "head.2",
+   "kind": "head",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 33554432.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.2",
+   "kind": "head",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 4288512.0,
+   "dkl": 0.006272605387493968,
+   "seconds": 11.2
+  },
+  {
+   "item": "head.2",
+   "kind": "head",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 6377472.0,
+   "dkl": 0.0010281479626428336,
+   "seconds": 10.93
+  },
+  {
+   "item": "head.2",
+   "kind": "head",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 10498048,
+   "dkl": 9.838446749199647e-05,
+   "seconds": 4.3
+  },
+  {
+   "item": "head.2",
+   "kind": "head",
+   "bucket": 2,
+   "rows": 512,
+   "frequency mass": 0.08480237417460944,
+   "weights": 2097152,
+   "shape": [
+    512,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 16789504,
+   "dkl": 1.6839878753671655e-06,
+   "seconds": 4.37
+  },
+  {
+   "item": "head.3",
+   "kind": "head",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 67108864.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.3",
+   "kind": "head",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 8572928.0,
+   "dkl": 0.006778237293474376,
+   "seconds": 11.11
+  },
+  {
+   "item": "head.3",
+   "kind": "head",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 12750848.0,
+   "dkl": 0.0011186543270014226,
+   "seconds": 11.13
+  },
+  {
+   "item": "head.3",
+   "kind": "head",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 20992000,
+   "dkl": 0.00012179397526779212,
+   "seconds": 4.58
+  },
+  {
+   "item": "head.3",
+   "kind": "head",
+   "bucket": 3,
+   "rows": 1024,
+   "frequency mass": 0.09640430624045326,
+   "weights": 4194304,
+   "shape": [
+    1024,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 33574912,
+   "dkl": 1.9362864236427413e-06,
+   "seconds": 4.72
+  },
+  {
+   "item": "head.4",
+   "kind": "head",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 134217728.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.4",
+   "kind": "head",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 17141760.0,
+   "dkl": 0.00825972412712872,
+   "seconds": 11.6
+  },
+  {
+   "item": "head.4",
+   "kind": "head",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 25497600.0,
+   "dkl": 0.0013874662254238501,
+   "seconds": 11.55
+  },
+  {
+   "item": "head.4",
+   "kind": "head",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 41979904,
+   "dkl": 0.0001325619414274115,
+   "seconds": 5.21
+  },
+  {
+   "item": "head.4",
+   "kind": "head",
+   "bucket": 4,
+   "rows": 2048,
+   "frequency mass": 0.10337896366164323,
+   "weights": 8388608,
+   "shape": [
+    2048,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 67145728,
+   "dkl": 1.983125713422851e-06,
+   "seconds": 5.3
+  },
+  {
+   "item": "head.5",
+   "kind": "head",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 268435456.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.5",
+   "kind": "head",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 34279424.0,
+   "dkl": 0.0099343778565526,
+   "seconds": 11.89
+  },
+  {
+   "item": "head.5",
+   "kind": "head",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 50991104.0,
+   "dkl": 0.0014947088493499905,
+   "seconds": 12.24
+  },
+  {
+   "item": "head.5",
+   "kind": "head",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 83955712,
+   "dkl": 0.00016582535317866132,
+   "seconds": 6.63
+  },
+  {
+   "item": "head.5",
+   "kind": "head",
+   "bucket": 5,
+   "rows": 4096,
+   "frequency mass": 0.10737340997519601,
+   "weights": 16777216,
+   "shape": [
+    4096,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 134287360,
+   "dkl": 2.483876187397982e-06,
+   "seconds": 6.79
+  },
+  {
+   "item": "head.6",
+   "kind": "head",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 536870912.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.6",
+   "kind": "head",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 68554752.0,
+   "dkl": 0.01068843761458993,
+   "seconds": 13.03
+  },
+  {
+   "item": "head.6",
+   "kind": "head",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 101978112.0,
+   "dkl": 0.0017756874731276184,
+   "seconds": 13.38
+  },
+  {
+   "item": "head.6",
+   "kind": "head",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 167907328,
+   "dkl": 0.0001660033994994592,
+   "seconds": 10.28
+  },
+  {
+   "item": "head.6",
+   "kind": "head",
+   "bucket": 6,
+   "rows": 8192,
+   "frequency mass": 0.10775004514691792,
+   "weights": 33554432,
+   "shape": [
+    8192,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 268570624,
+   "dkl": 2.5962748964047933e-06,
+   "seconds": 10.58
+  },
+  {
+   "item": "head.7",
+   "kind": "head",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 1073741824.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.7",
+   "kind": "head",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 137105408.0,
+   "dkl": 0.01055276463739574,
+   "seconds": 15.32
+  },
+  {
+   "item": "head.7",
+   "kind": "head",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 203952128.0,
+   "dkl": 0.00165918079437688,
+   "seconds": 15.4
+  },
+  {
+   "item": "head.7",
+   "kind": "head",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 335810560,
+   "dkl": 0.00015592047020618338,
+   "seconds": 18.41
+  },
+  {
+   "item": "head.7",
+   "kind": "head",
+   "bucket": 7,
+   "rows": 16384,
+   "frequency mass": 0.08859444720397999,
+   "weights": 67108864,
+   "shape": [
+    16384,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 537137152,
+   "dkl": 2.4427181415376253e-06,
+   "seconds": 19.42
+  },
+  {
+   "item": "head.8",
+   "kind": "head",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 2147483648.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.8",
+   "kind": "head",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 274206720.0,
+   "dkl": 0.006414637318812311,
+   "seconds": 26.17
+  },
+  {
+   "item": "head.8",
+   "kind": "head",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 407900160.0,
+   "dkl": 0.0009336761577287689,
+   "seconds": 25.34
+  },
+  {
+   "item": "head.8",
+   "kind": "head",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 671617024,
+   "dkl": 8.45150225359248e-05,
+   "seconds": 32.71
+  },
+  {
+   "item": "head.8",
+   "kind": "head",
+   "bucket": 8,
+   "rows": 32768,
+   "frequency mass": 0.04163004402908355,
+   "weights": 134217728,
+   "shape": [
+    32768,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 1074270208,
+   "dkl": 1.4941615518182516e-06,
+   "seconds": 33.14
+  },
+  {
+   "item": "head.9",
+   "kind": "head",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "fp16",
+   "bits": 4110417920.0,
+   "dkl": 0.0
+  },
+  {
+   "item": "head.9",
+   "kind": "head",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "tr2",
+   "bits": 524845056.0,
+   "dkl": 0.001613384738448076,
+   "seconds": 41.45
+  },
+  {
+   "item": "head.9",
+   "kind": "head",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "tr3",
+   "bits": 780742656.0,
+   "dkl": 0.00025891137556754984,
+   "seconds": 40.04
+  },
+  {
+   "item": "head.9",
+   "kind": "head",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "lm5",
+   "bits": 1285513216,
+   "dkl": 2.4024742970141233e-05,
+   "seconds": 44.99
+  },
+  {
+   "item": "head.9",
+   "kind": "head",
+   "bucket": 9,
+   "rows": 62720,
+   "frequency mass": 0.005250447973070331,
+   "weights": 256901120,
+   "shape": [
+    62720,
+    4096
+   ],
+   "T": 256,
+   "option": "lm8",
+   "bits": 2056216576,
+   "dkl": 3.842113471819175e-07,
+   "seconds": 46.44
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.03078747563995421
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00652093521784991
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0017138579860329628
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.0003515465396048967
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 0.00010951922831736738
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 6.640828814852284e-06
+  },
+  {
+   "item": "kv.0.k",
+   "kind": "kv",
+   "layer": 0,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.008321011671796441
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.001917163812322542
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.000531671590579208
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00012780701763404068
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.6556556551659014e-05
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.4266643094961182e-06
+  },
+  {
+   "item": "kv.0.v",
+   "kind": "kv",
+   "layer": 0,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.03240030212327838
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.009752560290507972
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0021197154419496655
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.0007618285599164665
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 0.00019221216098230798
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.0790981605168781e-05
+  },
+  {
+   "item": "kv.1.k",
+   "kind": "kv",
+   "layer": 1,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0053308995557017624
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0012558062735479325
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00033091612203861587
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 9.125797623710241e-05
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.1934675714874174e-05
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.5086925770901871e-06
+  },
+  {
+   "item": "kv.1.v",
+   "kind": "kv",
+   "layer": 1,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.01444182638078928
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0029189519700594246
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0007468681287718937
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00023724294078419916
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 6.12222429481335e-05
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 3.862185735670209e-06
+  },
+  {
+   "item": "kv.2.k",
+   "kind": "kv",
+   "layer": 2,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0014081771951168776
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00036996133712818846
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 8.629256444692146e-05
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 2.5331994038424455e-05
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 4.956278189638397e-06
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 3.204446699101027e-07
+  },
+  {
+   "item": "kv.2.v",
+   "kind": "kv",
+   "layer": 2,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.013365393038839102
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00283905555261299
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0008221991447499022
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.0002452119078952819
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 6.203528573678341e-05
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 4.4407073573893285e-06
+  },
+  {
+   "item": "kv.3.k",
+   "kind": "kv",
+   "layer": 3,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0017883667605929077
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00045531761134043336
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00012316059655859135
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.3844285098894034e-05
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 7.809314183759852e-06
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 5.029138492318452e-07
+  },
+  {
+   "item": "kv.3.v",
+   "kind": "kv",
+   "layer": 3,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.010201168130151927
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0025889251846820116
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0006411997601389885
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00017728535749483854
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 4.414481827552663e-05
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.9766425768684712e-06
+  },
+  {
+   "item": "kv.4.k",
+   "kind": "kv",
+   "layer": 4,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.001408548720064573
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.000377326097805053
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00010206085880781757
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 2.4157632196875056e-05
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 6.7000382841797546e-06
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 4.383581142519688e-07
+  },
+  {
+   "item": "kv.4.v",
+   "kind": "kv",
+   "layer": 4,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.005338520626537502
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0017541266570333391
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0004041763531859033
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00010176979958487209
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.8573738745762967e-05
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.7288306253249175e-06
+  },
+  {
+   "item": "kv.5.k",
+   "kind": "kv",
+   "layer": 5,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0008607584022684023
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00019487591271172278
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 5.3418224524648394e-05
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.3912845133745577e-05
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.5882286510968697e-06
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.1652446946518467e-07
+  },
+  {
+   "item": "kv.5.v",
+   "kind": "kv",
+   "layer": 5,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.006792412488721311
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.001941980910487473
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0004889378105872311
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00012341551519057248
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.508183999656467e-05
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.5499733737888164e-06
+  },
+  {
+   "item": "kv.6.k",
+   "kind": "kv",
+   "layer": 6,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0010702893196139485
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0002733566434471868
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 7.040330456220545e-05
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.831481540648383e-05
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 4.615168620603072e-06
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.8876954161205504e-07
+  },
+  {
+   "item": "kv.6.v",
+   "kind": "kv",
+   "layer": 6,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.005058338749222457
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.001563974772579968
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0004363160551292822
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00011100513256678823
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.886853599193273e-05
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.809085915738251e-06
+  },
+  {
+   "item": "kv.7.k",
+   "kind": "kv",
+   "layer": 7,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0010065462265629321
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0002477964408171829
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 6.307446801656624e-05
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.654986135690706e-05
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 4.399202907734434e-06
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.6113382034509414e-07
+  },
+  {
+   "item": "kv.7.v",
+   "kind": "kv",
+   "layer": 7,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.002744848607107997
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0008063429413596168
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00022222720872377977
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 6.167887204355793e-05
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.4964705997044803e-05
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.1447749557191855e-06
+  },
+  {
+   "item": "kv.8.k",
+   "kind": "kv",
+   "layer": 8,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.000726220416254364
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0002094762385240756
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 5.0359716624370776e-05
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.207155582960695e-05
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.0322261181936483e-06
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.9067633161284903e-07
+  },
+  {
+   "item": "kv.8.v",
+   "kind": "kv",
+   "layer": 8,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0034235052880831063
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.000924058782402426
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0002561250439612195
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 7.130509038688615e-05
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.759919359756168e-05
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.1452896160335513e-06
+  },
+  {
+   "item": "kv.9.k",
+   "kind": "kv",
+   "layer": 9,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0007978752255439758
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0001848985230026301
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.713235921371961e-05
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.2598908142535947e-05
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.0854453711981478e-06
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.1384786919043108e-07
+  },
+  {
+   "item": "kv.9.v",
+   "kind": "kv",
+   "layer": 9,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0020631251391023397
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0005966894896118902
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00016954177772277035
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 4.5275747652340215e-05
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.167477330454858e-05
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 7.107176998033538e-07
+  },
+  {
+   "item": "kv.10.k",
+   "kind": "kv",
+   "layer": 10,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0006049997682566755
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00014444142470892984
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 3.639190890680766e-05
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 9.557660291648062e-06
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.4423162017228606e-06
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.506872706613649e-07
+  },
+  {
+   "item": "kv.10.v",
+   "kind": "kv",
+   "layer": 10,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.002533458115067333
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00082482147263363
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0002166263475373853
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.2771041737287305e-05
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.447982413083082e-05
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 8.797077271083253e-07
+  },
+  {
+   "item": "kv.11.k",
+   "kind": "kv",
+   "layer": 11,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0006984734500292689
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0001714838253974449
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.173529305262491e-05
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.1278332294750726e-05
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.8703378234240517e-06
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.8260899992128543e-07
+  },
+  {
+   "item": "kv.11.v",
+   "kind": "kv",
+   "layer": 11,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0051777099724859
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.001485681626945734
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0003812603317783214
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.0001026036698021926
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.7566814424062613e-05
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.673141468927497e-06
+  },
+  {
+   "item": "kv.12.k",
+   "kind": "kv",
+   "layer": 12,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0009692941093817353
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00023331121337832883
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 6.244808992050821e-05
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.6428320350314607e-05
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.945345042666304e-06
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.6805977881849685e-07
+  },
+  {
+   "item": "kv.12.v",
+   "kind": "kv",
+   "layer": 12,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0025050616823136806
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0007420405891025439
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00019795629850705154
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 4.755150348501047e-05
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.3372613238971098e-05
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 8.205427661778231e-07
+  },
+  {
+   "item": "kv.13.k",
+   "kind": "kv",
+   "layer": 13,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0008333968871738762
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00018755072596832179
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.652235202229349e-05
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.1557682455531904e-05
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.9885541152907535e-06
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.8794055733906134e-07
+  },
+  {
+   "item": "kv.13.v",
+   "kind": "kv",
+   "layer": 13,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.004766335943713784
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0012072489771526307
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00033254515437874943
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 9.158521061181091e-05
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.225929847554653e-05
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.4264749097492313e-06
+  },
+  {
+   "item": "kv.14.k",
+   "kind": "kv",
+   "layer": 14,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0009051437518792227
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00022144344984553754
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 5.608850642602192e-05
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.4381123492057668e-05
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.657937611478701e-06
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.3257956627276144e-07
+  },
+  {
+   "item": "kv.14.v",
+   "kind": "kv",
+   "layer": 14,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0038991233450360596
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0014234718546504155
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00035732459946302697
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 9.688750833447557e-05
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.2903426724951714e-05
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.523257367352926e-06
+  },
+  {
+   "item": "kv.15.k",
+   "kind": "kv",
+   "layer": 15,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0009478704741923138
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00027147358196089044
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 5.8935849665431306e-05
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.5060608802741626e-05
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.914419892225851e-06
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 3.099605123679794e-07
+  },
+  {
+   "item": "kv.15.v",
+   "kind": "kv",
+   "layer": 15,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.004553888458758593
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0012564749049488455
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0003263857070123777
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 9.551629045745358e-05
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.3108443656383315e-05
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.561241333547514e-06
+  },
+  {
+   "item": "kv.16.k",
+   "kind": "kv",
+   "layer": 16,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0010479076590854675
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0002491582199581899
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 6.40014168311609e-05
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.6962271956799668e-05
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 4.363301741250325e-06
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 3.0719589005911985e-07
+  },
+  {
+   "item": "kv.16.v",
+   "kind": "kv",
+   "layer": 16,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0032848481205292046
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0008774257876211777
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0002611269082990475
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.586242696153931e-05
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.5603996871504933e-05
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 9.547934496367816e-07
+  },
+  {
+   "item": "kv.17.k",
+   "kind": "kv",
+   "layer": 17,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0007512675510952249
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00017512435078970157
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.334393634053413e-05
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.1442423783591948e-05
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.006200131494552e-06
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.83747744131324e-07
+  },
+  {
+   "item": "kv.17.v",
+   "kind": "kv",
+   "layer": 17,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.002490044600563124
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0006874576065456495
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00016800229968794156
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 4.5903950194770005e-05
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.0924924026767258e-05
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 6.879837997075811e-07
+  },
+  {
+   "item": "kv.18.k",
+   "kind": "kv",
+   "layer": 18,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0009477767016505823
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00019164750847266987
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.5097295242158e-05
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.2619922244994086e-05
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.8944622272319975e-06
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.3529835857516446e-07
+  },
+  {
+   "item": "kv.18.v",
+   "kind": "kv",
+   "layer": 18,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.002312689059181139
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0006073532858863473
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00015130420615605544
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.769121030927636e-05
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.1012755066985846e-05
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 6.124258788986481e-07
+  },
+  {
+   "item": "kv.19.k",
+   "kind": "kv",
+   "layer": 19,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0006041382002877071
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00013331437912711408
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 3.6171080864733085e-05
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 9.416731018063729e-06
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.210905961419485e-06
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.2817201167081294e-07
+  },
+  {
+   "item": "kv.19.v",
+   "kind": "kv",
+   "layer": 19,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.001964889030205086
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0005417436987045221
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00017201675473188516
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.280301189079182e-05
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 8.85812619344506e-06
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 5.939095899520908e-07
+  },
+  {
+   "item": "kv.20.k",
+   "kind": "kv",
+   "layer": 20,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0004128228101762943
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00010477287651156075
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 2.3882725145085715e-05
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 6.154545076242357e-06
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.724052111740093e-06
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.2013330774607311e-07
+  },
+  {
+   "item": "kv.20.v",
+   "kind": "kv",
+   "layer": 20,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.002649386238772422
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0008583027520217001
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00023646517729503103
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.778159811598016e-05
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.5336726391979028e-05
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 9.269921861232433e-07
+  },
+  {
+   "item": "kv.21.k",
+   "kind": "kv",
+   "layer": 21,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.000704332982422784
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00017254379781661555
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.663242634705966e-05
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.2219096561238985e-05
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.1922049288368726e-06
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.9330046541199408e-07
+  },
+  {
+   "item": "kv.21.v",
+   "kind": "kv",
+   "layer": 21,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0015421832504216582
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0004222101342747919
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00014330212070490234
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.3031284147000406e-05
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 7.617069513798924e-06
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 6.119355902001189e-07
+  },
+  {
+   "item": "kv.22.k",
+   "kind": "kv",
+   "layer": 22,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0003889108484145254
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 8.933378558140248e-05
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 2.511681350370054e-05
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 6.507195621452411e-06
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.6750479687743791e-06
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.051277678243423e-07
+  },
+  {
+   "item": "kv.22.v",
+   "kind": "kv",
+   "layer": 22,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.00166356994304806
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0004585195492836647
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00011354632988513913
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 2.8998041216254933e-05
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 7.73437045609171e-06
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 4.7648225631746755e-07
+  },
+  {
+   "item": "kv.23.k",
+   "kind": "kv",
+   "layer": 23,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0004093223142263014
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00010118189402419375
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 2.1418351934698876e-05
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.449719537864439e-06
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.5945526854466152e-06
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.065538981492864e-07
+  },
+  {
+   "item": "kv.23.v",
+   "kind": "kv",
+   "layer": 23,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0014157328114379197
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0003398692060727626
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 9.770382439455716e-05
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 2.5190628548443783e-05
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 7.3549783792259404e-06
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 4.1296999597761896e-07
+  },
+  {
+   "item": "kv.24.k",
+   "kind": "kv",
+   "layer": 24,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.00033844356948975474
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 8.175648144970182e-05
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 2.047385214609676e-05
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.240524615146569e-06
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.353530365122424e-06
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 9.457437499804655e-08
+  },
+  {
+   "item": "kv.24.v",
+   "kind": "kv",
+   "layer": 24,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0018305833800695837
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0005810453803860582
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0001590432548255194
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 4.19162197431433e-05
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.0969336472044233e-05
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 6.807904640027118e-07
+  },
+  {
+   "item": "kv.25.k",
+   "kind": "kv",
+   "layer": 25,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0004572617544909008
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00012155037256889045
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 3.335787732794415e-05
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 8.146527761709876e-06
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.139419507329876e-06
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.2959915807186917e-07
+  },
+  {
+   "item": "kv.25.v",
+   "kind": "kv",
+   "layer": 25,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.001541381177958101
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0003929475642507896
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0001251608755410416
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.216488312318688e-05
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 7.825890861568041e-06
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 5.721392426494276e-07
+  },
+  {
+   "item": "kv.26.k",
+   "kind": "kv",
+   "layer": 26,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0006205827085068449
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00013005452274228446
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 3.110906118308776e-05
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 7.95222820215713e-06
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.9220015587961825e-06
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.2890353673356003e-07
+  },
+  {
+   "item": "kv.26.v",
+   "kind": "kv",
+   "layer": 26,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0015042096783872694
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0003724647031049244
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00010959535575238988
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 2.5356087917316472e-05
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 6.7106386723025935e-06
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 4.1674482531561807e-07
+  },
+  {
+   "item": "kv.27.k",
+   "kind": "kv",
+   "layer": 27,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.000343843137670774
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 8.639725274406374e-05
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 2.1128426396899158e-05
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.41479835192149e-06
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.3768827216154023e-06
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 8.562054176763922e-08
+  },
+  {
+   "item": "kv.27.v",
+   "kind": "kv",
+   "layer": 27,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0016608401201665401
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0004658606048906222
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00012859613707405515
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.671190734166885e-05
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 8.303058848468936e-06
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 5.638575828470493e-07
+  },
+  {
+   "item": "kv.28.k",
+   "kind": "kv",
+   "layer": 28,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0005994785606162623
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00014856006237096153
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 4.515674845606554e-05
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.1049584372813115e-05
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.656688138813479e-06
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.848421220529417e-07
+  },
+  {
+   "item": "kv.28.v",
+   "kind": "kv",
+   "layer": 28,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.00298702297732234
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0008306740710395388
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00022576753144676331
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 5.9011177199863596e-05
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.489455553382868e-05
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 8.754184648296359e-07
+  },
+  {
+   "item": "kv.29.k",
+   "kind": "kv",
+   "layer": 29,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0007891767745604739
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00020127621246501803
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 5.0618365094123874e-05
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 1.5019496800050547e-05
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.66936080808955e-06
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 2.2103035490772527e-07
+  },
+  {
+   "item": "kv.29.v",
+   "kind": "kv",
+   "layer": 29,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0018806658626999706
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0004758583818329498
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0001272756198886782
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 3.642036517703673e-05
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 8.233849939642823e-06
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 5.300272789554583e-07
+  },
+  {
+   "item": "kv.30.k",
+   "kind": "kv",
+   "layer": 30,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.0006169848347781226
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.00013661439152201638
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 3.366261307746754e-05
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 8.816267950351175e-06
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 2.2559537455890677e-06
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.4340093912323937e-07
+  },
+  {
+   "item": "kv.30.v",
+   "kind": "kv",
+   "layer": 30,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.008982711704447865
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.002334321179660037
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.0005211702446104027
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 0.00012016268192382995
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 3.0465128475043457e-05
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 1.922655144426244e-06
+  },
+  {
+   "item": "kv.31.k",
+   "kind": "kv",
+   "layer": 31,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 2,
+   "kv bits per token": 2176,
+   "dkl": 0.003974037244915962
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 3,
+   "kv bits per token": 3200,
+   "dkl": 0.0009849460184341297
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 4,
+   "kv bits per token": 4224,
+   "dkl": 0.00022978174092713743
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 5,
+   "kv bits per token": 5248,
+   "dkl": 6.060354735382134e-05
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 6,
+   "kv bits per token": 6272,
+   "dkl": 1.5457981135114096e-05
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 8,
+   "kv bits per token": 8320,
+   "dkl": 9.922306389853475e-07
+  },
+  {
+   "item": "kv.31.v",
+   "kind": "kv",
+   "layer": 31,
+   "option": 16,
+   "kv bits per token": 16384,
+   "dkl": 0.0
+  }
+ ],
+ "embed buckets": [
+  256,
+  256,
+  512,
+  1024,
+  2048,
+  4096,
+  8192,
+  16384,
+  32768,
+  62720
+ ],
+ "embed order": "frequency in the text mix",
+ "tied": false,
+ "seconds": 2237
+}

@@ -1,0 +1,1510 @@
+[
+ {
+  "method": "AWQ w4 g64",
+  "word": "Gauge(diag, folded) → Restrict(box) → RTN word",
+  "ppl_ref": 16.70936954570608,
+  "kl_ref": 0.09632868133485317,
+  "ppl_frame": 16.70937054361118,
+  "kl_frame": 0.09632867760956287,
+  "max_logit_gap": 0.00012302398681640625,
+  "max_layer_rel_weight_diff": 0.0,
+  "arg_agreement": 1.0,
+  "final": {
+   "codes": 1.0,
+   "weights": 2.335010407250593e-09
+  },
+  "bits_per_weight": 4.3125,
+  "per_layer": [
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   }
+  ]
+ },
+ {
+  "method": "AWQ w3 g64",
+  "word": "Gauge(diag, folded) → Restrict(box) → RTN word",
+  "ppl_ref": 25.17894557077676,
+  "kl_ref": 0.48053521476686,
+  "ppl_frame": 25.17894557077676,
+  "kl_frame": 0.48053521476686,
+  "max_logit_gap": 0.0,
+  "max_layer_rel_weight_diff": 0.0,
+  "arg_agreement": 1.0,
+  "final": {
+   "codes": 1.0,
+   "weights": 0.0
+  },
+  "bits_per_weight": 3.296875,
+  "per_layer": [
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   },
+   {
+    "weights": {
+     "q": 0.0,
+     "k": 0.0,
+     "v": 0.0,
+     "o": 0.0,
+     "gate": 0.0,
+     "up": 0.0,
+     "down": 0.0,
+     "attn_norm": 0.0,
+     "mlp_norm": 0.0
+    },
+    "args": {
+     "ratios": 1.0,
+     "clips": {
+      "v": 1.0,
+      "o": 1.0,
+      "gate": 1.0,
+      "up": 1.0,
+      "down": 1.0
+     }
+    }
+   }
+  ]
+ }
+]
