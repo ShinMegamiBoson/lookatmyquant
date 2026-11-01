@@ -261,7 +261,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col">
     <h3>With its own codes, the compiler beats every public file under 3.5 GB at only 2 GB</h3>
-    <p>The compiler's native menu also has trellis codes and Lloyd–Max codes, which no public inference engine runs yet. With these codes, its 2.00 GB plan has a KL of <span data-v="own2kl">0.074</span>, lower than every public file under 3.5 GB, and solves <span data-v="own2gsm">60.4%</span> of GSM8K problems. At 3.41 GB its KL is <span data-v="own341kl">0.0057</span>. These plans show what the allocation can reach once such codes run.</p>
+    <p>The compiler's native menu also has trellis codes and Lloyd–Max codes. Lloyd–Max codes run on Apple Silicon with our <a href="https://github.com/ShinMegamiBoson/lookatmyquant/tree/main/runtime_mlx">MLX runtime</a>, and support for trellis codes is coming. With both kinds of code, its 2.00 GB plan has a KL of <span data-v="own2kl">0.074</span>, lower than every public file under 3.5 GB, and solves <span data-v="own2gsm">60.4%</span> of GSM8K problems. At 3.41 GB its KL is <span data-v="own341kl">0.0057</span>. These plans show what the allocation can reach once trellis codes run.</p>
   </section>
 
   <section class="wide">
@@ -467,7 +467,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <h2 id="limits">Limitations</h2>
     <ul class="contrib">
       <li><b>Decoding speed was not measured.</b> The compiled GGUF stores the per-layer table in fewer bytes and the matrices in more. Each token reads one row of the table but every matrix in full. So the compiled file reads more memory per token than a public file of the same size, and may decode more slowly.</li>
-      <li><b>No public inference engine runs the compiler's own codes yet.</b> Their quality numbers still hold. Every file in this paper, public or ours, was scored the same way, by turning its stored values back into full-precision weights. Their speed is unknown until an engine runs them.</li>
+      <li><b>Plans with trellis codes can't run yet.</b> Our <a href="https://github.com/ShinMegamiBoson/lookatmyquant/tree/main/runtime_mlx">MLX runtime</a> runs Lloyd–Max codes on Apple Silicon, and support for trellis codes is coming. No other public inference engine runs either code. The quality numbers still hold, because every file in this paper, public or ours, was scored the same way, by turning its stored values back into full-precision weights. The speed of trellis plans is unknown until they run.</li>
       <li><b>One model so far against public files.</b> The public comparison covers Gemma 4 E2B only.</li>
       <li><b>Calibration text.</b> The compiler and our llama.cpp builds calibrate on a split of the same 13-source mix used for testing; the unsloth and bartowski files calibrate on their own text. WikiText-2 is in neither, and the gap there is as large.</li>
       <li><b>Small evaluation sets.</b> KL uses 104 held-out windows and 64 WikiText-2 windows of 512 tokens; GSM8K uses 250 problems.</li>
@@ -481,7 +481,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <li><b>GPU memory as the budget.</b> The plans here count every byte the same, which matches file size and the unified memory of Macs and phones. On a GPU, lookup tables and offloaded mixture-of-experts layers can stay in CPU memory, so only the pieces that live on the GPU use its memory. A GPU-memory target prices the other pieces at a cheaper host-memory rate. For Gemma 4 E2B, whose per-layer table is half the model, that plan would give the table more bits and the matrices fewer than the plans here.</li>
       <li><b>Inference speed as the budget.</b> For now the compiler assumes one decode operation per weight for 16-bit values, two for a scalar code and three for a trellis. Measuring tokens per second for each type on each device lets a plan target speed directly, for example the most accurate GGUF that decodes at least as fast as Q4_K_M on a given GPU.</li>
       <li><b>Long contexts.</b> The cache is priced at the context length a plan targets, but plans have been evaluated at 512 and 2,048 tokens. The Qwen3.5-4B laptop plan, priced at 32,768 tokens, should be evaluated at that length, and the recurrent state of hybrid models like Qwen3.5 should be priced too.</li>
-      <li><b>Kernels for the compiler's own codes.</b> With trellis and Lloyd–Max codes, the 2.00 GB plan beats every public file under 3.5 GB, but no public inference engine runs these codes yet. The plans ask for three things: rows of different widths in one table, trellis decoding inside llama.cpp, and keys and values cached at different widths.</li>
+      <li><b>Trellis support.</b> With trellis and Lloyd–Max codes, the 2.00 GB plan beats every public file under 3.5 GB. Our <a href="https://github.com/ShinMegamiBoson/lookatmyquant/tree/main/runtime_mlx">MLX runtime</a> runs the Lloyd–Max codes today, and support for trellis codes is coming. Running these plans in llama.cpp would take three things: rows of different widths in one table, trellis decoding, and keys and values cached at different widths.</li>
       <li><b>More models.</b> The rest of Gemma 4 is next: E4B, 12B, 31B and the 26B-A4B mixture of experts, each compared with its public files on the same protocol. The compiler already treats experts as pieces, grouped by how often the router picks them.</li>
       <li><b>Search around the plan.</b> Where the sum of per-piece KL misses the measured KL, trying small changes to the plan on the real model, as EvoPress does, would find plans the sum cannot.</li>
     </ul>
@@ -571,7 +571,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     `<tr><td><b>${gb(g.gb)} GB</b></td><td class="num"><b>${kl(g.mix_kl)}</b></td><td>${esc(p.name)}</td><td class="num">${gb(p.gb)}</td><td class="num">${kl(p.mix_kl)}</td><td class="num"><b>${floor1(r)}×</b></td></tr>`).join('');
 
   // ---- Table 2
-  const groups = [['Compiled GGUF, llama.cpp types', 'ours_gguf'], ["Compiler's own codes (no public engine yet)", 'ours'], ['Public files', 'public'], ['Original', 'original']];
+  const groups = [['Compiled GGUF, llama.cpp types', 'ours_gguf'], ["Compiler's own codes (trellis support coming)", 'ours'], ['Public files', 'public'], ['Original', 'original']];
   document.querySelector('#t2 tbody').innerHTML = groups.map(([label, g]) => {
     const rows = E.filter((r) => r.group === g).sort((a, b) => a.gb - b.gb);
     return `<tr class="group"><td colspan="9">${label}</td></tr>` + rows.map((r) => `<tr${g.startsWith('ours') ? ' class="ours"' : ''}>
@@ -589,7 +589,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   // ---- legends
   const dot = (c, label, cls = '') => `<span><i class="${cls}" style="background:${c}"></i>${label}</span>`;
-  const MAIN_LEGEND = dot('var(--gguf)', 'LookAtMyQuant, GGUF (llama.cpp types)') + dot('var(--own)', "LookAtMyQuant, own codes (no public engine yet)") + dot('var(--pub)', 'Public files') + `<span><i class="ring"></i>Google QAT (retrained)</span>`;
+  const MAIN_LEGEND = dot('var(--gguf)', 'LookAtMyQuant, GGUF (llama.cpp types)') + dot('var(--own)', "LookAtMyQuant, own codes (trellis support coming)") + dot('var(--pub)', 'Public files') + `<span><i class="ring"></i>Google QAT (retrained)</span>`;
   document.getElementById('fig1-legend').innerHTML = MAIN_LEGEND;
   document.getElementById('fig2-legend').innerHTML = MAIN_LEGEND;
 
@@ -673,7 +673,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     const rowsB = [
       { name: 'llama.cpp Q4_K_M', sub: `stock recipe · KL ${kl(q4.mix_kl)}`, parts: [['mat', 1.1145, 4.79], ['emb', 0.3303, 6.56], ['ple', 1.9268, 6.56], ['kept', 0.0405]] },
       { name: 'LookAtMyQuant GGUF', sub: `llama.cpp types · KL ${kl(g339.mix_kl)}`, parts: [['mat', 1.775, 7.62], ['emb', 0.3303, 6.56], ['ple', 1.2478, 4.25], ['kept', 0.0405]] },
-      { name: 'LookAtMyQuant, own codes', sub: `no public engine yet · KL ${kl(own[own.length - 1].mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept]] },
+      { name: 'LookAtMyQuant, own codes', sub: `trellis support coming · KL ${kl(own[own.length - 1].mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept]] },
     ];
     const h = rowsB.length * rh + 28, x = (v) => ml + (w - ml - mr) * v / 3.5;
     const COL = { mat: 'var(--mat)', emb: 'var(--emb)', ple: 'var(--ple)' }, NAME = { mat: 'Weight matrices', emb: 'Embedding table', ple: 'Per-layer table', kept: 'Kept at 16 bits' };

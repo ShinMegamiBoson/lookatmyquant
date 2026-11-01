@@ -61,7 +61,7 @@ The runs behind the site used these machines, each with 8 CPU cores:
 
 ## The Apple Silicon runtime reads Lloyd–Max plans
 
-`quantize.py --export <folder>` writes a Lloyd–Max plan in the format `runtime_mlx/` reads. The runtime needs `mlx` and `mlx_lm`, which are not in `requirements.txt`.
+`quantize.py --export <folder>` writes a Lloyd–Max plan in the format `runtime_mlx/` reads. The runtime needs `mlx` and `mlx_lm`, which are not in `requirements.txt`. Support for trellis codes is coming.
 
 ```sh
 python runtime_mlx/bench.py lamq path/to/export
