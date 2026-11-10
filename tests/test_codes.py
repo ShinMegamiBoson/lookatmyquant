@@ -144,6 +144,27 @@ def test_codes_beat_scalar_on_gaussians():
     print(f"    2-bit distortion on a unit Gaussian: scalar {scalar:.4f}, 4-D codebook {vq:.4f}, 256-state trellis {tcq:.4f}")
 
 
+def test_trellis_ema_fit():
+    """Decaying means over fresh batches leave less error on held-out Gaussians than Lloyd steps, in a file of their own."""
+    import tempfile
+    cache, default, C.CACHE = C.CACHE, C.TRELLIS_FIT, Path(tempfile.mkdtemp())
+    try:
+        L, k, T = 8, 2, 64
+        X = torch.randn(1024, T, generator=torch.Generator().manual_seed(1), dtype=torch.float64)
+        err, files = {}, {"lloyd": f"trellis_L{L}_k{k}_T{T}_s0.pt", "ema": f"trellis_L{L}_k{k}_T{T}_s0_ema.pt"}
+        for fit in files:
+            v = C.trellis_values(L, k, T, refine=6, fit=fit)
+            err[fit] = (X - v[C.viterbi(X, v, L, k)]).square().mean().item()
+        assert err["ema"] < 0.99 * err["lloyd"], err
+        assert sorted(p.name for p in C.CACHE.iterdir()) == sorted(files.values())
+        for fit, name in files.items():  # what --trellis-fit or a plan sets
+            C.TRELLIS_FIT = fit
+            assert torch.equal(C.trellis_values(L, k, T), torch.load(C.CACHE / name))
+        print(f"    2-bit distortion, 256-state trellis: Lloyd steps {err['lloyd']:.4f}, decaying means {err['ema']:.4f}")
+    finally:
+        C.CACHE, C.TRELLIS_FIT = cache, default
+
+
 if __name__ == "__main__":
     tests = [v for k, v in dict(globals()).items() if k.startswith("test_")]
     for t in tests:

@@ -606,6 +606,7 @@ def main():
     ap.add_argument("--eval-mix", type=int, default=0, help="held-out windows per text-mix source to evaluate (0: 8 with --data mix)")
     ap.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
     ap.add_argument("--trellis-rows", default="", help="width,look: run trellis paths along each row, settling width columns at a time and looking look columns ahead")
+    ap.add_argument("--trellis-fit", choices=["lloyd", "ema"], default="", help="how the trellis's value table is fitted (opgraph.codes.trellis_values); default: the plan's, else codes.TRELLIS_FIT")
     ap.add_argument("--rot", choices=["both", "in-shared"], default="both",
                     help="Lloyd–Max and trellis words: rotate both sides of each matrix, or only the input, with one rotation shared by a stage's matrices")
     ap.add_argument("--export", default="", help="write the plan in the Apple Silicon runtime's format")
@@ -725,6 +726,8 @@ def main():
     tc = A.text_config(ref.config)
     T_tr = 256 if tc.hidden_size % 256 == 0 else 320  # outputs per trellis run: Qwen3.5 and Llama-2 256, SmolLM2 320
     plan = json.loads(Path(args.plan).read_text()) if args.program == "plan" else None
+    # a plan builds with the table its measurements used: Lloyd steps, for plans from before they named one
+    C.TRELLIS_FIT = res["trellis fit"] = args.trellis_fit or (plan.get("trellis fit", "lloyd") if plan else C.TRELLIS_FIT)
     _, layers = A.decoder_layers(model)
     _, rlayers = A.decoder_layers(ref)
     n_layers = args.layers or len(layers)

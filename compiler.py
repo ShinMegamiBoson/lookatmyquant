@@ -9,7 +9,9 @@ and the compiler finds the plan that loses least under a hardware target.
                    kv      one layer's cached keys or values (quantize.KVQuant), 2 3 4 5 6 8 or 16 bits
                With --options tr3 a matrix is measured at one width only; allocate predicts its other options from the
                matrices of the same role measured at every width (KL ÷ KL at tr3 is nearly constant per code: 10–90% of
-               SmolLM2's 224 matrices within ±10%), and its bits from theirs (same role, same shape)
+               SmolLM2's 224 matrices within ±10%), and its bits from theirs (same role, same shape).
+               --trellis-fit names the value table the tr options use (opgraph.codes.trellis_values: lloyd or ema); the
+               plan made from the measurements names it too, and run builds with that table
     allocate   a target prices every option from three numbers — stored bits, cached bits per token of context, and
                decode operations — and sets a budget; dynamic programming over the items (a multiple-choice knapsack)
                finds the options with the least summed KL within it. Summing assumes the items' damage adds up; the
@@ -179,9 +181,10 @@ def measure(args):
     _, layers = A.decoder_layers(model)
     stages = A.discover(model, chunks[0][:1, :64])
     method = args.method
+    qz.C.TRELLIS_FIT = args.trellis_fit or qz.C.TRELLIS_FIT
     out = {"model": args.model, "parts": args.part, "method": method, "data": args.data, "held-out windows": [len(held), T],
            "calibration": [len(calib), T], "kl floor (nothing quantized)": floor, "seconds per kl": round(time.time() - t0, 3),
-           "device": qz.DEV, "stages (layer 0)": A.stage_list_text(stages[0]), "records": []}
+           "device": qz.DEV, "trellis fit": qz.C.TRELLIS_FIT, "stages (layer 0)": A.stage_list_text(stages[0]), "records": []}
     if method == "noise":
         out["noise d"] = NOISE_D
     recs = out["records"]
@@ -401,11 +404,14 @@ def expert_buckets(E):
 
 
 def load_sens(pattern):
-    """Every record in the files matching `pattern`, grouped by item, and the files' metadata (the embedding buckets)."""
+    """Every record in the files matching `pattern`, grouped by item, and the files' metadata (the embedding buckets, and the
+    trellis table the tr options were measured with: Lloyd steps in files from before there was a choice)."""
     items, meta = {}, {}
     for f in sorted(glob.glob(pattern)):
         d = json.loads(Path(f).read_text())
         meta.setdefault("model", d.get("model"))
+        fit = d.get("trellis fit", "lloyd")
+        assert meta.setdefault("trellis fit", fit) == fit, f"{f} was measured with the {fit} trellis table, earlier files with {meta['trellis fit']}"
         for k in ("embed buckets", "embed order", "tied"):
             if k in d:
                 meta[k] = d[k]
@@ -541,7 +547,7 @@ def summarize(chosen, items):
 def write_plan(chosen, items, meta, t_name, t, budget, out_path, extra=None):
     plan = {"model": meta.get("model"), "target": t_name, "target spec": t, "budget": budget,
             "cost": sum(price(items[n][o], t) for n, o in chosen.items()),
-            "predicted kl": sum(max(items[n][o]["dkl"], 0.0) for n, o in chosen.items()),
+            "predicted kl": sum(max(items[n][o]["dkl"], 0.0) for n, o in chosen.items()), "trellis fit": meta["trellis fit"],
             "linears": {n: program_of(items[n][o]) for n, o in sorted(chosen.items()) if items[n][o]["kind"] == "linear"}}
     for kind in ("embed", "head", "ple"):  # the tied table (or the untied input embedding), an untied head, a per-layer table
         emb = sorted((items[n][o]["bucket"], o) for n, o in chosen.items() if items[n][o]["kind"] == kind)
@@ -613,7 +619,7 @@ def uniform(args):
     import quantize as qz
     if args.sens:
         items, meta = load_sens(args.sens)
-        plan = {"model": meta.get("model"), "target": "uniform", "linears": {}}
+        plan = {"model": meta.get("model"), "target": "uniform", "trellis fit": meta["trellis fit"], "linears": {}}
         for name, opts in sorted(items.items()):
             r = next(iter(opts.values()))
             if r["kind"] == "linear":
@@ -641,7 +647,7 @@ def uniform(args):
     mix = ["linear_attn" if t == "linear_attention" else "self_attn" for t in types]
     linears = {f"{i}.{blk}.{n}": args.linear for i in range(cfg["num_hidden_layers"]) for blk in (mix[i], "mlp")
                for stage in qz.STAGES[blk] for n in stage}
-    plan = {"model": args.model, "target": "uniform", "linears": linears}
+    plan = {"model": args.model, "target": "uniform", "trellis fit": qz.C.TRELLIS_FIT, "linears": linears}
     if args.embed:
         sizes = qz.embedding_buckets(cfg["vocab_size"])
         plan["embed"] = {"sizes": sizes, "programs": [args.embed] * len(sizes), "order": "frequency in the WikiText-2 training split"}
@@ -691,6 +697,7 @@ def main():
     m.add_argument("--calib-len", type=int, default=512)
     m.add_argument("--chunk", type=int, default=8)
     m.add_argument("--windows", type=int, default=16, help="held-out training windows for the KL")
+    m.add_argument("--trellis-fit", choices=["lloyd", "ema"], default="", help="how the tr options' value table is fitted (default: codes.TRELLIS_FIT)")
     m.add_argument("--out", required=True)
     a = sub.add_parser("allocate")
     a.add_argument("--sens", required=True, help="a glob of measure outputs")
