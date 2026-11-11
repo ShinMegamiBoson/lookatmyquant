@@ -187,9 +187,9 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p>With trellis codes fixed and half of the set the original's GSM8K solutions <a href="#r10">[10]</a>, the build solves <span data-v="s_trellis">117</span>.</p>
     <p>An all-math set with w = 1 at positions that predict a digit and w = 0.1 elsewhere gives <span data-v="s_digits">147</span>. Replacing 256 sequences of 512 tokens with 64 of 2,048, the original's greedy solutions to MATH training problems <a href="#r9">[9]</a>, gives <span data-v="s_long">224</span>. These have long chains of intermediate results, like the benchmark's.</p>
 
-    <h2>Bits belong to rows: 10% of a matrix's rows can carry 79% of its Fisher information on digits</h2>
-    <p>For each output row i we measure s<sub>i</sub> = E[g<sub>i</sub>²]·E[y<sub>i</sub>²] on the original model. Here y is the row's output and g is the gradient of the log-likelihood of tokens sampled from the model's own predictions at digit-predicting positions. In the matrices that read a linear-attention layer's input, 10% of the rows carry 79% of the total.</p>
-    <p>Mixed precision between output rows, ranked across the whole model, is MixLLM's <a href="#r14">[14]</a>. RoleQ <a href="#r15">[15]</a> gives a second ternary plane to units chosen by Fisher saliency. We apply the idea to trellis codes, at four rates inside a matrix, with the score taken at digit-predicting positions.</p>
+    <h2>Bits belong to rows: 10% of a matrix's rows can carry 79% of its Fisher information</h2>
+    <p>For each output row i we measure s<sub>i</sub> = E[g<sub>i</sub>²]·E[y<sub>i</sub>²] on the original model. Here y is the row's output and g is the gradient of the log-likelihood of tokens sampled from the model's own predictions, taken at the positions the calibration weights most, those that predict a digit. In the matrices that read a linear-attention layer's input, 10% of the rows carry 79% of the total.</p>
+    <p>Mixed precision between output rows, ranked across the whole model, is MixLLM's <a href="#r14">[14]</a>. RoleQ <a href="#r15">[15]</a> gives a second ternary plane to units chosen by Fisher saliency. We apply the idea to trellis codes, at four rates inside a matrix.</p>
     <p>A global allocation of 1 to 4 bits per row group, across all matrices and under the same byte budget, took the score from <span data-v="s_half">265</span> to <span data-v="s_rows">300</span>. It puts 13% of the matrix weights at 1 bit, 47% at 2, 36% at 3 and 4% at 4. Rotating the output side as well would average this structure away, so the incoherence transform is on the input side only.</p>
 
     <h2>e-means codebooks cut trellis MSE by 4% to 9% at the same bytes and added <span data-v="tableGain">17</span> problems</h2>
@@ -220,7 +220,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p class="tcap"><b>Table 2.</b> Two builds, each with post-training quantization only, fine-tuned, and fine-tuned with mid-training re-quantization.</p>
     <div class="scroll-x"><table><thead><tr><th>Training</th><th class="num">Math, of 540</th><th class="num">KL, 13 sources</th><th class="num">KL, WikiText-2</th></tr></thead><tbody data-rows="t2"><tr class="group"><td colspan="4">Build A, e-means codebooks at every bit rate</td></tr><tr><td>Post-training quantization only</td><td class="num">317</td><td class="num">1.41</td><td class="num">1.07</td></tr><tr><td>Fine-tuned</td><td class="num">321</td><td class="num">0.79</td><td class="num">0.64</td></tr><tr class=ours><td>Fine-tuned, with mid-training re-quantization (our file)</td><td class="num">330</td><td class="num">0.45</td><td class="num">0.42</td></tr><tr class="group"><td colspan="4">Build B, e-means codebooks at 2 and 3 bits only</td></tr><tr><td>Post-training quantization only</td><td class="num">311</td><td class="num">1.43</td><td class="num">1.05</td></tr><tr><td>Fine-tuned</td><td class="num">314</td><td class="num">0.80</td><td class="num">0.64</td></tr><tr><td>Fine-tuned, with mid-training re-quantization</td><td class="num">324</td><td class="num">0.45</td><td class="num">0.44</td></tr></tbody></table></div>
 
-    <h2 id="recipe">The recipe is post-training quantization aimed at digits, then distillation that ends exactly on the codes</h2>
+    <h2 id="recipe">The recipe is post-training quantization against a digit-weighted objective, then distillation that ends exactly on the codes</h2>
     <p class="tcap"><b>Table 3.</b> The final recipe.</p>
     <div class="scroll-x"><table class="recipe"><thead><tr><th>Component</th><th>Setting</th></tr></thead><tbody>
       <tr class="group"><td colspan="2">Post-training quantization</td></tr>
@@ -229,7 +229,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <tr><td>Rounding</td><td>Viterbi along each row, 16 columns at a time with 8 of look-ahead, with LDLQ error feedback <a href="#r5">[5]</a> under H = E[w·xxᵀ].</td></tr>
       <tr><td>Calibration</td><td>64 sequences of 2,048 tokens: the original's greedy solutions to MATH training problems. w = 1 at digit-predicting positions and 0.1 elsewhere.</td></tr>
       <tr><td>Error propagation</td><td>QEP <a href="#r6">[6]</a> at α = 0.5.</td></tr>
-      <tr><td>Bit allocation</td><td>Per-matrix rates from the compiler, then a global allocation over 1,520 row groups in 190 matrices by Fisher information on digits. The 200 matrices average <span data-v="matBits">2.32</span> bits per weight.</td></tr>
+      <tr><td>Bit allocation</td><td>Per-matrix rates from the compiler, then a global allocation over 1,520 row groups in 190 matrices by each row's Fisher information. The 200 matrices average <span data-v="matBits">2.32</span> bits per weight.</td></tr>
       <tr><td>Embedding</td><td>The tied embedding, 636M weights, in frequency buckets at 1 to 8 bits, <span data-v="embBits">1.88</span> on average.</td></tr>
       <tr class="group"><td colspan="2">Fine-tuning, 4,000 steps</td></tr>
       <tr><td>Student</td><td>Latent full-precision weights W, initialized at the dequantized build. P is W's current quantized value.</td></tr>
@@ -258,7 +258,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p class="tcap"><b>Table 4.</b> The compiler in LookAtMyQuant 1 and in this recipe.</p>
     <div class="scroll-x"><table class="recipe"><thead><tr><th>Step</th><th>LookAtMyQuant 1</th><th>This recipe</th></tr></thead><tbody>
       <tr><td>Pieces</td><td>Whole matrices, embedding buckets by token frequency, key–value caches.</td><td>Also row groups inside each matrix.</td></tr>
-      <tr><td>Sensitivity</td><td>KL on held-out text with one piece compressed.</td><td>Also Fisher information per output row at digit-predicting positions.</td></tr>
+      <tr><td>Sensitivity</td><td>KL on held-out text with one piece compressed.</td><td>Also Fisher information per output row.</td></tr>
       <tr><td>Calibration</td><td>A text mix with every token weighted equally.</td><td>A set chosen for the target, with token weights in H.</td></tr>
       <tr><td>Codes</td><td>llama.cpp's types, or Lloyd–Max and trellis codes with Lloyd codebooks.</td><td>Trellis codes at 1 to 4 bits per row group, with e-means codebooks.</td></tr>
       <tr><td>After allocation</td><td>Nothing.</td><td>Distillation that ends on the codes, with one re-quantization from the original weights.</td></tr>
