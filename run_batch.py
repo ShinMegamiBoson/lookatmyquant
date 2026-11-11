@@ -10,6 +10,9 @@ Jobs:
     ccM<model>* any other model on the text mix: all matrices by noise, spot layers at every option, tables and cache
     cc_<plan>   one plan in results/compiler/plans/, built and scored (quantize.py --program plan)
     ccG_<plan>  the same plan with the exact gauge search, ccS4_<plan> with four Hadamard seeds per matrix
+    lm2*        the LookAtMyQuant 2 recipe on Qwen3.5-4B at 1.2 GB, in order: lm2Text, lm2Calibration, lm2RowImportance,
+                lm2Build, lm2Solutions, lm2Finetune, lm2Math, lm2Math216, lm2TextKL (lm2*Smoke: the same code on a few layers,
+                steps or problems)
 """
 
 from __future__ import annotations
@@ -114,6 +117,39 @@ for _p in sorted((ROOT / "results" / "compiler" / "plans").glob("x_*.json")):
                 *(["--rot", "in-shared"] if "_lm1s_" in _p.stem else []),  # one input rotation per stage, none on the output: half the rotations at decode
                 "--out", f"results/batch/cc_{_p.stem}.json"])
 
+# LookAtMyQuant 2 (https://lookatmyquant2.pages.dev): Qwen3.5-4B at 1.2 GB. Every file a job makes goes to lm2/ on the volume.
+# The row plan in results/compiler/rows/ is the one row_allocation.py made from lm2RowImportance's file and the plan.
+_lm2 = "/root/.cache/huggingface/lm2/"
+_bonsai = "bonsai:prism-ml/Ternary-Bonsai-2-4B-mlx-2bit"
+_recipe = ["quantize.py", "--program", "plan", "--plan", "results/compiler/plans/q35_trellis_1p2GB.json", *_q35p, "--dtype", "float32", "--ctx", "512", "--skip-eval",
+           "--rot", "in-shared", "--trellis-rows", "16,8", "--seeds", "1", "--seed-set", "1", "--data", "mix", "--calib", "64", "--calib-len", "2048",
+           "--calib-math", "1.0", "--math-cache", _lm2 + "math_long.pt", "--token-weights", "digits", "--token-floor", "0.1", "--cross-alpha", "0.5",
+           "--trellis-fit", "ema"]  # the e-means codebooks in cache/codes
+_rows = ["--row-plan", "results/compiler/rows/q35_rowplan_1p2GB.json"]
+_tune = ["finetune.py", "--codes", _lm2 + "build/codes.pt", "--base-dense", _lm2 + "build/dense.pt", *_q35p, "--math-cache", _lm2 + "math_checked.pt",
+         "--more-math", _lm2 + "other_text.pt:math+gsm8k", "--more-text", _lm2 + "other_text.pt:science+code+instruct+tools",
+         "--refit-handles", "--train-norms", "--train-embedding", "--running-stats", "--rebuild-at"]
+_models = f"orig,{_bonsai},dense:{_lm2}build/dense.pt,dense:{_lm2}tuned/dense.pt"
+_greedy = ["--no-thinking", "--max-new", "2048"]
+# the text: the original's answers to science, code, instruction and tool prompts and to MATH and GSM8K training problems
+# (this also fetches MATH, which the next two read); the calibration set; and the checked solutions the fine-tuning distils on
+job("lm2Text", script=["other_text.py", *_q35p, "--out", _lm2 + "other_text.pt", "--report", "results/batch/lm2Text.json"])
+job("lm2Calibration", script=["math_calibration.py", *_q35p, "--math-sources", _lm2 + "calib_sources", "--out", _lm2 + "math_long.pt"])
+job("lm2Solutions", script=["checked_solutions.py", *_q35p, "--math-sources", _lm2 + "calib_sources", "--out", _lm2 + "math_checked.pt"])
+# each output row's Fisher information on digits, the build under the row plan, and the fine-tuning
+job("lm2RowImportance", script=["row_importance.py", *_q35p, "--windows", _lm2 + "math_long.pt", "--save", _lm2 + "row_importance.pt", "--out", "results/batch/lm2RowImportance.json"])
+job("lm2Build", script=[*_recipe, *_rows, "--save", _lm2 + "build/dense.pt", "--save-codes", _lm2 + "build/codes.pt", "--out", "results/batch/lm2Build.json"])
+job("lm2Finetune", gpu="b200", script=[*_tune, "1000", "--save", _lm2 + "tuned/dense.pt", "--out", "results/batch/lm2Finetune.json"])
+# the 540 and the second set of 216, and KL from the original on text
+job("lm2Math", script=["math_eval.py", *_q35p, "--models", _models, *_greedy, "--out", "results/batch/lm2Math.json"])
+job("lm2Math216", script=["math_eval.py", *_q35p, "--models", _models, *_greedy, "--problems-file", "results/protocols/math216.json", "--out", "results/batch/lm2Math216.json"])
+job("lm2TextKL", script=["text_kl.py", *_q35p, "--models", _models, "--out", "results/batch/lm2TextKL.json"])
+# the same code on a little: two layers built, eight layers tuned for 60 steps, 36 problems
+job("lm2BuildSmoke", script=[*_recipe, "--row-split", _lm2 + "row_importance.pt:0.125", "--layers", "2", "--save", _lm2 + "smoke/dense.pt", "--save-codes", _lm2 + "smoke/codes.pt", "--out", "results/batch/lm2BuildSmoke.json"])
+job("lm2FinetuneSmoke", gpu="b200", script=[*_tune, "20", "--layers", "12-19", "--steps", "60", "--settle", "20", "--project-every", "20", "--eval-every", "60", "--text-windows", "500",
+                                             "--save", _lm2 + "smoke/tuned.pt", "--out", "results/batch/lm2FinetuneSmoke.json"])
+job("lm2MathSmoke", script=["math_eval.py", *_q35p, "--models", f"orig,dense:{_lm2}build/dense.pt", "--per-cell", "1", "--no-thinking", "--max-new", "512", "--out", "results/batch/lm2MathSmoke.json"])
+
 
 def run(name):
     spec = JOBS[name]
@@ -123,7 +159,11 @@ def run(name):
     torch.set_num_threads(int(os.environ.get("OPGRAPH_THREADS", "8")))  # the cores the job was given; os.cpu_count() reports the whole host in a container
     sys.argv = list(spec["script"])
     runpy.run_path(spec["script"][0], run_name="__main__")
-    return json.loads((ROOT / spec["script"][spec["script"].index("--out") + 1]).read_text())
+    out = ROOT / "results" / "batch" / f"{name}.json"
+    if not out.exists():  # a script whose --out is a file of tensors: a marker, so that the runner sees it finished
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"job": name, "wrote": spec["script"][spec["script"].index("--out") + 1]}))
+    return json.loads(out.read_text())
 
 
 def main():

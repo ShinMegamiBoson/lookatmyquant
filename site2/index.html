@@ -124,6 +124,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <a href="#recipe">Recipe</a>
       <a href="#compiler">Compiler</a>
       <a href="#cost">Cost</a>
+      <a href="https://github.com/ShinMegamiBoson/lookatmyquant">Code</a>
       <a class="back" href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a>
     </nav>
   </header>
@@ -230,7 +231,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <tr><td>Embedding</td><td>The tied embedding, 636M weights, in frequency buckets at 1 to 8 bits, <span data-v="embBits">1.88</span> on average.</td></tr>
       <tr class="group"><td colspan="2">Fine-tuning, 4,000 steps</td></tr>
       <tr><td>Student</td><td>Latent full-precision weights W, initialized at the dequantized build. P is W's current quantized value.</td></tr>
-      <tr><td>Loss</td><td>KL(original ‖ student) over the original's top 64 tokens plus one bucket for the tail, at 128 positions of each 512-token sequence, with digit-predicting positions weighted 10×. Batches of 8, half worked math solutions and half general text, science, code, instructions and tool calls.</td></tr>
+      <tr><td>Loss</td><td>KL(original ‖ student) over the original's top 64 tokens plus one bucket for the tail, at 128 positions of each 512-token sequence, with digit-predicting positions weighted 10×. Batches of 8, half math and half general text, science, code, instructions and tool calls. The math is the original's own solutions to GSM8K and MATH training problems and, for about an eighth of it, to problems from the benchmark's generator at another seed, with wrong calculations corrected and only right answers kept. Every test question is excluded by hash.</td></tr>
       <tr><td>Optimizer</td><td>Adam, learning rate 10⁻⁵, with ε set per tensor to its initial gradient RMS. Norm weights and the embedding's scales and codebooks train as well.</td></tr>
       <tr><td>Pull</td><td>After each step, W ← W + β(P − W) with β = 10⁻³. Over the last 600 steps β rises to 0.03 and the learning rate falls to 0. Then W ← P.</td></tr>
       <tr><td>Re-quantization</td><td>Every 250 steps, P ← Q(W) for a quarter of the layers with the build's own quantizer, and row scales and codebooks are refit. Between steps 1,000 and 1,750, each layer's P ← Q(W<sub>0</sub>) once, under a running H.</td></tr>
@@ -251,7 +252,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <section class="col">
     <h2 id="compiler">The compiler now allocates bits to rows against a digit-weighted objective, and fine-tunes after allocation</h2>
-    <p><a href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a> measured the KL that each stored piece of a model costs when it alone is compressed, and chose one code per piece under a byte budget. It stopped at post-training quantization and listed fine-tuning after allocation as further work. Table 4 lists what this recipe changes. Of these, the e-means codebook fit is in the <a href="https://github.com/ShinMegamiBoson/lookatmyquant">public repository</a>.</p>
+    <p><a href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a> measured the KL that each stored piece of a model costs when it alone is compressed, and chose one code per piece under a byte budget. It stopped at post-training quantization and listed fine-tuning after allocation as further work. Table 4 lists what this recipe changes. The code for all of it is in the <a href="https://github.com/ShinMegamiBoson/lookatmyquant">public repository</a>, with a job for each step.</p>
     <p class="tcap"><b>Table 4.</b> The compiler in LookAtMyQuant 1 and in this recipe.</p>
     <div class="scroll-x"><table class="recipe"><thead><tr><th>Step</th><th>LookAtMyQuant 1</th><th>This recipe</th></tr></thead><tbody>
       <tr><td>Pieces</td><td>Whole matrices, embedding buckets by token frequency, key–value caches.</td><td>Also row groups inside each matrix.</td></tr>
@@ -271,7 +272,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <ul class="plain">
       <li>Each file is a single run. Builds of one recipe have differed by <span data-v="spread">31</span> of 540 problems, so a difference of a few problems is noise.</li>
       <li>The 540 was our development set, which favors our files and not Bonsai. On a second set of 216 problems from the same generator, which we used less, our file solves <span data-v="ours216">125</span> and Bonsai <span data-v="bonsai216">138</span>.</li>
-      <li>The calibration and distillation data are mostly math. Beyond KL on text, we have not evaluated coding, tool use or instruction following.</li>
+      <li>The calibration and distillation data are mostly math, and about an eighth of the fine-tuning's math text comes from the benchmark's own generator. The post-training build's calibration set does not. Beyond KL on text, we have not evaluated coding, tool use or instruction following.</li>
       <li>Our language-model weights are <span data-v="oursGb">1.23</span> GB packed, <span data-v="sizeOver">2</span>% more than Bonsai's <span data-v="bonsaiGb">1.20</span> GB. That is the packed size of a build with the same layout. New codebooks and fine-tuning change the values a file stores and leave its layout alone, and we did not re-pack the fine-tuned file.</li>
       <li>All scores are from the dequantized weights in fp32. We have not measured decode speed for this file.</li>
     </ul>

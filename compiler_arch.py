@@ -21,6 +21,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import random
 import zlib
 from pathlib import Path
 
@@ -269,6 +271,36 @@ class TextMix:
 
     def calibration(self, n, T, seed=0):
         """n windows of T tokens drawn evenly across sources (seed 0, as the WikiText calibration)."""
-        per = max(1, -(-n // len(self.sources)))
-        w = self.windows("calib", per, T, seed)
-        return torch.cat([w[s] for s in self.sources])[:n]
+        return self.sample("calib", n, T, seed)[0]
+
+    def sample(self, split, n, T, seed):
+        """Stratified windows and their source/token manifest; every prefix stays balanced.
+
+        Sources are interleaved, rather than concatenated and truncated. A seeded
+        source order distributes the remainder without permanently favoring the
+        first alphabetic sources. The input token streams remain unchanged.
+        """
+        if n < 0 or T <= 0 or not self.sources:
+            raise ValueError("sampling needs sources, a nonnegative count and positive window length")
+        order = list(self.sources)
+        random.Random(seed).shuffle(order)
+        gen = torch.Generator().manual_seed(seed)
+        starts, positions = {}, {s: 0 for s in self.sources}
+        per = -(-n // len(order))
+        for source in self.sources:
+            ids = self.ids[source][split]
+            if len(ids) < T:
+                raise ValueError(f"{source}/{split}: fewer than {T} tokens")
+            starts[source] = torch.randint(0, len(ids) - T + 1, (per,), generator=gen).tolist()
+        windows, manifest = [], []
+        for i in range(n):
+            source = order[i % len(order)]
+            start = starts[source][positions[source]]
+            positions[source] += 1
+            tokens = self.ids[source][split][start:start + T]
+            windows.append(tokens)
+            manifest.append({"source": source, "split": split, "start": start, "length": T,
+                             "tokens_sha256": hashlib.sha256(tokens.to(torch.int64).contiguous().numpy().tobytes()).hexdigest()})
+        if not windows:
+            return torch.empty((0, T), dtype=torch.long), manifest
+        return torch.stack(windows), manifest

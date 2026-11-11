@@ -95,10 +95,12 @@ def rate_bits(option, m, n, T, row_rotation=True, block=None):
     """Stored bits of an m × n matrix in `option` (incoherence + row scale + code), exactly as the codes count them: a
     16-bit scale per row, the randomized Hadamards' signs (rows only with a row rotation), b bits per weight, and for the
     trellis the starting state of each run of T outputs (12 bits instead of k)."""
-    import quantize as qz
-    fam, b, _ = qz.parse(option)
+    import quantize as rq
+    fam, b, _ = rq.parse(option)
     if fam == "fp":
         return 16.0 * m * n
+    if fam in ("mean", "prng", "zero"):
+        return {"mean": 16.0, "prng": 32.0, "zero": 0.0}[fam] * n
     if block:  # quantized in slices of `block` columns, each with its own row scales and rotation
         return (n // block) * rate_bits(option, m, block, T, row_rotation)
     bits = b * m * n + 16 * m + n + (m if row_rotation else 0)
@@ -132,7 +134,7 @@ NOISE_D = 0.015  # the noise level measured (about a 3-bit code's normalized err
 def measure(args):
     """Every item alone at every option (or, with --method noise, at LDLQ-shaped noise of one level, no quantization):
     the KL to the original model on held-out calibration-split windows, never the evaluation split."""
-    import quantize as qz
+    import quantize as rq
     import compiler_arch as A
     from transformers import AutoModelForCausalLM, AutoTokenizer
     t_all = time.time()
@@ -143,37 +145,45 @@ def measure(args):
     if json.loads((Path(path) / "config.json").read_text()).get("quantization_config", {}).get("quant_method") == "mxfp4":
         from transformers import Mxfp4Config
         qcfg = {"quantization_config": Mxfp4Config(dequantize=True)}
-    model = AutoModelForCausalLM.from_pretrained(path, dtype=dtype, **qcfg).to(qz.DEV).eval()
+    model = AutoModelForCausalLM.from_pretrained(path, dtype=dtype, **qcfg).to(rq.DEV).eval()
     for p in model.parameters():
         p.requires_grad_(False)
     cfg = A.text_config(model.config)
     tag = "qwen35" if "qwen3_5" in model.config.model_type else args.model.split("/")[-1].lower()  # quantize.py's token caches
     T = args.calib_len
     mix = A.TextMix(tok, tag) if args.data == "mix" else None
-    if mix:
-        calib = mix.calibration(args.calib, T)
-        per = max(1, -(-args.windows // len(mix.sources)))
-        w = mix.windows("calib", per, T, seed=1)
-        held = torch.cat([w[s] for s in mix.sources])[: args.windows]
+    sample_manifest = None
+    if args.data == "math":  # the original's long math answers (math_calibration.py): calibration from the front, held out from the back
+        w = torch.load(args.math_windows)[:, :T]
+        calib, held = w[: args.calib], w[-args.windows :]
+    elif mix:
+        calib, cm = mix.sample("calib", args.calib, T, seed=0)
+        held, hm = mix.sample("calib", args.windows, T, seed=1)
+        sample_manifest = {"calibration": cm, "measurement": hm}
     else:
-        train = qz.token_ids(tok, "train", tag)
+        train = rq.token_ids(tok, "train", tag)
         starts = torch.randint(0, len(train) - T - 1, (args.calib,), generator=torch.Generator().manual_seed(0))
         calib = torch.stack([train[s : s + T] for s in starts])
         starts = torch.randint(0, len(train) - T - 1, (args.windows,), generator=torch.Generator().manual_seed(1))
         held = torch.stack([train[s : s + T] for s in starts])
     calib, held = A.with_bos(calib, tok, model), A.with_bos(held, tok, model)
-    chunks = [calib[b : b + args.chunk].to(qz.DEV) for b in range(0, len(calib), args.chunk)]
+    wpos = torch.ones(held.shape)  # each held-out position's weight in the KL: --digit-weight where it predicts a digit
+    if args.digit_weight != 1:
+        from token_kinds import kinds_of
+        wpos[:, :-1] += (args.digit_weight - 1) * (kinds_of(held, tok) <= 1).float()
+    chunks = [calib[b : b + args.chunk].to(rq.DEV) for b in range(0, len(calib), args.chunk)]
     bs = args.kl_batch
     with torch.no_grad():
-        ref_lp = [F.log_softmax(model(held[b : b + bs].to(qz.DEV), use_cache=False).logits.float(), -1) for b in range(0, len(held), bs)]
+        ref_lp = [F.log_softmax(model(held[b : b + bs].to(rq.DEV), use_cache=False).logits.float(), -1) for b in range(0, len(held), bs)]
 
     @torch.no_grad()
     def kl():
         tot = n = 0.0
         for b, lr in zip(range(0, len(held), bs), ref_lp):
-            lp = F.log_softmax(model(held[b : b + bs].to(qz.DEV), use_cache=False).logits.float(), -1)
-            tot += (lr.exp() * (lr - lp)).sum().item()
-            n += lp.shape[0] * lp.shape[1]
+            lp = F.log_softmax(model(held[b : b + bs].to(rq.DEV), use_cache=False).logits.float(), -1)
+            w_ = wpos[b : b + bs].to(rq.DEV)
+            tot += ((lr.exp() * (lr - lp)).sum(-1) * w_).sum().item()
+            n += w_.sum().item()
         return tot / n
 
     t0 = time.time()
@@ -181,10 +191,12 @@ def measure(args):
     _, layers = A.decoder_layers(model)
     stages = A.discover(model, chunks[0][:1, :64])
     method = args.method
-    qz.C.TRELLIS_FIT = args.trellis_fit or qz.C.TRELLIS_FIT
+    rq.C.TRELLIS_FIT = args.trellis_fit or rq.C.TRELLIS_FIT
     out = {"model": args.model, "parts": args.part, "method": method, "data": args.data, "held-out windows": [len(held), T],
            "calibration": [len(calib), T], "kl floor (nothing quantized)": floor, "seconds per kl": round(time.time() - t0, 3),
-           "device": qz.DEV, "trellis fit": qz.C.TRELLIS_FIT, "stages (layer 0)": A.stage_list_text(stages[0]), "records": []}
+           "device": rq.DEV, "trellis fit": rq.C.TRELLIS_FIT, "stages (layer 0)": A.stage_list_text(stages[0]), "records": []}
+    if sample_manifest is not None:
+        out["sample manifest"] = sample_manifest
     if method == "noise":
         out["noise d"] = NOISE_D
     recs = out["records"]
@@ -200,7 +212,7 @@ def measure(args):
 
     def trellis_for(rows, opts):
         Tm = T_tr if rows % T_tr == 0 else next(t for t in (320, 256, 128, 64) if rows % t == 0)
-        return Tm, {k: codes.setdefault((k, Tm), qz.C.TrellisCode(12, k, T=Tm)) for k in sorted({qz.parse(o)[1] for o in opts if o.startswith("tr")})}
+        return Tm, {k: codes.setdefault((k, Tm), rq.C.TrellisCode(12, k, T=Tm)) for k in sorted({rq.parse(o)[1] for o in opts if o.startswith("tr")})}
     parts = args.part.split(",")
     gen = torch.Generator().manual_seed(0)
     lay = span(args.layers, len(layers))
@@ -240,13 +252,13 @@ def measure(args):
             last = max(group)
             if last + 1 < len(layers):
                 def stop(m, a, k):
-                    raise qz.Stop()
+                    raise rq.Stop()
                 hooks.append(layers[last + 1].register_forward_pre_hook(stop, with_kwargs=True))
             with torch.no_grad():
                 for x in chunks:
                     try:
                         model(x, use_cache=False)
-                    except qz.Stop:
+                    except rq.Stop:
                         pass
             for h_ in hooks:
                 h_.remove()
@@ -273,9 +285,9 @@ def measure(args):
                         rec = {"item": f"{i}.{name}", "kind": "linear", "layer": i, "role": name, "weights": W.numel(), "shape": [m, n], "T": Tm}
 
                         def set_w(Wq, mod=mod):
-                            mod.weight.data = Wq.to(mod.weight.dtype).to(qz.DEV)
+                            mod.weight.data = Wq.to(mod.weight.dtype).to(rq.DEV)
                         try_options(rec, lin_opts, set_w, lambda mod=mod, orig=orig: setattr(mod.weight, "data", orig),
-                                    lambda o, W=W, seed=seed, tr=tr: qz.word(o, W, Hs, seed, tr).matrix(dtype=torch.float64),
+                                    lambda o, W=W, seed=seed, tr=tr: rq.word(o, W, Hs, seed, tr).matrix(dtype=torch.float64),
                                     lambda W=W, seed=seed: ldlq_noise(W, Hs, NOISE_D, seed, gen), m, n, Tm)
                     if st["names"]:
                         log(f"  layer {i} {'+'.join(st['names'])}: " + ", ".join(f"{r['option']} {r['dkl']:.2e}" for r in recs[-len(lin_opts):] if r["item"] == f"{i}.{st['names'][0]}"))
@@ -294,10 +306,10 @@ def measure(args):
                         for part in ("gate_up", "down"):
                             mats, Hs_ = [], []
                             for e in ids:
-                                gu, dn, t = qz.expert_matrices(mod, e, X.shape[-1])
+                                gu, dn, t = rq.expert_matrices(mod, e, X.shape[-1])
                                 tok_e = (K == e).any(-1).nonzero().squeeze(-1)
-                                x = X[tok_e].to(qz.DEV)
-                                inp = x if part == "gate_up" else qz.expert_hidden(mod, e, x.to(mod.gate_up_proj.dtype), t).float()
+                                x = X[tok_e].to(rq.DEV)
+                                inp = x if part == "gate_up" else rq.expert_hidden(mod, e, x.to(mod.gate_up_proj.dtype), t).float()
                                 Wm = (gu if part == "gate_up" else dn).detach().cpu().double()
                                 if len(inp) >= 8:
                                     He = (inp.T @ inp / len(inp)).cpu().double()
@@ -316,7 +328,7 @@ def measure(args):
                                     dst.data[e] = (Wq.T if t else Wq).to(dst.dtype).to(dst.device)
 
                             def quantize(o, mats=mats, Hs_=Hs_, tr=tr, part=part):
-                                return [qz.word(o, Wm, He, 1000 * i + 500 + 2 * e + (part == "down"), tr).matrix(dtype=torch.float64)
+                                return [rq.word(o, Wm, He, 1000 * i + 500 + 2 * e + (part == "down"), tr).matrix(dtype=torch.float64)
                                         for (e, Wm, _), He in zip(mats, Hs_)]
 
                             def noise(mats=mats, Hs_=Hs_, part=part):
@@ -335,20 +347,20 @@ def measure(args):
     if "embed" in parts:
         emb, head, tied = A.head_and_embedding(model)
         V = emb.weight.shape[0]
-        sizes = qz.embedding_buckets(V)
-        freq = mix.frequency(V) if mix else torch.bincount(qz.token_ids(tok, "train", tag).reshape(-1), minlength=V)[:V].double()
+        sizes = rq.embedding_buckets(V)
+        freq = mix.frequency(V) if mix else torch.bincount(rq.token_ids(tok, "train", tag).reshape(-1), minlength=V)[:V].double()
         order = torch.sort(-freq, stable=True).indices
-        H_out = qz.head_inputs(model, chunks)
+        H_out = rq.head_inputs(model, chunks)
         out["embed buckets"] = sizes
         out["embed order"] = "frequency in the text mix" if mix else "frequency in the WikiText-2 training split"
         out["tied"] = tied
         emb_opts = menu(args.embed_options, EMBED_OPTIONS)
-        tables = [("embed", emb.weight, qz.embedding_environment(H_out, "both" if tied else "lookup"), 7000)]
+        tables = [("embed", emb.weight, rq.embedding_environment(H_out, "both" if tied else "lookup"), 7000)]
         if not tied:
-            tables.append(("head", head.weight, qz.embedding_environment(H_out, "head"), 8000))
+            tables.append(("head", head.weight, rq.embedding_environment(H_out, "head"), 8000))
         ple = A.per_layer_embedding(model)
         if ple is not None:  # Gemma 4's per-layer input table: looked up per token, so plain squared error
-            tables.append(("ple", ple.weight, None, 9000))
+            tables.append(("ple", ple.weight, rq.ple_metrics(model, chunks, args.ple_damp) if args.ple_metric else None, 9000))
         ple_block = getattr(cfg, "hidden_size_per_layer_input", None)
         for kind, Wt, Hh, seed0 in tables:
             lo = 0
@@ -363,14 +375,14 @@ def measure(args):
                 mass = float(freq[rows].sum() / freq.sum())
                 blk = ple_block if kind == "ple" else None
                 rec = {"item": f"{kind}.{k}", "kind": kind, "bucket": k, "rows": size, "frequency mass": mass, "weights": W.numel(),
-                       "shape": list(W.shape), "T": qz.EMBED_T, "block": blk}
+                       "shape": list(W.shape), "T": rq.EMBED_T, "block": blk}
 
                 def set_w(Wq, Wt=Wt, ridx=ridx):
                     Wt.data[ridx] = Wq.to(Wt.dtype).to(Wt.device)
-                try_options(rec, emb_opts, set_w, lambda Wt=Wt, ridx=ridx, orig=orig: Wt.data.__setitem__(ridx, orig),
-                            lambda o, W=W, Hh=Hh, k=k, seed0=seed0, kind=kind: qz.embed_word(W, Hh, o, seed0 + k, ple_block if kind == "ple" else None).matrix(dtype=torch.float64),
+                try_options(rec, menu(args.ple_options, emb_opts) if kind == "ple" else emb_opts, set_w, lambda Wt=Wt, ridx=ridx, orig=orig: Wt.data.__setitem__(ridx, orig),
+                            lambda o, W=W, Hh=Hh, k=k, seed0=seed0, kind=kind: rq.embed_word(W, Hh, o, seed0 + k, ple_block if kind == "ple" else None, center=(args.ple_center and kind == "ple") or (args.embed_center and kind == "embed")).matrix(dtype=torch.float64),
                             lambda W=W, Hh=Hh, k=k, seed0=seed0: ldlq_noise(W, Hh if Hh is not None else torch.eye(W.shape[1], dtype=torch.float64), NOISE_D, seed0 + k, gen, row_rotation=False),
-                            W.shape[0], W.shape[1], qz.EMBED_T, row_rotation=False, block=blk)
+                            W.shape[0], W.shape[1], rq.EMBED_T, row_rotation=False, block=blk)
                 log(f"  {kind} bucket {k} ({size} rows, {mass:.1%} of tokens): " + ", ".join(f"{r['option']} {r['dkl']:.2e}" for r in recs[-len(emb_opts):] if r["item"] == f"{kind}.{k}"))
                 save()
     if "kv" in parts:
@@ -474,8 +486,8 @@ def price(r, t):
     """One option's cost under target t, in bits per decoded token (stored bits for disk)."""
     if r["kind"] == "kv":
         return t["ctx"] * r["kv bits per token"]
-    import quantize as qz
-    fam = qz.parse(r["option"])[0] if (r["option"] == "fp16" or qz.PROGRAM.fullmatch(str(r["option"]))) else "other"
+    import quantize as rq
+    fam = rq.parse(r["option"])[0] if (r["option"] == "fp16" or rq.PROGRAM.fullmatch(str(r["option"]))) else "other"
     return (r["bits"] + t["ops"] * OPS.get(fam, 2.0) * r["weights"]) / t["batch"]
 
 
@@ -514,8 +526,8 @@ def program_of(r, cross=True):
     o = str(r["option"])
     if r["kind"] == "kv":
         return int(o)
-    import quantize as qz  # only our own codes take the cross-term target (llama.cpp types are named as llama.cpp does)
-    ours = qz.PROGRAM.fullmatch(o) is not None
+    import quantize as rq  # only our own codes take the cross-term target (llama.cpp types are named as llama.cpp does)
+    ours = rq.PROGRAM.fullmatch(o) is not None
     return o + "x" if r["kind"] in ("linear", "experts") and cross and ours else o
 
 
@@ -616,7 +628,7 @@ def allocate(args):
 def uniform(args):
     """One program for every matrix (and, optionally, every embedding bucket and cache width): from a measurement
     (--sens: its items, so any architecture, experts included) or from a Llama-type or Qwen3.5 config."""
-    import quantize as qz
+    import quantize as rq
     if args.sens:
         items, meta = load_sens(args.sens)
         plan = {"model": meta.get("model"), "target": "uniform", "trellis fit": meta["trellis fit"], "linears": {}}
@@ -646,10 +658,10 @@ def uniform(args):
     types = cfg.get("layer_types") or ["full_attention"] * cfg["num_hidden_layers"]  # Qwen3.5: three DeltaNet layers to one attention
     mix = ["linear_attn" if t == "linear_attention" else "self_attn" for t in types]
     linears = {f"{i}.{blk}.{n}": args.linear for i in range(cfg["num_hidden_layers"]) for blk in (mix[i], "mlp")
-               for stage in qz.STAGES[blk] for n in stage}
-    plan = {"model": args.model, "target": "uniform", "trellis fit": qz.C.TRELLIS_FIT, "linears": linears}
+               for stage in rq.STAGES[blk] for n in stage}
+    plan = {"model": args.model, "target": "uniform", "trellis fit": rq.C.TRELLIS_FIT, "linears": linears}
     if args.embed:
-        sizes = qz.embedding_buckets(cfg["vocab_size"])
+        sizes = rq.embedding_buckets(cfg["vocab_size"])
         plan["embed"] = {"sizes": sizes, "programs": [args.embed] * len(sizes), "order": "frequency in the WikiText-2 training split"}
     if args.kv:
         plan["kv"] = {str(l): {"k": args.kv, "v": args.kv} for l in range(cfg["num_hidden_layers"]) if mix[l] == "self_attn"}
@@ -686,9 +698,16 @@ def main():
     m.add_argument("--part", default="linear", help="linear, experts, embed (and head, if untied), kv (comma-separated)")
     m.add_argument("--options", default="", help="matrix options to measure (default all; fp16 always)")
     m.add_argument("--embed-options", default="", help="embedding options to measure (default all; fp16 always)")
+    m.add_argument("--ple-options", default="", help="the per-layer table's options, if different (mean: its rows share one)")
+    m.add_argument("--ple-metric", action="store_true", help="round the per-layer table in the output space of what reads it")
+    m.add_argument("--ple-center", action="store_true", help="store each bucket's mean row apart, and code the residual")
+    m.add_argument("--embed-center", action="store_true", help="the same for the main embedding table")
+    m.add_argument("--ple-damp", type=float, default=0.0, help="soften --ple-metric: its mean diagonal is 1, this is added to it")
     m.add_argument("--kl-batch", type=int, default=8, help="held-out windows per forward in the KL")
     m.add_argument("--method", choices=["quant", "noise"], default="quant", help="quantize each item, or inject LDLQ-shaped noise once")
-    m.add_argument("--data", choices=["wikitext", "mix"], default="wikitext", help="calibration, held-out windows and token frequencies")
+    m.add_argument("--data", choices=["wikitext", "mix", "math"], default="wikitext", help="calibration, held-out windows and token frequencies")
+    m.add_argument("--math-windows", default="/root/.cache/huggingface/retrain/math_long_q35.pt", help="--data math: the original's long math answers")
+    m.add_argument("--digit-weight", type=float, default=1.0, help="weight in the KL of held-out positions that predict a digit")
     m.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
     m.add_argument("--layers", default="", help="linear layers: a-b or a comma list (default all)")
     m.add_argument("--embed-buckets", default="", help="embedding buckets, a-b (default all)")

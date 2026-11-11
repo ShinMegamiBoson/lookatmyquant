@@ -73,6 +73,61 @@ def pin_tokens(positions=(0,), weight: float = 1.0) -> Callable:
         return sum(H * (scale / torch.trace(H)) for H in out) / len(out)
     return env
 
+def token_error(nets: list, Ws: list[torch.Tensor], x: torch.Tensor, chunk: int = 8192) -> torch.Tensor:
+    """‖(Ŵ − W) x_t‖² for every token t, summed over the matrices that read this bond."""
+    x = x.reshape(-1, x.shape[-1]).float()
+    e = torch.zeros(len(x), dtype=torch.float64)
+    for net, W in zip(nets, Ws):
+        E = (net.matrix().double().cpu() - W.cpu().double()).float().to(x.device)
+        for b in range(0, len(x), chunk):
+            e[b : b + chunk] += (x[b : b + chunk] @ E.T).pow(2).sum(1).cpu().double()
+    return e
+
+
+def token_cap(word: Callable, p: float, rounds: int = 3, floor: float = 0.1, ceiling: float = 100.0,
+              record: list | None = None, errors: list | None = None) -> tuple[Callable, Callable]:
+    """Pull a sweep toward the tokens it leaves worst off: reweighted least squares for the ℓp norm of the per-token
+    output error. p = 2 is the ordinary sweep; a larger p moves toward capping the worst token. Each round measures every
+    token's error, moves its weight toward (error ÷ mean)^(p/2 − 1) with the damped step 1/(p − 1), and sweeps again
+    under H = Σ_t a_t x xᵀ. Weights stay within [floor, ceiling] times their mean, so every token keeps some pull.
+    Returns (env, word) for sequential; only the stored codes change, so a capped matrix runs on the same kernels."""
+    from .frame import covariance
+    from .syntax import default_environment
+    state = {}
+
+    def env(xs):
+        state["x"] = xs[0]
+        return default_environment(xs)
+
+    def stats(e, a, shape):
+        n = max(1, len(e) // 100)
+        return {"mean": float(e.mean()), "p50": float(e.quantile(0.5)), "p99": float(torch.kthvalue(e, len(e) - n).values),
+                "max": float(e.max()), "top1pct_share": float(e.topk(n).values.sum() / e.sum()),
+                "first_token_share": float(e.reshape(shape)[:, 0].sum() / e.sum()), "max_weight": float(a.max())}
+
+    def capped(Ws, H, ks):
+        x = state["x"]
+        nets = word(Ws, H, ks)
+        a = torch.ones(x.shape[0] * x.shape[1], dtype=torch.float64)
+        e = token_error(nets, Ws, x)
+        rec = [stats(e, a, x.shape[:2])]
+        step = 1 / max(p - 1, 1)
+        for _ in range(rounds if p > 2 else 0):
+            goal = (e / e.mean()).clamp(min=1e-9) ** (p / 2 - 1)
+            a = a ** (1 - step) * (goal / goal.mean()) ** step
+            a = (a / a.mean()).clamp(floor, ceiling)
+            a = a / a.mean()
+            w = a.sqrt().float().to(x.device).reshape(*x.shape[:2], 1)
+            nets = word(Ws, covariance(x.float() * w), ks)
+            e = token_error(nets, Ws, x)
+            rec.append(stats(e, a, x.shape[:2]))
+        if record is not None:
+            record.append({"keys": [list(k) for k in ks], "rounds": rec})
+        if errors is not None:
+            errors.append(e.float())
+        return nets
+    return env, capped
+
 # ----------------------------------------------------------------------------- scales are cores too
 
 

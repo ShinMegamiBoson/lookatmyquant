@@ -27,6 +27,17 @@ from opgraph import nested as N
 SKIP = ("vision_tower", "audio_tower", "embed_vision", "embed_audio", "multi_modal_projector")
 
 
+def export_saved_codes(saved, out, *, dense_tensors, model_dir=None):
+    """Lossless grouped export for saved mixed-width/matrix-specific code tables.
+
+    This writes the separate opgraph-packed-1 format read by runtime_mlx.artifact.
+    dense_tensors must contain the complete correctly named model state; compact
+    code entries alone omit unchanged weights and kept embedding rows.
+    """
+    from compiler_artifact import export_saved_codes as export
+    return export(saved, out, dense_tensors=dense_tensors, model_dir=model_dir)
+
+
 def signs(n: int, seed: int) -> torch.Tensor:
     """The signs s of rht(n, seed) = H·diag(s)."""
     return torch.where(torch.rand(n, generator=torch.Generator().manual_seed(seed), dtype=torch.float64) < 0.5, -1.0, 1.0)

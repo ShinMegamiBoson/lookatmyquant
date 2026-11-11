@@ -25,10 +25,10 @@ HF = "/root/.cache/huggingface"
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install("torch==2.14.0", "transformers==5.16.1", "datasets==4.6.1", "safetensors==0.8.0", "numpy", "pyarrow", "huggingface_hub")
+    .pip_install("torch==2.14.0", "transformers==5.16.1", "datasets==4.6.1", "safetensors==0.8.0", "numpy", "pandas", "pyarrow", "huggingface_hub")
     .env({"OPGRAPH_DEVICE": "cuda", "HF_HUB_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1", "TOKENIZERS_PARALLELISM": "false",
           "OPGRAPH_THREADS": "8", "OMP_NUM_THREADS": "8", "MKL_NUM_THREADS": "8"})
-    .add_local_dir(ROOT, REMOTE, ignore=["site/**", "**/__pycache__/**", ".git/**", "cache/**"])
+    .add_local_dir(ROOT, REMOTE, ignore=["site/**", "site2/**", "**/__pycache__/**", ".git/**", "cache/*.pt"])
 )
 hf = modal.Volume.from_name("opgraph-hf", create_if_missing=True)
 app = modal.App("opgraph", image=image)

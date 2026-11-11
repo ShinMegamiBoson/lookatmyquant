@@ -517,7 +517,7 @@ class Environment:
         H = H.clone().double()
         self.dead = torch.diag(H) == 0
         H[self.dead, self.dead] = 1
-        H += damp * torch.mean(torch.diag(H)) * torch.eye(len(H), dtype=H.dtype)
+        H += damp * torch.mean(torch.diag(H)) * torch.eye(len(H), dtype=H.dtype, device=H.device)
         self.H = H
         self.U = torch.linalg.cholesky(torch.cholesky_inverse(torch.linalg.cholesky(H)), upper=True)
 

@@ -105,7 +105,7 @@ def sweep(W: torch.Tensor, env: Environment | None, project: Callable[[int, torc
     n = T.shape[1]
     for b0 in range(0, n, lazy):
         b1 = min(b0 + lazy, n)
-        Z = torch.empty(T.shape[0], b1 - b0, dtype=T.dtype)
+        Z = torch.empty(T.shape[0], b1 - b0, dtype=T.dtype, device=T.device)
         for j in range(b0, b1, width):
             if on_block is not None and block and j % block == 0:
                 on_block(j, T)

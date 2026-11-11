@@ -1,0 +1,4373 @@
+{
+ "source": "216 math_bench problems, 18 a family, drawn once from a seed nothing else uses and frozen",
+ "problems": [
+  {
+   "id": "final/add_sub/0/0",
+   "family": "add_sub",
+   "difficulty": 0,
+   "question": "Compute 406699 + 676986 - 348248.",
+   "answer": "735437",
+   "data": {
+    "terms": [
+     406699,
+     676986,
+     -348248
+    ]
+   },
+   "question_sha256": "557c0f28ac22fa6f399b7c1483700d3d30b8609a6823771388e708c79fec06ff",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/0/1",
+   "family": "add_sub",
+   "difficulty": 0,
+   "question": "Compute 808325 + 604149 - 334078.",
+   "answer": "1078396",
+   "data": {
+    "terms": [
+     808325,
+     604149,
+     -334078
+    ]
+   },
+   "question_sha256": "6272123a087ac93ce449ee132b264db2d6e916e31c19a61e5829ac1dd1d38510",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/0/2",
+   "family": "add_sub",
+   "difficulty": 0,
+   "question": "Compute 182528 + 661643 - 181244.",
+   "answer": "662927",
+   "data": {
+    "terms": [
+     182528,
+     661643,
+     -181244
+    ]
+   },
+   "question_sha256": "a3a1e1d51234aad3532262fdbb1e99b526e87b757263b8e02921b8d93fadeb41",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/0/3",
+   "family": "add_sub",
+   "difficulty": 0,
+   "question": "Compute 477442 + 687622 - 713461.",
+   "answer": "451603",
+   "data": {
+    "terms": [
+     477442,
+     687622,
+     -713461
+    ]
+   },
+   "question_sha256": "08fedd996b515afc807ba3af6932514d9c619123a037056e5edb3d55e4d3a148",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/0/4",
+   "family": "add_sub",
+   "difficulty": 0,
+   "question": "Compute 658547 + 407034 - 544345.",
+   "answer": "521236",
+   "data": {
+    "terms": [
+     658547,
+     407034,
+     -544345
+    ]
+   },
+   "question_sha256": "09c47b0d733bac084b1dedb96ed12eee949aed41e17bd7acda05f47a74534a45",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/0/5",
+   "family": "add_sub",
+   "difficulty": 0,
+   "question": "Compute 137226 + 431159 - 441015.",
+   "answer": "127370",
+   "data": {
+    "terms": [
+     137226,
+     431159,
+     -441015
+    ]
+   },
+   "question_sha256": "504c690bc593387cc57aad0f4e25bce52251e857641747884450ed7f5798f1cd",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/1/0",
+   "family": "add_sub",
+   "difficulty": 1,
+   "question": "Compute 278058851 + 509863210 - 314530662.",
+   "answer": "473391399",
+   "data": {
+    "terms": [
+     278058851,
+     509863210,
+     -314530662
+    ]
+   },
+   "question_sha256": "4b7f2361f5d2ec0078398ec0ea0e05ccbd235f80c07da0014ee56416716a3558",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/1/1",
+   "family": "add_sub",
+   "difficulty": 1,
+   "question": "Compute 236632700 + 278396345 - 119851136.",
+   "answer": "395177909",
+   "data": {
+    "terms": [
+     236632700,
+     278396345,
+     -119851136
+    ]
+   },
+   "question_sha256": "863d36897615f7e3212fecf848dd7e8de2845f869aa9e0ff012c7b5fb8e731af",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/1/2",
+   "family": "add_sub",
+   "difficulty": 1,
+   "question": "Compute 857949603 + 870238612 - 803972215.",
+   "answer": "924216000",
+   "data": {
+    "terms": [
+     857949603,
+     870238612,
+     -803972215
+    ]
+   },
+   "question_sha256": "668d20f2dc97e4d5345135cada3289faed3b66f20bdb760b8c6caadd2c3d4907",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/1/3",
+   "family": "add_sub",
+   "difficulty": 1,
+   "question": "Compute 114718731 + 424865957 - 215262734.",
+   "answer": "324321954",
+   "data": {
+    "terms": [
+     114718731,
+     424865957,
+     -215262734
+    ]
+   },
+   "question_sha256": "2aeddbbc253dd4cdbe470ef7909085905980fe5a00261c71c1fc9fc9775587c4",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/1/4",
+   "family": "add_sub",
+   "difficulty": 1,
+   "question": "Compute 924320031 + 257164138 - 714230450.",
+   "answer": "467253719",
+   "data": {
+    "terms": [
+     924320031,
+     257164138,
+     -714230450
+    ]
+   },
+   "question_sha256": "73a9ff89605b3b78ac1833fdf9be2e8ec22c4c8dfa371f9edbc855fe49a1c07d",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/1/5",
+   "family": "add_sub",
+   "difficulty": 1,
+   "question": "Compute 575166290 + 895900693 - 934452646.",
+   "answer": "536614337",
+   "data": {
+    "terms": [
+     575166290,
+     895900693,
+     -934452646
+    ]
+   },
+   "question_sha256": "6f3bff4eded10823b898cda48b5b778cf6cec1f9e25a8aa215ba38c30790640e",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/2/0",
+   "family": "add_sub",
+   "difficulty": 2,
+   "question": "Compute 988947942680 + 319075976431 - 594373215643.",
+   "answer": "713650703468",
+   "data": {
+    "terms": [
+     988947942680,
+     319075976431,
+     -594373215643
+    ]
+   },
+   "question_sha256": "2d5168c198a35a9a05ae09b81a57e478a3cf49ac91e92a2e2f0c77cca4e0f8cf",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/2/1",
+   "family": "add_sub",
+   "difficulty": 2,
+   "question": "Compute 343967597222 + 444569540222 - 542870124645.",
+   "answer": "245667012799",
+   "data": {
+    "terms": [
+     343967597222,
+     444569540222,
+     -542870124645
+    ]
+   },
+   "question_sha256": "a4d92b4843eb469ed46aabb2070867515ba7d7e1b553092fc198454ce6083b36",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/2/2",
+   "family": "add_sub",
+   "difficulty": 2,
+   "question": "Compute 453431901962 + 832609830288 - 887615734608.",
+   "answer": "398425997642",
+   "data": {
+    "terms": [
+     453431901962,
+     832609830288,
+     -887615734608
+    ]
+   },
+   "question_sha256": "70468d354e2c3a959906ef2095fc72d91e72958c434a9702e467ae144005bc48",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/2/3",
+   "family": "add_sub",
+   "difficulty": 2,
+   "question": "Compute 534835055429 + 334718613880 - 785974677301.",
+   "answer": "83578992008",
+   "data": {
+    "terms": [
+     534835055429,
+     334718613880,
+     -785974677301
+    ]
+   },
+   "question_sha256": "61ac882a98ece3a725cb4b33e55f2b0bc6534c8c47e77bd98330f186e586188f",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/2/4",
+   "family": "add_sub",
+   "difficulty": 2,
+   "question": "Compute 137774920327 + 173841348853 - 181470802474.",
+   "answer": "130145466706",
+   "data": {
+    "terms": [
+     137774920327,
+     173841348853,
+     -181470802474
+    ]
+   },
+   "question_sha256": "02136f9fb8dc28dff4aca8dfe48fe1d4167d0b77206cb5a948e4357a35780e49",
+   "draw": 0
+  },
+  {
+   "id": "final/add_sub/2/5",
+   "family": "add_sub",
+   "difficulty": 2,
+   "question": "Compute 256221695288 + 677741851851 - 367980623768.",
+   "answer": "565982923371",
+   "data": {
+    "terms": [
+     256221695288,
+     677741851851,
+     -367980623768
+    ]
+   },
+   "question_sha256": "db609cd631941e0c9c600f62018ac08bc7f8605269c3402393054542b230f06b",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/0/0",
+   "family": "multiply",
+   "difficulty": 0,
+   "question": "Compute 357 \u00d7 917.",
+   "answer": "327369",
+   "data": {
+    "a": 357,
+    "b": 917
+   },
+   "question_sha256": "32ede89e6fb50a8cbd38ed901e676d9d152b8eb0f8b03d841c99aab4d2d9faa1",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/0/1",
+   "family": "multiply",
+   "difficulty": 0,
+   "question": "Compute 390 \u00d7 181.",
+   "answer": "70590",
+   "data": {
+    "a": 390,
+    "b": 181
+   },
+   "question_sha256": "36181ac7bf320f0b2a55110fd5a9fcf61ddf2c2bb694edfd16b33a41b9faa738",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/0/2",
+   "family": "multiply",
+   "difficulty": 0,
+   "question": "Compute 257 \u00d7 191.",
+   "answer": "49087",
+   "data": {
+    "a": 257,
+    "b": 191
+   },
+   "question_sha256": "52e5f36e5a276a9c404f14c7c40b0e2499cd3ed088729518057967e1e3bf83b2",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/0/3",
+   "family": "multiply",
+   "difficulty": 0,
+   "question": "Compute 384 \u00d7 139.",
+   "answer": "53376",
+   "data": {
+    "a": 384,
+    "b": 139
+   },
+   "question_sha256": "71f547213a23fcd5ba075d84bd59e256bf563be4538df9e577a2b2abc293c13c",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/0/4",
+   "family": "multiply",
+   "difficulty": 0,
+   "question": "Compute 566 \u00d7 617.",
+   "answer": "349222",
+   "data": {
+    "a": 566,
+    "b": 617
+   },
+   "question_sha256": "cddfb0c2fd6b0544a36a3fe3a206a836dbf1ec24c35e9a826bf01af93996db4c",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/0/5",
+   "family": "multiply",
+   "difficulty": 0,
+   "question": "Compute 499 \u00d7 203.",
+   "answer": "101297",
+   "data": {
+    "a": 499,
+    "b": 203
+   },
+   "question_sha256": "f7c2750e7a8632c9cb3d244eab7fa9617eb26e303338b1f9d5b702fcfce7e107",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/1/0",
+   "family": "multiply",
+   "difficulty": 1,
+   "question": "Compute 1664 \u00d7 8671.",
+   "answer": "14428544",
+   "data": {
+    "a": 1664,
+    "b": 8671
+   },
+   "question_sha256": "4b3efcb1c038098ce3deeab376297e9a9bb066b4b134b7158094bddc6c09f118",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/1/1",
+   "family": "multiply",
+   "difficulty": 1,
+   "question": "Compute 9014 \u00d7 9118.",
+   "answer": "82189652",
+   "data": {
+    "a": 9014,
+    "b": 9118
+   },
+   "question_sha256": "b1ef7ea09224031e6045d7d0e0db5c5a2a6d162b8cb7baeb9d05696b1e1e2c10",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/1/2",
+   "family": "multiply",
+   "difficulty": 1,
+   "question": "Compute 7338 \u00d7 4354.",
+   "answer": "31949652",
+   "data": {
+    "a": 7338,
+    "b": 4354
+   },
+   "question_sha256": "eb5a5a8629c89efb35bcab848acf4e6b42dcbfd118399b514ed245e764e38a12",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/1/3",
+   "family": "multiply",
+   "difficulty": 1,
+   "question": "Compute 1303 \u00d7 5078.",
+   "answer": "6616634",
+   "data": {
+    "a": 1303,
+    "b": 5078
+   },
+   "question_sha256": "ca22d652e220b696792cc08c8a1e3b97b38361a920c4233589f131bf80cebbc6",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/1/4",
+   "family": "multiply",
+   "difficulty": 1,
+   "question": "Compute 4308 \u00d7 5248.",
+   "answer": "22608384",
+   "data": {
+    "a": 4308,
+    "b": 5248
+   },
+   "question_sha256": "7391544fa925557e113a9ada965241223a28552c3340404547d63682e1caa938",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/1/5",
+   "family": "multiply",
+   "difficulty": 1,
+   "question": "Compute 3470 \u00d7 5963.",
+   "answer": "20691610",
+   "data": {
+    "a": 3470,
+    "b": 5963
+   },
+   "question_sha256": "3f201933475ea34aba0ed54f5c48ce479f3dfd357b37ea3463a31a3ff20b0350",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/2/0",
+   "family": "multiply",
+   "difficulty": 2,
+   "question": "Compute 71424 \u00d7 24799.",
+   "answer": "1771243776",
+   "data": {
+    "a": 71424,
+    "b": 24799
+   },
+   "question_sha256": "1c8f33d3df08fc4186e7d46f775c74316016ca848195efb7eadb3b6ff96cdab1",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/2/1",
+   "family": "multiply",
+   "difficulty": 2,
+   "question": "Compute 48876 \u00d7 62981.",
+   "answer": "3078259356",
+   "data": {
+    "a": 48876,
+    "b": 62981
+   },
+   "question_sha256": "be1245d4c76a7b89f7d9c3dee70e640ec4f29c416e32a6b7aa53ddf9da3d50fb",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/2/2",
+   "family": "multiply",
+   "difficulty": 2,
+   "question": "Compute 95126 \u00d7 73596.",
+   "answer": "7000893096",
+   "data": {
+    "a": 95126,
+    "b": 73596
+   },
+   "question_sha256": "60c43aca97049ef33bff94c4d56a95a39019191781bd08da22fac0142c68c79e",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/2/3",
+   "family": "multiply",
+   "difficulty": 2,
+   "question": "Compute 72129 \u00d7 38544.",
+   "answer": "2780140176",
+   "data": {
+    "a": 72129,
+    "b": 38544
+   },
+   "question_sha256": "46a6313cf6cfaf3b4257d1f2104c10681e1c61508c05fd9e6fcd6a544ffa3ccf",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/2/4",
+   "family": "multiply",
+   "difficulty": 2,
+   "question": "Compute 23882 \u00d7 45753.",
+   "answer": "1092673146",
+   "data": {
+    "a": 23882,
+    "b": 45753
+   },
+   "question_sha256": "a47ec05295d6df06dc25196072db0ce7b03a45a0e053c21bf429fadfebf3dae2",
+   "draw": 0
+  },
+  {
+   "id": "final/multiply/2/5",
+   "family": "multiply",
+   "difficulty": 2,
+   "question": "Compute 26235 \u00d7 17850.",
+   "answer": "468294750",
+   "data": {
+    "a": 26235,
+    "b": 17850
+   },
+   "question_sha256": "a85a29aba325f245ff78a38bd8081e5ab30380fcae7aed85554276a90e015cbe",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/0/0",
+   "family": "expression",
+   "difficulty": 0,
+   "question": "Evaluate 14 + (((4 - (10 - 12)) * 11) - 17).",
+   "answer": "63",
+   "data": {
+    "text": "(14 + (((4 - (10 - 12)) * 11) - 17))"
+   },
+   "question_sha256": "905890137e7c42367ef7e8db1dc8dbb7b69dcfadfe0d292a00f05674b898ce55",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/0/1",
+   "family": "expression",
+   "difficulty": 0,
+   "question": "Evaluate 16 + (((12 + 9) - 16) + (10 * 19)).",
+   "answer": "211",
+   "data": {
+    "text": "(16 + (((12 + 9) - 16) + (10 * 19)))"
+   },
+   "question_sha256": "198ae4ef88009e4d251e30394776c2b35c522d29553645afb0726b6d3b1d0fe6",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/0/2",
+   "family": "expression",
+   "difficulty": 0,
+   "question": "Evaluate (((3 * 11) + 11) + 8) - (6 * 6).",
+   "answer": "16",
+   "data": {
+    "text": "((((3 * 11) + 11) + 8) - (6 * 6))"
+   },
+   "question_sha256": "be3e35cb1bd937bde7f9dab95fe0bccdbbd497ed284e50ba3d1e386b343ed2e3",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/0/3",
+   "family": "expression",
+   "difficulty": 0,
+   "question": "Evaluate (13 + ((19 - 10) + (6 - 18))) * 9.",
+   "answer": "90",
+   "data": {
+    "text": "((13 + ((19 - 10) + (6 - 18))) * 9)"
+   },
+   "question_sha256": "1f5e91e2672cdb55ed2686c7d6cd16d70e0ebea0943ef2af4b0c30285b6af85c",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/0/4",
+   "family": "expression",
+   "difficulty": 0,
+   "question": "Evaluate ((12 - 8) + 11) * (6 + (3 + 18)).",
+   "answer": "405",
+   "data": {
+    "text": "(((12 - 8) + 11) * (6 + (3 + 18)))"
+   },
+   "question_sha256": "62518d07161b7b69910ad11074ebc7abcdecc1f6bedee9ffed05c506e36b3f0f",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/0/5",
+   "family": "expression",
+   "difficulty": 0,
+   "question": "Evaluate 7 + ((17 + 13) - (17 * (10 - 11))).",
+   "answer": "54",
+   "data": {
+    "text": "(7 + ((17 + 13) - (17 * (10 - 11))))"
+   },
+   "question_sha256": "a426eee78d037fecf03cea75d743dcddc7c17cecb092c6850539ff9fa1ba763c",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/1/0",
+   "family": "expression",
+   "difficulty": 1,
+   "question": "Evaluate (((10 * (16 - 16)) - ((7 - 14) * (7 + 12))) + 5) + 12.",
+   "answer": "150",
+   "data": {
+    "text": "((((10 * (16 - 16)) - ((7 - 14) * (7 + 12))) + 5) + 12)"
+   },
+   "question_sha256": "ded92cde1efbf839399a0dfe668c909f935a69acef0e1dfa9ab0a920f0a85f5c",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/1/1",
+   "family": "expression",
+   "difficulty": 1,
+   "question": "Evaluate ((18 + 16) * ((((15 + 11) * 14) + (14 * 18)) - 8)) + 8.",
+   "answer": "20680",
+   "data": {
+    "text": "(((18 + 16) * ((((15 + 11) * 14) + (14 * 18)) - 8)) + 8)"
+   },
+   "question_sha256": "c50b0514808e27967593e71d3b1eb18fd42e4a2a401f974ffe143ac4a1d10eb4",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/1/2",
+   "family": "expression",
+   "difficulty": 1,
+   "question": "Evaluate (((18 * (6 - 13)) + ((1 + 11) + 15)) + (10 + 9)) * 15.",
+   "answer": "-1200",
+   "data": {
+    "text": "((((18 * (6 - 13)) + ((1 + 11) + 15)) + (10 + 9)) * 15)"
+   },
+   "question_sha256": "d8833d826d1f12e7e0af768dd1c3b9b87091d54dbef98cfd24e215a98667ba35",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/1/3",
+   "family": "expression",
+   "difficulty": 1,
+   "question": "Evaluate ((11 * (11 - 9)) - (5 * 5)) - ((11 * (6 * 9)) + 11).",
+   "answer": "-608",
+   "data": {
+    "text": "(((11 * (11 - 9)) - (5 * 5)) - ((11 * (6 * 9)) + 11))"
+   },
+   "question_sha256": "2b9213d86d3bb078f8a05862ec929018865f358f796bf9853d4c63046c30735c",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/1/4",
+   "family": "expression",
+   "difficulty": 1,
+   "question": "Evaluate (((18 - 5) - (1 * 12)) * (18 * 8)) - (19 * (12 + 5)).",
+   "answer": "-179",
+   "data": {
+    "text": "((((18 - 5) - (1 * 12)) * (18 * 8)) - (19 * (12 + 5)))"
+   },
+   "question_sha256": "0fb048b9af65336eabaeb18fc530addf2917c5e40fbf72c89f01d3a82cce7d1c",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/1/5",
+   "family": "expression",
+   "difficulty": 1,
+   "question": "Evaluate ((10 * 1) + 13) - (((2 - 14) * (14 - 13)) - (17 * 4)).",
+   "answer": "103",
+   "data": {
+    "text": "(((10 * 1) + 13) - (((2 - 14) * (14 - 13)) - (17 * 4)))"
+   },
+   "question_sha256": "b99e2195ac6fea31e7807226662791d31d6f2da9ec9483e21f87e181825ae6b8",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/2/0",
+   "family": "expression",
+   "difficulty": 2,
+   "question": "Evaluate 12 * (((((7 + (17 * 7)) + 18) - ((18 + (8 - 17)) * (8 - 6))) * (4 * 14)) + 12).",
+   "answer": "84816",
+   "data": {
+    "text": "(12 * (((((7 + (17 * 7)) + 18) - ((18 + (8 - 17)) * (8 - 6))) * (4 * 14)) + 12))"
+   },
+   "question_sha256": "077c1bbe46bef854c197a156d43fa2158f7fd7821186b62fdf5abc3d61417baa",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/2/1",
+   "family": "expression",
+   "difficulty": 2,
+   "question": "Evaluate ((((12 * (13 - 18)) + (15 + 4)) * 5) - ((3 * 15) * (11 + 8))) * (13 + (9 * 15)).",
+   "answer": "-156880",
+   "data": {
+    "text": "(((((12 * (13 - 18)) + (15 + 4)) * 5) - ((3 * 15) * (11 + 8))) * (13 + (9 * 15)))"
+   },
+   "question_sha256": "7ba3166ff4e3220850954d543f973bb525dbb9970130646203b0bb1efd2835c0",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/2/2",
+   "family": "expression",
+   "difficulty": 2,
+   "question": "Evaluate (((1 * (19 + 9)) - (16 * (7 - 14))) + (((5 + 8) - ((4 * 9) * 10)) + 6)) + 14.",
+   "answer": "-187",
+   "data": {
+    "text": "((((1 * (19 + 9)) - (16 * (7 - 14))) + (((5 + 8) - ((4 * 9) * 10)) + 6)) + 14)"
+   },
+   "question_sha256": "c64d9d022faf12b49dd35cea752280a2f68b0b0ba8826721fdf2122f6d41400c",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/2/3",
+   "family": "expression",
+   "difficulty": 2,
+   "question": "Evaluate ((((4 - (4 - 3)) * ((19 - 17) + 19)) + 2) + 16) - (((6 - 11) + (5 + 12)) * 2).",
+   "answer": "57",
+   "data": {
+    "text": "(((((4 - (4 - 3)) * ((19 - 17) + 19)) + 2) + 16) - (((6 - 11) + (5 + 12)) * 2))"
+   },
+   "question_sha256": "69242de9311b6783c662d77d52f1d401e30653c482fca3dd29cf2a5bfdedeed2",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/2/4",
+   "family": "expression",
+   "difficulty": 2,
+   "question": "Evaluate 5 - (((((8 * 16) * 14) - (16 * (19 - 18))) * ((7 - 10) + 18)) - ((8 - 14) + 7)).",
+   "answer": "-26634",
+   "data": {
+    "text": "(5 - (((((8 * 16) * 14) - (16 * (19 - 18))) * ((7 - 10) + 18)) - ((8 - 14) + 7)))"
+   },
+   "question_sha256": "2b062ebac03dfcf9264fd046abc8782c65cf6922b0f83fa4a3366da36961a8a9",
+   "draw": 0
+  },
+  {
+   "id": "final/expression/2/5",
+   "family": "expression",
+   "difficulty": 2,
+   "question": "Evaluate (((19 - 2) + (15 + 6)) * (13 - 15)) - (((((1 + 5) * 6) * 10) * (12 + 6)) + 6).",
+   "answer": "-6562",
+   "data": {
+    "text": "((((19 - 2) + (15 + 6)) * (13 - 15)) - (((((1 + 5) * 6) * 10) * (12 + 6)) + 6))"
+   },
+   "question_sha256": "2357d48eaaafce57e2ba19c684371b34a163837416abe596f956e2e259be7dee",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/0/0",
+   "family": "modpow",
+   "difficulty": 0,
+   "question": "Compute 19^9 modulo 14, as an integer from 0 to 13.",
+   "answer": "13",
+   "data": {
+    "a": 19,
+    "b": 9,
+    "m": 14
+   },
+   "question_sha256": "0e7946a3c989f5c98e40ab546381967cd5bd6f9d0193e45424eabc54fd8dcdbd",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/0/1",
+   "family": "modpow",
+   "difficulty": 0,
+   "question": "Compute 19^7 modulo 40, as an integer from 0 to 39.",
+   "answer": "19",
+   "data": {
+    "a": 19,
+    "b": 7,
+    "m": 40
+   },
+   "question_sha256": "7b2d23299bf880152057480cb57b610bb76c63f4038e592e79a7bdc10e155f0b",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/0/2",
+   "family": "modpow",
+   "difficulty": 0,
+   "question": "Compute 15^8 modulo 11, as an integer from 0 to 10.",
+   "answer": "9",
+   "data": {
+    "a": 15,
+    "b": 8,
+    "m": 11
+   },
+   "question_sha256": "1bad4b576534d9c64b2d33ac7e03e2a8d67b8868e8ef771c114a8f5bc8fd5e7a",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/0/3",
+   "family": "modpow",
+   "difficulty": 0,
+   "question": "Compute 8^9 modulo 16, as an integer from 0 to 15.",
+   "answer": "0",
+   "data": {
+    "a": 8,
+    "b": 9,
+    "m": 16
+   },
+   "question_sha256": "53153dce622ea0975a13b165d127ca7350d15a156009ec6b814940050b7081af",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/0/4",
+   "family": "modpow",
+   "difficulty": 0,
+   "question": "Compute 15^11 modulo 30, as an integer from 0 to 29.",
+   "answer": "15",
+   "data": {
+    "a": 15,
+    "b": 11,
+    "m": 30
+   },
+   "question_sha256": "0f1f6bb61e7a2f768adc2795f66e908e488466f1aca19549285ce8c583d0744c",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/0/5",
+   "family": "modpow",
+   "difficulty": 0,
+   "question": "Compute 5^6 modulo 12, as an integer from 0 to 11.",
+   "answer": "1",
+   "data": {
+    "a": 5,
+    "b": 6,
+    "m": 12
+   },
+   "question_sha256": "1004fb7bc14c1d34d951c4d0283c1100568b4e646efc3f694b148258e0fa5930",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/1/0",
+   "family": "modpow",
+   "difficulty": 1,
+   "question": "Compute 103^49 modulo 229, as an integer from 0 to 228.",
+   "answer": "226",
+   "data": {
+    "a": 103,
+    "b": 49,
+    "m": 229
+   },
+   "question_sha256": "5ee0116ff23f9c703d0212a828743e5c4974a0ff48a50c8f4bcfa87c95b1f026",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/1/1",
+   "family": "modpow",
+   "difficulty": 1,
+   "question": "Compute 125^54 modulo 154, as an integer from 0 to 153.",
+   "answer": "113",
+   "data": {
+    "a": 125,
+    "b": 54,
+    "m": 154
+   },
+   "question_sha256": "6daa1233c68d8c44112f204606e4fef8bef1ea05c7947e987252bfa832bcbbd0",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/1/2",
+   "family": "modpow",
+   "difficulty": 1,
+   "question": "Compute 63^26 modulo 450, as an integer from 0 to 449.",
+   "answer": "9",
+   "data": {
+    "a": 63,
+    "b": 26,
+    "m": 450
+   },
+   "question_sha256": "7c68a168ecef667402f5d12a88d852a648a7bb599cfde95663ad5aad6dcb0158",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/1/3",
+   "family": "modpow",
+   "difficulty": 1,
+   "question": "Compute 29^28 modulo 72, as an integer from 0 to 71.",
+   "answer": "25",
+   "data": {
+    "a": 29,
+    "b": 28,
+    "m": 72
+   },
+   "question_sha256": "b335f98adaa5d341e3c9ef33c5e0fd238260aa398d69a9a42dcc9bf5b2baf7f6",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/1/4",
+   "family": "modpow",
+   "difficulty": 1,
+   "question": "Compute 126^46 modulo 280, as an integer from 0 to 279.",
+   "answer": "56",
+   "data": {
+    "a": 126,
+    "b": 46,
+    "m": 280
+   },
+   "question_sha256": "b4a877421520c6dc3bdd124b2cc079d4eebbb5bdf028b0d067cc2b7b005b6872",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/1/5",
+   "family": "modpow",
+   "difficulty": 1,
+   "question": "Compute 66^27 modulo 252, as an integer from 0 to 251.",
+   "answer": "216",
+   "data": {
+    "a": 66,
+    "b": 27,
+    "m": 252
+   },
+   "question_sha256": "493b2b548e51e955e290215d46c7ca7ae1ff5a2317ca9e507fef45d31233e6dc",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/2/0",
+   "family": "modpow",
+   "difficulty": 2,
+   "question": "Compute 343^138 modulo 2190, as an integer from 0 to 2189.",
+   "answer": "1579",
+   "data": {
+    "a": 343,
+    "b": 138,
+    "m": 2190
+   },
+   "question_sha256": "a43ed7c83e0e58f41926e827080f38cb96a71e6ddf43a71e4fe527142035ffa5",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/2/1",
+   "family": "modpow",
+   "difficulty": 2,
+   "question": "Compute 967^144 modulo 1182, as an integer from 0 to 1181.",
+   "answer": "475",
+   "data": {
+    "a": 967,
+    "b": 144,
+    "m": 1182
+   },
+   "question_sha256": "a743f2ce9e4437e37929566db0e6120053ac40dc63df6a471824b1fac8da8021",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/2/2",
+   "family": "modpow",
+   "difficulty": 2,
+   "question": "Compute 1736^117 modulo 2919, as an integer from 0 to 2918.",
+   "answer": "896",
+   "data": {
+    "a": 1736,
+    "b": 117,
+    "m": 2919
+   },
+   "question_sha256": "ada10f26f4b606dde4f07e988ea02bd80ad6502a98d32aff1d83922f313e1eb3",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/2/3",
+   "family": "modpow",
+   "difficulty": 2,
+   "question": "Compute 606^127 modulo 1465, as an integer from 0 to 1464.",
+   "answer": "266",
+   "data": {
+    "a": 606,
+    "b": 127,
+    "m": 1465
+   },
+   "question_sha256": "812bcf5276c0116bbebda2a2d153467f803ace834ddaec6b20ae39b0b7a8cec6",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/2/4",
+   "family": "modpow",
+   "difficulty": 2,
+   "question": "Compute 496^156 modulo 2688, as an integer from 0 to 2687.",
+   "answer": "1408",
+   "data": {
+    "a": 496,
+    "b": 156,
+    "m": 2688
+   },
+   "question_sha256": "98b500cdf98ef1e7d9c807f7f54a37d31f283d38f6d39fdcb190490b87390e46",
+   "draw": 0
+  },
+  {
+   "id": "final/modpow/2/5",
+   "family": "modpow",
+   "difficulty": 2,
+   "question": "Compute 1245^193 modulo 1529, as an integer from 0 to 1528.",
+   "answer": "360",
+   "data": {
+    "a": 1245,
+    "b": 193,
+    "m": 1529
+   },
+   "question_sha256": "31ad105104967348a8062ea00f010993844590c0f2976ce9578c0a3cef0e5835",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/0/0",
+   "family": "gcd",
+   "difficulty": 0,
+   "question": "Find the greatest common divisor of 28002 and 6103.",
+   "answer": "359",
+   "data": {
+    "a": 28002,
+    "b": 6103
+   },
+   "question_sha256": "408b3b0ff745b90aa69167844b6f13f493dd7ffb1e70cf0ee70325cec5423250",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/0/1",
+   "family": "gcd",
+   "difficulty": 0,
+   "question": "Find the greatest common divisor of 44408 and 36478.",
+   "answer": "1586",
+   "data": {
+    "a": 44408,
+    "b": 36478
+   },
+   "question_sha256": "c753a5d17d0504e8712bd3c6a317f164a6cf744c0a08911ea50abd16ba7b2a32",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/0/2",
+   "family": "gcd",
+   "difficulty": 0,
+   "question": "Find the greatest common divisor of 43240 and 1840.",
+   "answer": "920",
+   "data": {
+    "a": 43240,
+    "b": 1840
+   },
+   "question_sha256": "d119d390dd53ad222bbc4ed5656995b50e8000379c44a36fdf6568f8d91c50b3",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/0/3",
+   "family": "gcd",
+   "difficulty": 0,
+   "question": "Find the greatest common divisor of 7626 and 8928.",
+   "answer": "186",
+   "data": {
+    "a": 7626,
+    "b": 8928
+   },
+   "question_sha256": "58ec0628f32a6c0ee907404818334a9c9069da25f422435f24bd3b5421cd88b5",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/0/4",
+   "family": "gcd",
+   "difficulty": 0,
+   "question": "Find the greatest common divisor of 54570 and 37878.",
+   "answer": "642",
+   "data": {
+    "a": 54570,
+    "b": 37878
+   },
+   "question_sha256": "400f4864836b8eedfae533e8e4782c900bb4743f1f58ead53e90057aee986e2c",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/0/5",
+   "family": "gcd",
+   "difficulty": 0,
+   "question": "Find the greatest common divisor of 74844 and 1512.",
+   "answer": "756",
+   "data": {
+    "a": 74844,
+    "b": 1512
+   },
+   "question_sha256": "a3bcc7f219ed533707ee1280d18e50788912bee5096ad1bd33535bd2ca1b9b30",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/1/0",
+   "family": "gcd",
+   "difficulty": 1,
+   "question": "Find the greatest common divisor of 12893310 and 53511450.",
+   "answer": "84270",
+   "data": {
+    "a": 12893310,
+    "b": 53511450
+   },
+   "question_sha256": "77caef898e5049f99d3daee99e4c031f76ef691f7c385d1af5c4b360233fced5",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/1/1",
+   "family": "gcd",
+   "difficulty": 1,
+   "question": "Find the greatest common divisor of 44399960 and 35251480.",
+   "answer": "49720",
+   "data": {
+    "a": 44399960,
+    "b": 35251480
+   },
+   "question_sha256": "aa004e9e6bf25f355218dc34aab23c3cceb89b6146b59dfeb9313b954f7af51b",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/1/2",
+   "family": "gcd",
+   "difficulty": 1,
+   "question": "Find the greatest common divisor of 23492212 and 4421538.",
+   "answer": "44662",
+   "data": {
+    "a": 23492212,
+    "b": 4421538
+   },
+   "question_sha256": "c8c9e5ab432904186b47efc0b017cdaa16dead1c102b8887495b65c112dcd906",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/1/3",
+   "family": "gcd",
+   "difficulty": 1,
+   "question": "Find the greatest common divisor of 25067000 and 6417152.",
+   "answer": "200536",
+   "data": {
+    "a": 25067000,
+    "b": 6417152
+   },
+   "question_sha256": "1539b92a4db6a0e85c2463faf2aa76b859d6475a8b18f99056e32ca489406a4b",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/1/4",
+   "family": "gcd",
+   "difficulty": 1,
+   "question": "Find the greatest common divisor of 19145455 and 3870375.",
+   "answer": "51605",
+   "data": {
+    "a": 19145455,
+    "b": 3870375
+   },
+   "question_sha256": "9f9535da686deb42cfa6f9fa4245d3c7fe803a7c1a7425fc09ef6a9cc972bbd7",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/1/5",
+   "family": "gcd",
+   "difficulty": 1,
+   "question": "Find the greatest common divisor of 1647640 and 4591585.",
+   "answer": "12115",
+   "data": {
+    "a": 1647640,
+    "b": 4591585
+   },
+   "question_sha256": "d7ac0f1a1fbcaf6481a54ded0aadf03f67d9b9af816817ec558f4d32e7398cd7",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/2/0",
+   "family": "gcd",
+   "difficulty": 2,
+   "question": "Find the greatest common divisor of 23499257849 and 5837425990.",
+   "answer": "4824319",
+   "data": {
+    "a": 23499257849,
+    "b": 5837425990
+   },
+   "question_sha256": "f7e661d191532503859e253cdc2c66fc285cd163ec4c5cf6b21a11f1df80a38d",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/2/1",
+   "family": "gcd",
+   "difficulty": 2,
+   "question": "Find the greatest common divisor of 339768123 and 346973646.",
+   "answer": "554271",
+   "data": {
+    "a": 339768123,
+    "b": 346973646
+   },
+   "question_sha256": "6a0e8355f79d743de3f6faf4fc694faec533c8170aba6674ea246729966744ec",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/2/2",
+   "family": "gcd",
+   "difficulty": 2,
+   "question": "Find the greatest common divisor of 575756491 and 2963730134.",
+   "answer": "9438631",
+   "data": {
+    "a": 575756491,
+    "b": 2963730134
+   },
+   "question_sha256": "ca25edc7232939a52959829b3b56d95afe4cc98a9ab35865de3ca9fe491e80f3",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/2/3",
+   "family": "gcd",
+   "difficulty": 2,
+   "question": "Find the greatest common divisor of 24045124050 and 35638158465.",
+   "answer": "4211055",
+   "data": {
+    "a": 24045124050,
+    "b": 35638158465
+   },
+   "question_sha256": "40c53c6df581d1b611e2697c190be4d6835e25abab361ba36c4188363b4d10fd",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/2/4",
+   "family": "gcd",
+   "difficulty": 2,
+   "question": "Find the greatest common divisor of 14172581328 and 28815272721.",
+   "answer": "4948527",
+   "data": {
+    "a": 14172581328,
+    "b": 28815272721
+   },
+   "question_sha256": "009dee7a4392d1cac011b54e219b3222a5200bebc45e43d559d95ffe6526df14",
+   "draw": 0
+  },
+  {
+   "id": "final/gcd/2/5",
+   "family": "gcd",
+   "difficulty": 2,
+   "question": "Find the greatest common divisor of 9924422912 and 19531537664.",
+   "answer": "4881664",
+   "data": {
+    "a": 9924422912,
+    "b": 19531537664
+   },
+   "question_sha256": "4f43cb1929db8aacff65aa2c78b251fbbc2c40a8bc3867b7c33bfa78b0f8c9a4",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/0/0",
+   "family": "linear_system",
+   "difficulty": 0,
+   "question": "Solve this system and give the value of x: (4)x + (3)y = -57; (4)x + (2)y = -50.",
+   "answer": "-9",
+   "data": {
+    "A": [
+     [
+      4,
+      3
+     ],
+     [
+      4,
+      2
+     ]
+    ],
+    "b": [
+     -57,
+     -50
+    ],
+    "x": [
+     -9,
+     -7
+    ]
+   },
+   "question_sha256": "35cb25eb17fffe861a79615c711f1d4a05827b189ff5f7eb5688b36644b1a8c9",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/0/1",
+   "family": "linear_system",
+   "difficulty": 0,
+   "question": "Solve this system and give the value of x: (1)x + (6)y = 25; (-7)x + (1)y = 40.",
+   "answer": "-5",
+   "data": {
+    "A": [
+     [
+      1,
+      6
+     ],
+     [
+      -7,
+      1
+     ]
+    ],
+    "b": [
+     25,
+     40
+    ],
+    "x": [
+     -5,
+     5
+    ]
+   },
+   "question_sha256": "72e31a21ea2cff446c7a1f937f282c777989367c75de3461854b7b28c83ef710",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/0/2",
+   "family": "linear_system",
+   "difficulty": 0,
+   "question": "Solve this system and give the value of x: (-6)x + (3)y = 24; (0)x + (3)y = 0.",
+   "answer": "-4",
+   "data": {
+    "A": [
+     [
+      -6,
+      3
+     ],
+     [
+      0,
+      3
+     ]
+    ],
+    "b": [
+     24,
+     0
+    ],
+    "x": [
+     -4,
+     0
+    ]
+   },
+   "question_sha256": "982646445f01b14a26fcd8fca6bb71455fcb81e03ea9d77ef13fc02bef9ac076",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/0/3",
+   "family": "linear_system",
+   "difficulty": 0,
+   "question": "Solve this system and give the value of x: (0)x + (2)y = 8; (-4)x + (0)y = 48.",
+   "answer": "-12",
+   "data": {
+    "A": [
+     [
+      0,
+      2
+     ],
+     [
+      -4,
+      0
+     ]
+    ],
+    "b": [
+     8,
+     48
+    ],
+    "x": [
+     -12,
+     4
+    ]
+   },
+   "question_sha256": "cb9576bac0e63340b19fb0714480ab902e576350737646c01e979771291f78cb",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/0/4",
+   "family": "linear_system",
+   "difficulty": 0,
+   "question": "Solve this system and give the value of x: (4)x + (-5)y = 8; (-4)x + (-4)y = -44.",
+   "answer": "7",
+   "data": {
+    "A": [
+     [
+      4,
+      -5
+     ],
+     [
+      -4,
+      -4
+     ]
+    ],
+    "b": [
+     8,
+     -44
+    ],
+    "x": [
+     7,
+     4
+    ]
+   },
+   "question_sha256": "bfc17e2bfa75fabd78fe4577f3fb783a0223225b11681b2d6775728e5825169b",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/0/5",
+   "family": "linear_system",
+   "difficulty": 0,
+   "question": "Solve this system and give the value of x: (-8)x + (0)y = 32; (-3)x + (-8)y = 44.",
+   "answer": "-4",
+   "data": {
+    "A": [
+     [
+      -8,
+      0
+     ],
+     [
+      -3,
+      -8
+     ]
+    ],
+    "b": [
+     32,
+     44
+    ],
+    "x": [
+     -4,
+     -4
+    ]
+   },
+   "question_sha256": "887323e48ab59c160f35a96b05ce48e59c627b91555187be3ad78eb0dd78769b",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/1/0",
+   "family": "linear_system",
+   "difficulty": 1,
+   "question": "Solve this system and give the value of x: (-3)x + (-9)y + (4)z = 60; (8)x + (-9)y + (-2)z = -108; (4)x + (-4)y + (9)z = 6.",
+   "answer": "-12",
+   "data": {
+    "A": [
+     [
+      -3,
+      -9,
+      4
+     ],
+     [
+      8,
+      -9,
+      -2
+     ],
+     [
+      4,
+      -4,
+      9
+     ]
+    ],
+    "b": [
+     60,
+     -108,
+     6
+    ],
+    "x": [
+     -12,
+     0,
+     6
+    ]
+   },
+   "question_sha256": "164a2054e6b40e1ebbeac0f638b3793bc2a9466ea3e32e3a67f198df5222b553",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/1/1",
+   "family": "linear_system",
+   "difficulty": 1,
+   "question": "Solve this system and give the value of x: (1)x + (7)y + (-2)z = 90; (5)x + (5)y + (-4)z = 108; (7)x + (-9)y + (5)z = -46.",
+   "answer": "9",
+   "data": {
+    "A": [
+     [
+      1,
+      7,
+      -2
+     ],
+     [
+      5,
+      5,
+      -4
+     ],
+     [
+      7,
+      -9,
+      5
+     ]
+    ],
+    "b": [
+     90,
+     108,
+     -46
+    ],
+    "x": [
+     9,
+     11,
+     -2
+    ]
+   },
+   "question_sha256": "dbe54658adff3fe3c809a07ba94d1ec1a540fe2103b50d42eb01b1f78ba02247",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/1/2",
+   "family": "linear_system",
+   "difficulty": 1,
+   "question": "Solve this system and give the value of x: (0)x + (8)y + (-4)z = -28; (-1)x + (6)y + (5)z = -60; (-5)x + (-9)y + (0)z = 59.",
+   "answer": "-1",
+   "data": {
+    "A": [
+     [
+      0,
+      8,
+      -4
+     ],
+     [
+      -1,
+      6,
+      5
+     ],
+     [
+      -5,
+      -9,
+      0
+     ]
+    ],
+    "b": [
+     -28,
+     -60,
+     59
+    ],
+    "x": [
+     -1,
+     -6,
+     -5
+    ]
+   },
+   "question_sha256": "511265479e329b342d272574a463bcb657cf91944eae79ac09c9fb39a9584ff8",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/1/3",
+   "family": "linear_system",
+   "difficulty": 1,
+   "question": "Solve this system and give the value of x: (6)x + (3)y + (-9)z = -27; (-8)x + (0)y + (-3)z = -75; (5)x + (-4)y + (-7)z = -57.",
+   "answer": "6",
+   "data": {
+    "A": [
+     [
+      6,
+      3,
+      -9
+     ],
+     [
+      -8,
+      0,
+      -3
+     ],
+     [
+      5,
+      -4,
+      -7
+     ]
+    ],
+    "b": [
+     -27,
+     -75,
+     -57
+    ],
+    "x": [
+     6,
+     6,
+     9
+    ]
+   },
+   "question_sha256": "6e862bcf3ad2cf6976f224a5f3aa41d6e73d3e62dfc3c60e8b700816a13fde36",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/1/4",
+   "family": "linear_system",
+   "difficulty": 1,
+   "question": "Solve this system and give the value of x: (0)x + (-1)y + (8)z = -56; (9)x + (-9)y + (8)z = -192; (-8)x + (8)y + (-2)z = 140.",
+   "answer": "-8",
+   "data": {
+    "A": [
+     [
+      0,
+      -1,
+      8
+     ],
+     [
+      9,
+      -9,
+      8
+     ],
+     [
+      -8,
+      8,
+      -2
+     ]
+    ],
+    "b": [
+     -56,
+     -192,
+     140
+    ],
+    "x": [
+     -8,
+     8,
+     -6
+    ]
+   },
+   "question_sha256": "ba2d80510fe8ff33fd7128ea1c6af14449045931e88112e729d8c0e35c460e3b",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/1/5",
+   "family": "linear_system",
+   "difficulty": 1,
+   "question": "Solve this system and give the value of x: (-9)x + (-2)y + (-7)z = 19; (-5)x + (9)y + (8)z = -103; (0)x + (1)y + (-6)z = 39.",
+   "answer": "4",
+   "data": {
+    "A": [
+     [
+      -9,
+      -2,
+      -7
+     ],
+     [
+      -5,
+      9,
+      8
+     ],
+     [
+      0,
+      1,
+      -6
+     ]
+    ],
+    "b": [
+     19,
+     -103,
+     39
+    ],
+    "x": [
+     4,
+     -3,
+     -7
+    ]
+   },
+   "question_sha256": "608e235de2290936dc3efebd8e6c67f3032e1f8942e932d73ea8f89e5f9bfd85",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/2/0",
+   "family": "linear_system",
+   "difficulty": 2,
+   "question": "Solve this system and give the value of x: (3)x + (7)y + (-4)z + (-3)w = 77; (0)x + (-2)y + (4)z + (7)w = -18; (-6)x + (0)y + (7)z + (-2)w = -107; (6)x + (3)y + (-1)z + (2)w = 68.",
+   "answer": "6",
+   "data": {
+    "A": [
+     [
+      3,
+      7,
+      -4,
+      -3
+     ],
+     [
+      0,
+      -2,
+      4,
+      7
+     ],
+     [
+      -6,
+      0,
+      7,
+      -2
+     ],
+     [
+      6,
+      3,
+      -1,
+      2
+     ]
+    ],
+    "b": [
+     77,
+     -18,
+     -107,
+     68
+    ],
+    "x": [
+     6,
+     5,
+     -9,
+     4
+    ]
+   },
+   "question_sha256": "5bc1c1e258587a6f31883a710c726bb4f3ba05a92a6ebb20094cf558ac217978",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/2/1",
+   "family": "linear_system",
+   "difficulty": 2,
+   "question": "Solve this system and give the value of x: (7)x + (2)y + (5)z + (8)w = -44; (-6)x + (8)y + (7)z + (2)w = -126; (3)x + (3)y + (-1)z + (-4)w = 37; (8)x + (-5)y + (-4)z + (8)w = 55.",
+   "answer": "6",
+   "data": {
+    "A": [
+     [
+      7,
+      2,
+      5,
+      8
+     ],
+     [
+      -6,
+      8,
+      7,
+      2
+     ],
+     [
+      3,
+      3,
+      -1,
+      -4
+     ],
+     [
+      8,
+      -5,
+      -4,
+      8
+     ]
+    ],
+    "b": [
+     -44,
+     -126,
+     37,
+     55
+    ],
+    "x": [
+     6,
+     -3,
+     -8,
+     -5
+    ]
+   },
+   "question_sha256": "c6bcf1138baa3f4e551e9401ccfca22bd2d59487e70e828c0ac2e631c0257a0a",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/2/2",
+   "family": "linear_system",
+   "difficulty": 2,
+   "question": "Solve this system and give the value of x: (2)x + (7)y + (-6)z + (1)w = -21; (-8)x + (5)y + (-3)z + (2)w = 9; (-7)x + (2)y + (0)z + (8)w = -26; (2)x + (-9)y + (9)z + (5)w = -12.",
+   "answer": "-2",
+   "data": {
+    "A": [
+     [
+      2,
+      7,
+      -6,
+      1
+     ],
+     [
+      -8,
+      5,
+      -3,
+      2
+     ],
+     [
+      -7,
+      2,
+      0,
+      8
+     ],
+     [
+      2,
+      -9,
+      9,
+      5
+     ]
+    ],
+    "b": [
+     -21,
+     9,
+     -26,
+     -12
+    ],
+    "x": [
+     -2,
+     8,
+     11,
+     -7
+    ]
+   },
+   "question_sha256": "62453b98d837666a2ef7216aaa187f7d4a57ab8026544da598d4ff02aa3a35b8",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/2/3",
+   "family": "linear_system",
+   "difficulty": 2,
+   "question": "Solve this system and give the value of x: (2)x + (-3)y + (-7)z + (-9)w = -105; (8)x + (8)y + (0)z + (7)w = -50; (-7)x + (-9)y + (0)z + (3)w = 56; (0)x + (-2)y + (-9)z + (5)w = -68.",
+   "answer": "-11",
+   "data": {
+    "A": [
+     [
+      2,
+      -3,
+      -7,
+      -9
+     ],
+     [
+      8,
+      8,
+      0,
+      7
+     ],
+     [
+      -7,
+      -9,
+      0,
+      3
+     ],
+     [
+      0,
+      -2,
+      -9,
+      5
+     ]
+    ],
+    "b": [
+     -105,
+     -50,
+     56,
+     -68
+    ],
+    "x": [
+     -11,
+     3,
+     8,
+     2
+    ]
+   },
+   "question_sha256": "f58fd35ab5e662553cea8031bcfcfea0cfef89ad8209f84be1d9fbc439a34c42",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/2/4",
+   "family": "linear_system",
+   "difficulty": 2,
+   "question": "Solve this system and give the value of x: (-1)x + (-8)y + (5)z + (-4)w = -150; (-6)x + (6)y + (3)z + (-8)w = -11; (-6)x + (5)y + (5)z + (3)w = 75; (-9)x + (-5)y + (-5)z + (-6)w = -30.",
+   "answer": "-5",
+   "data": {
+    "A": [
+     [
+      -1,
+      -8,
+      5,
+      -4
+     ],
+     [
+      -6,
+      6,
+      3,
+      -8
+     ],
+     [
+      -6,
+      5,
+      5,
+      3
+     ],
+     [
+      -9,
+      -5,
+      -5,
+      -6
+     ]
+    ],
+    "b": [
+     -150,
+     -11,
+     75,
+     -30
+    ],
+    "x": [
+     -5,
+     10,
+     -7,
+     10
+    ]
+   },
+   "question_sha256": "c6c4d5b19d269e0f4d63b16ee31b9e1ca7fb336b6f923aec8be3249a04dfceba",
+   "draw": 0
+  },
+  {
+   "id": "final/linear_system/2/5",
+   "family": "linear_system",
+   "difficulty": 2,
+   "question": "Solve this system and give the value of x: (0)x + (0)y + (-7)z + (0)w = 0; (0)x + (-8)y + (3)z + (-1)w = 75; (-5)x + (3)y + (6)z + (1)w = -30; (-8)x + (3)y + (-9)z + (2)w = -28.",
+   "answer": "1",
+   "data": {
+    "A": [
+     [
+      0,
+      0,
+      -7,
+      0
+     ],
+     [
+      0,
+      -8,
+      3,
+      -1
+     ],
+     [
+      -5,
+      3,
+      6,
+      1
+     ],
+     [
+      -8,
+      3,
+      -9,
+      2
+     ]
+    ],
+    "b": [
+     0,
+     75,
+     -30,
+     -28
+    ],
+    "x": [
+     1,
+     -10,
+     0,
+     5
+    ]
+   },
+   "question_sha256": "e1329dee5ebc822a4b398b6098d8d12c3530571c55b7a561315402e8ced5f541",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/0/0",
+   "family": "determinant",
+   "difficulty": 0,
+   "question": "Compute the determinant of the matrix [[58, -16], [-26, 50]].",
+   "answer": "2484",
+   "data": {
+    "M": [
+     [
+      58,
+      -16
+     ],
+     [
+      -26,
+      50
+     ]
+    ]
+   },
+   "question_sha256": "52c5c658e54d2882ec44f8d8ae88c9b0ec831540df9897bae72c091d9cb7b92e",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/0/1",
+   "family": "determinant",
+   "difficulty": 0,
+   "question": "Compute the determinant of the matrix [[49, -9], [17, 5]].",
+   "answer": "398",
+   "data": {
+    "M": [
+     [
+      49,
+      -9
+     ],
+     [
+      17,
+      5
+     ]
+    ]
+   },
+   "question_sha256": "929d7cdde3a27ed7b0ba8e96e2493be47b6afb15cc7b063beb618d5393c7fca7",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/0/2",
+   "family": "determinant",
+   "difficulty": 0,
+   "question": "Compute the determinant of the matrix [[-32, -80], [-17, -10]].",
+   "answer": "-1040",
+   "data": {
+    "M": [
+     [
+      -32,
+      -80
+     ],
+     [
+      -17,
+      -10
+     ]
+    ]
+   },
+   "question_sha256": "f8123dc7c25fbc9f059153ef52a50a9f388fc2ebbda3f001d8357a92b4173a71",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/0/3",
+   "family": "determinant",
+   "difficulty": 0,
+   "question": "Compute the determinant of the matrix [[-13, 82], [36, -44]].",
+   "answer": "-2380",
+   "data": {
+    "M": [
+     [
+      -13,
+      82
+     ],
+     [
+      36,
+      -44
+     ]
+    ]
+   },
+   "question_sha256": "14e16fa61dfcefb73fc56a308468f05e5cc64f7596de6a6eadc23f8b32199384",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/0/4",
+   "family": "determinant",
+   "difficulty": 0,
+   "question": "Compute the determinant of the matrix [[-50, 30], [41, -62]].",
+   "answer": "1870",
+   "data": {
+    "M": [
+     [
+      -50,
+      30
+     ],
+     [
+      41,
+      -62
+     ]
+    ]
+   },
+   "question_sha256": "54c4bf563928e2b8b854e13e84ee44e01b9f3da8885d3d4d5db88801ee48bc7f",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/0/5",
+   "family": "determinant",
+   "difficulty": 0,
+   "question": "Compute the determinant of the matrix [[52, 57], [-74, -98]].",
+   "answer": "-878",
+   "data": {
+    "M": [
+     [
+      52,
+      57
+     ],
+     [
+      -74,
+      -98
+     ]
+    ]
+   },
+   "question_sha256": "f125fd31bfd2044f4b7cc91ae7781d5aecc6f0889d888939bb10936f5c30df0f",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/1/0",
+   "family": "determinant",
+   "difficulty": 1,
+   "question": "Compute the determinant of the matrix [[10, -4, 8], [7, -15, -15], [13, 12, -6]].",
+   "answer": "5544",
+   "data": {
+    "M": [
+     [
+      10,
+      -4,
+      8
+     ],
+     [
+      7,
+      -15,
+      -15
+     ],
+     [
+      13,
+      12,
+      -6
+     ]
+    ]
+   },
+   "question_sha256": "658a8f5d3c4427c36a09994741e914a18586a2a6a871de90334794befcc7d734",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/1/1",
+   "family": "determinant",
+   "difficulty": 1,
+   "question": "Compute the determinant of the matrix [[-2, -12, 1], [8, 13, -7], [-12, -9, 8]].",
+   "answer": "-238",
+   "data": {
+    "M": [
+     [
+      -2,
+      -12,
+      1
+     ],
+     [
+      8,
+      13,
+      -7
+     ],
+     [
+      -12,
+      -9,
+      8
+     ]
+    ]
+   },
+   "question_sha256": "44989821522b70b6825a54e71aeb56c267663b3deaf1d59d087a0825160dfbb3",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/1/2",
+   "family": "determinant",
+   "difficulty": 1,
+   "question": "Compute the determinant of the matrix [[5, 4, 0], [0, 6, 13], [-12, -6, 0]].",
+   "answer": "-234",
+   "data": {
+    "M": [
+     [
+      5,
+      4,
+      0
+     ],
+     [
+      0,
+      6,
+      13
+     ],
+     [
+      -12,
+      -6,
+      0
+     ]
+    ]
+   },
+   "question_sha256": "183c95bec5a90b22437288290bc37e477741f4ab91ebda97f1a9793782e9d4cc",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/1/3",
+   "family": "determinant",
+   "difficulty": 1,
+   "question": "Compute the determinant of the matrix [[13, 3, -2], [-7, 15, 12], [9, -3, 1]].",
+   "answer": "1236",
+   "data": {
+    "M": [
+     [
+      13,
+      3,
+      -2
+     ],
+     [
+      -7,
+      15,
+      12
+     ],
+     [
+      9,
+      -3,
+      1
+     ]
+    ]
+   },
+   "question_sha256": "f97f292121bcc6a59c29250fa952942a6244b08699016db57b59686223ac2eef",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/1/4",
+   "family": "determinant",
+   "difficulty": 1,
+   "question": "Compute the determinant of the matrix [[-4, 4, 4], [6, 11, -11], [0, -9, 14]].",
+   "answer": "-772",
+   "data": {
+    "M": [
+     [
+      -4,
+      4,
+      4
+     ],
+     [
+      6,
+      11,
+      -11
+     ],
+     [
+      0,
+      -9,
+      14
+     ]
+    ]
+   },
+   "question_sha256": "1b5bfd2983ebea58fa4211a788c0d25dd9fe623ae2208147b55b786c49548704",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/1/5",
+   "family": "determinant",
+   "difficulty": 1,
+   "question": "Compute the determinant of the matrix [[13, -11, -8], [9, 2, -14], [11, -13, 13]].",
+   "answer": "2065",
+   "data": {
+    "M": [
+     [
+      13,
+      -11,
+      -8
+     ],
+     [
+      9,
+      2,
+      -14
+     ],
+     [
+      11,
+      -13,
+      13
+     ]
+    ]
+   },
+   "question_sha256": "bd3a4d09ac9730824628c45f7fde7e4b5e8353ac6b96defb740dca9303061ad3",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/2/0",
+   "family": "determinant",
+   "difficulty": 2,
+   "question": "Compute the determinant of the matrix [[0, 0, -2, 0], [-3, 7, -3, 0], [4, -5, -1, 5], [-5, 2, -3, 3]].",
+   "answer": "368",
+   "data": {
+    "M": [
+     [
+      0,
+      0,
+      -2,
+      0
+     ],
+     [
+      -3,
+      7,
+      -3,
+      0
+     ],
+     [
+      4,
+      -5,
+      -1,
+      5
+     ],
+     [
+      -5,
+      2,
+      -3,
+      3
+     ]
+    ]
+   },
+   "question_sha256": "86ea4dd5757f1b54158cd72473beb5ebba00e3c67ae2e96debc65db5da8024a9",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/2/1",
+   "family": "determinant",
+   "difficulty": 2,
+   "question": "Compute the determinant of the matrix [[6, 1, -7, -5], [2, 7, -3, 0], [4, -3, -3, 0], [-6, 5, 2, -7]].",
+   "answer": "46",
+   "data": {
+    "M": [
+     [
+      6,
+      1,
+      -7,
+      -5
+     ],
+     [
+      2,
+      7,
+      -3,
+      0
+     ],
+     [
+      4,
+      -3,
+      -3,
+      0
+     ],
+     [
+      -6,
+      5,
+      2,
+      -7
+     ]
+    ]
+   },
+   "question_sha256": "779c808a2384f7025c5100d63f300d0e89a412a547def647ed739be5ddc4ce4e",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/2/2",
+   "family": "determinant",
+   "difficulty": 2,
+   "question": "Compute the determinant of the matrix [[-7, 0, 0, -5], [-5, -4, 6, 2], [-6, -4, 5, -5], [-5, -1, 4, 5]].",
+   "answer": "239",
+   "data": {
+    "M": [
+     [
+      -7,
+      0,
+      0,
+      -5
+     ],
+     [
+      -5,
+      -4,
+      6,
+      2
+     ],
+     [
+      -6,
+      -4,
+      5,
+      -5
+     ],
+     [
+      -5,
+      -1,
+      4,
+      5
+     ]
+    ]
+   },
+   "question_sha256": "a176e6b567fb53cdc61225450e851afd66fb4949daed6174147c2399638d4f1f",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/2/3",
+   "family": "determinant",
+   "difficulty": 2,
+   "question": "Compute the determinant of the matrix [[6, 0, -3, 6], [0, -5, -5, 0], [5, 2, -2, 7], [0, -6, 0, -6]].",
+   "answer": "90",
+   "data": {
+    "M": [
+     [
+      6,
+      0,
+      -3,
+      6
+     ],
+     [
+      0,
+      -5,
+      -5,
+      0
+     ],
+     [
+      5,
+      2,
+      -2,
+      7
+     ],
+     [
+      0,
+      -6,
+      0,
+      -6
+     ]
+    ]
+   },
+   "question_sha256": "765310926169df3c1429afcb2ddbf1d43be80b9c879cab029da893626fc5854a",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/2/4",
+   "family": "determinant",
+   "difficulty": 2,
+   "question": "Compute the determinant of the matrix [[-6, -4, -3, -7], [-1, 0, 0, 6], [-1, 6, 4, -6], [6, 7, -6, 1]].",
+   "answer": "3366",
+   "data": {
+    "M": [
+     [
+      -6,
+      -4,
+      -3,
+      -7
+     ],
+     [
+      -1,
+      0,
+      0,
+      6
+     ],
+     [
+      -1,
+      6,
+      4,
+      -6
+     ],
+     [
+      6,
+      7,
+      -6,
+      1
+     ]
+    ]
+   },
+   "question_sha256": "c4d4383adea76707d41591cd635e2d1246387649011e50248b98f89d5a3c77ce",
+   "draw": 0
+  },
+  {
+   "id": "final/determinant/2/5",
+   "family": "determinant",
+   "difficulty": 2,
+   "question": "Compute the determinant of the matrix [[3, 4, 4, -7], [-3, -1, 7, 5], [-3, 1, -1, 0], [0, 0, 4, 6]].",
+   "answer": "-696",
+   "data": {
+    "M": [
+     [
+      3,
+      4,
+      4,
+      -7
+     ],
+     [
+      -3,
+      -1,
+      7,
+      5
+     ],
+     [
+      -3,
+      1,
+      -1,
+      0
+     ],
+     [
+      0,
+      0,
+      4,
+      6
+     ]
+    ]
+   },
+   "question_sha256": "3db56625dbc4f71bc81fddb8b55b27681fddc0487a9ff7687db636a936ccc819",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/0/0",
+   "family": "polynomial",
+   "difficulty": 0,
+   "question": "Evaluate p(x) = (-7) + (8)x^1 + (9)x^2 + (9)x^3 at x = -5.",
+   "answer": "-947",
+   "data": {
+    "c": [
+     -7,
+     8,
+     9,
+     9
+    ],
+    "x": -5
+   },
+   "question_sha256": "bfeaf5f5a5d2515803029f87e3214dffe02ed13b494e7321d69064c9add347be",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/0/1",
+   "family": "polynomial",
+   "difficulty": 0,
+   "question": "Evaluate p(x) = (-7) + (-7)x^1 + (-4)x^2 + (4)x^3 at x = -4.",
+   "answer": "-299",
+   "data": {
+    "c": [
+     -7,
+     -7,
+     -4,
+     4
+    ],
+    "x": -4
+   },
+   "question_sha256": "c52cc66024f8d09f934f11fd479e1ff758e12f93f1dece498c2d52463e2b2fb6",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/0/2",
+   "family": "polynomial",
+   "difficulty": 0,
+   "question": "Evaluate p(x) = (-7) + (0)x^1 + (3)x^2 + (5)x^3 at x = -5.",
+   "answer": "-557",
+   "data": {
+    "c": [
+     -7,
+     0,
+     3,
+     5
+    ],
+    "x": -5
+   },
+   "question_sha256": "4dda08eafee2e814926ee1c823b1180adfc40f374e2b368b0a3cb6e331768360",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/0/3",
+   "family": "polynomial",
+   "difficulty": 0,
+   "question": "Evaluate p(x) = (-9) + (-4)x^1 + (-9)x^2 + (2)x^3 at x = -5.",
+   "answer": "-464",
+   "data": {
+    "c": [
+     -9,
+     -4,
+     -9,
+     2
+    ],
+    "x": -5
+   },
+   "question_sha256": "fa129d0c42655c77ec9b3077a93fa85ed4d198110059945e857d16d80d3b84fa",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/0/4",
+   "family": "polynomial",
+   "difficulty": 0,
+   "question": "Evaluate p(x) = (-4) + (2)x^1 + (-3)x^2 + (1)x^3 at x = -1.",
+   "answer": "-10",
+   "data": {
+    "c": [
+     -4,
+     2,
+     -3,
+     1
+    ],
+    "x": -1
+   },
+   "question_sha256": "80ba7e637b85fa00f967735984394db837a5bd743c975731a2aa87c9e3ba2cfe",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/0/5",
+   "family": "polynomial",
+   "difficulty": 0,
+   "question": "Evaluate p(x) = (-2) + (4)x^1 + (3)x^2 + (1)x^3 at x = -1.",
+   "answer": "-4",
+   "data": {
+    "c": [
+     -2,
+     4,
+     3,
+     1
+    ],
+    "x": -1
+   },
+   "question_sha256": "e149f79323cb7cb6124013798097e68f0fe928f849e35a7b3335f5c06b817864",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/1/0",
+   "family": "polynomial",
+   "difficulty": 1,
+   "question": "Evaluate p(x) = (-3) + (0)x^1 + (0)x^2 + (7)x^3 + (9)x^4 + (4)x^5 at x = -6.",
+   "answer": "-20955",
+   "data": {
+    "c": [
+     -3,
+     0,
+     0,
+     7,
+     9,
+     4
+    ],
+    "x": -6
+   },
+   "question_sha256": "d0fdbf44535e291267c0ecfc1f590bc89b208b6780ae7d8a2fef57a797f4b058",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/1/1",
+   "family": "polynomial",
+   "difficulty": 1,
+   "question": "Evaluate p(x) = (8) + (1)x^1 + (1)x^2 + (5)x^3 + (-9)x^4 + (4)x^5 at x = 1.",
+   "answer": "10",
+   "data": {
+    "c": [
+     8,
+     1,
+     1,
+     5,
+     -9,
+     4
+    ],
+    "x": 1
+   },
+   "question_sha256": "5b9ce8206b39ad4c07087105689bafea9d504528d5750a07afee75fa75a2d22f",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/1/2",
+   "family": "polynomial",
+   "difficulty": 1,
+   "question": "Evaluate p(x) = (1) + (-5)x^1 + (8)x^2 + (5)x^3 + (-3)x^4 + (6)x^5 at x = 4.",
+   "answer": "5805",
+   "data": {
+    "c": [
+     1,
+     -5,
+     8,
+     5,
+     -3,
+     6
+    ],
+    "x": 4
+   },
+   "question_sha256": "8308a005f883c466f5114653a091a79bcc1a556b98a2a23eb346cca847ab4e50",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/1/3",
+   "family": "polynomial",
+   "difficulty": 1,
+   "question": "Evaluate p(x) = (0) + (-1)x^1 + (3)x^2 + (-4)x^3 + (-2)x^4 + (5)x^5 at x = 3.",
+   "answer": "969",
+   "data": {
+    "c": [
+     0,
+     -1,
+     3,
+     -4,
+     -2,
+     5
+    ],
+    "x": 3
+   },
+   "question_sha256": "6e73eff82f9afe5364c4afde7b3fac9cdaccdbaa8fc15edd0f6ddafbe16651ce",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/1/4",
+   "family": "polynomial",
+   "difficulty": 1,
+   "question": "Evaluate p(x) = (-2) + (-6)x^1 + (-6)x^2 + (9)x^3 + (-2)x^4 + (2)x^5 at x = -2.",
+   "answer": "-182",
+   "data": {
+    "c": [
+     -2,
+     -6,
+     -6,
+     9,
+     -2,
+     2
+    ],
+    "x": -2
+   },
+   "question_sha256": "70307659949669e203412453d281e770b953d9fe000d19443152638301387a2b",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/1/5",
+   "family": "polynomial",
+   "difficulty": 1,
+   "question": "Evaluate p(x) = (9) + (-3)x^1 + (-4)x^2 + (-5)x^3 + (2)x^4 + (3)x^5 at x = -4.",
+   "answer": "-2283",
+   "data": {
+    "c": [
+     9,
+     -3,
+     -4,
+     -5,
+     2,
+     3
+    ],
+    "x": -4
+   },
+   "question_sha256": "6635b3c2bf87f9d2c16effc491598b46da14604b032a926ec43869bc11912174",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/2/0",
+   "family": "polynomial",
+   "difficulty": 2,
+   "question": "Evaluate p(x) = (3) + (-2)x^1 + (-3)x^2 + (4)x^3 + (-8)x^4 + (-1)x^5 + (3)x^6 + (5)x^7 at x = 7.",
+   "answer": "4435861",
+   "data": {
+    "c": [
+     3,
+     -2,
+     -3,
+     4,
+     -8,
+     -1,
+     3,
+     5
+    ],
+    "x": 7
+   },
+   "question_sha256": "f4d9befe877d8e0dda27a1ac5a83c4b04f01817d03fc4dd13f6f7fda98b8b78a",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/2/1",
+   "family": "polynomial",
+   "difficulty": 2,
+   "question": "Evaluate p(x) = (-6) + (8)x^1 + (-2)x^2 + (-3)x^3 + (-2)x^4 + (3)x^5 + (9)x^6 + (1)x^7 at x = -3.",
+   "answer": "3516",
+   "data": {
+    "c": [
+     -6,
+     8,
+     -2,
+     -3,
+     -2,
+     3,
+     9,
+     1
+    ],
+    "x": -3
+   },
+   "question_sha256": "7aeed73d0724dfe336bac0da90e0a2c384e7960299bbba8c5fc2fe90bbb1923c",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/2/2",
+   "family": "polynomial",
+   "difficulty": 2,
+   "question": "Evaluate p(x) = (4) + (0)x^1 + (-7)x^2 + (1)x^3 + (3)x^4 + (0)x^5 + (8)x^6 + (8)x^7 at x = -5.",
+   "answer": "-498421",
+   "data": {
+    "c": [
+     4,
+     0,
+     -7,
+     1,
+     3,
+     0,
+     8,
+     8
+    ],
+    "x": -5
+   },
+   "question_sha256": "2ddba76bfe05495d58991ed2df0dd6f769107f4c26fb6669a67ced25b0212b48",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/2/3",
+   "family": "polynomial",
+   "difficulty": 2,
+   "question": "Evaluate p(x) = (9) + (-9)x^1 + (-6)x^2 + (4)x^3 + (8)x^4 + (-9)x^5 + (7)x^6 + (1)x^7 at x = 7.",
+   "answer": "1516055",
+   "data": {
+    "c": [
+     9,
+     -9,
+     -6,
+     4,
+     8,
+     -9,
+     7,
+     1
+    ],
+    "x": 7
+   },
+   "question_sha256": "7a532bdba29cc25ffb921a4ff31a5780063b407c3c7eb5db742ba5a0a43dd325",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/2/4",
+   "family": "polynomial",
+   "difficulty": 2,
+   "question": "Evaluate p(x) = (2) + (-8)x^1 + (4)x^2 + (-1)x^3 + (2)x^4 + (-4)x^5 + (-9)x^6 + (4)x^7 at x = -4.",
+   "answer": "-97630",
+   "data": {
+    "c": [
+     2,
+     -8,
+     4,
+     -1,
+     2,
+     -4,
+     -9,
+     4
+    ],
+    "x": -4
+   },
+   "question_sha256": "ab33df395d70cae8d53a7f1006406c608b2eb2a11aba67245bb43fea826bb987",
+   "draw": 0
+  },
+  {
+   "id": "final/polynomial/2/5",
+   "family": "polynomial",
+   "difficulty": 2,
+   "question": "Evaluate p(x) = (1) + (1)x^1 + (4)x^2 + (8)x^3 + (-1)x^4 + (3)x^5 + (1)x^6 + (5)x^7 at x = -7.",
+   "answer": "-4055442",
+   "data": {
+    "c": [
+     1,
+     1,
+     4,
+     8,
+     -1,
+     3,
+     1,
+     5
+    ],
+    "x": -7
+   },
+   "question_sha256": "a917d2b81a19015785131edfe48f3f74621da4177f2883062a0d8f13bf39aa9a",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/1/0",
+   "family": "binomial",
+   "difficulty": 1,
+   "question": "How many ways are there to choose 11 items from 29 distinct items?",
+   "answer": "34597290",
+   "data": {
+    "n": 29,
+    "k": 11
+   },
+   "question_sha256": "2dc1b425dcb489207b103a7249ecb09f1856279ec8894e89fbe199f38398e150",
+   "draw": 3
+  },
+  {
+   "id": "final/binomial/1/1",
+   "family": "binomial",
+   "difficulty": 1,
+   "question": "How many ways are there to choose 5 items from 29 distinct items?",
+   "answer": "118755",
+   "data": {
+    "n": 29,
+    "k": 5
+   },
+   "question_sha256": "33e46977063da7b177abca2f2143b56ca0b03fe48b8e93b860204e530d627f0c",
+   "draw": 1
+  },
+  {
+   "id": "final/binomial/1/2",
+   "family": "binomial",
+   "difficulty": 1,
+   "question": "How many ways are there to choose 13 items from 26 distinct items?",
+   "answer": "10400600",
+   "data": {
+    "n": 26,
+    "k": 13
+   },
+   "question_sha256": "21cf442573b2b2accf02fe9d9312b1727adb888b3548bf4780571728a2a3a956",
+   "draw": 9
+  },
+  {
+   "id": "final/binomial/1/3",
+   "family": "binomial",
+   "difficulty": 1,
+   "question": "How many ways are there to choose 9 items from 21 distinct items?",
+   "answer": "293930",
+   "data": {
+    "n": 21,
+    "k": 9
+   },
+   "question_sha256": "1e12ed02dbce675459ec8803b11f8877b9dd3bf297b701e331185e0ef2612200",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/1/4",
+   "family": "binomial",
+   "difficulty": 1,
+   "question": "How many ways are there to choose 11 items from 27 distinct items?",
+   "answer": "13037895",
+   "data": {
+    "n": 27,
+    "k": 11
+   },
+   "question_sha256": "fb8273aecb246f22693bd177248d3a9a0087db779ef133c4f2b568001cf2c2b9",
+   "draw": 8
+  },
+  {
+   "id": "final/binomial/1/5",
+   "family": "binomial",
+   "difficulty": 1,
+   "question": "How many ways are there to choose 8 items from 25 distinct items?",
+   "answer": "1081575",
+   "data": {
+    "n": 25,
+    "k": 8
+   },
+   "question_sha256": "443092993b2a618b17b2ae2bdf2bbe6c5e936ef055523047454ebed3bf915582",
+   "draw": 4
+  },
+  {
+   "id": "final/binomial/2/0",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 12 items from 32 distinct items?",
+   "answer": "225792840",
+   "data": {
+    "n": 32,
+    "k": 12
+   },
+   "question_sha256": "7fef4e835f7a438923e5fd768856ccc09f9ffc5f081c4154c0e06ca6e9eb91f0",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/2/1",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 5 items from 40 distinct items?",
+   "answer": "658008",
+   "data": {
+    "n": 40,
+    "k": 5
+   },
+   "question_sha256": "caada7fdeb833d09e0e5b9d5c606cda6b1e84f6ce99259ebe992895e62cf961d",
+   "draw": 1
+  },
+  {
+   "id": "final/binomial/2/2",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 15 items from 33 distinct items?",
+   "answer": "1037158320",
+   "data": {
+    "n": 33,
+    "k": 15
+   },
+   "question_sha256": "ab5f348bada884e06c4f5a938fb3c7719853f13c849287d9f46715a59719f7e4",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/2/3",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 12 items from 35 distinct items?",
+   "answer": "834451800",
+   "data": {
+    "n": 35,
+    "k": 12
+   },
+   "question_sha256": "8ac196174714a2850b61d1965501cc663171455b6de40cbd45128c1eb9aeef18",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/2/4",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 11 items from 43 distinct items?",
+   "answer": "5752004349",
+   "data": {
+    "n": 43,
+    "k": 11
+   },
+   "question_sha256": "169d32d6a507f8218c66e834dbbf13ab041aac8b0c2244f525deeafd4d857056",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/2/5",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 8 items from 36 distinct items?",
+   "answer": "30260340",
+   "data": {
+    "n": 36,
+    "k": 8
+   },
+   "question_sha256": "c240fc8064cc42da1aae448a2e42d686b5fcf8b5ca2c318b262904254befd7b7",
+   "draw": 0
+  },
+  {
+   "id": "final/binomial/2/6",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 13 items from 38 distinct items?",
+   "answer": "5414950296",
+   "data": {
+    "n": 38,
+    "k": 13
+   },
+   "question_sha256": "7ce161f87dc0404fa79282c5be2ccf5969f414fa2293ad7f09d6630d5e2b0931",
+   "draw": 0,
+   "reallocated_from_depleted_cell": true
+  },
+  {
+   "id": "final/binomial/2/7",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 12 items from 40 distinct items?",
+   "answer": "5586853480",
+   "data": {
+    "n": 40,
+    "k": 12
+   },
+   "question_sha256": "fc965db53b7f342ebc0bcd906d68e023a13c8b153cb4ddd759f7120483d2e2ca",
+   "draw": 0,
+   "reallocated_from_depleted_cell": true
+  },
+  {
+   "id": "final/binomial/2/8",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 13 items from 43 distinct items?",
+   "answer": "36576848168",
+   "data": {
+    "n": 43,
+    "k": 13
+   },
+   "question_sha256": "e86bd917bd3608a2ddadc4e9befdbc60cb9a7c3da843c30e3953a08aa6466956",
+   "draw": 0,
+   "reallocated_from_depleted_cell": true
+  },
+  {
+   "id": "final/binomial/2/9",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 10 items from 37 distinct items?",
+   "answer": "348330136",
+   "data": {
+    "n": 37,
+    "k": 10
+   },
+   "question_sha256": "26e7c31d5ad39936573bbeb3718ceb09d123a75bbe175d8e3c97e58b007c9e6f",
+   "draw": 0,
+   "reallocated_from_depleted_cell": true
+  },
+  {
+   "id": "final/binomial/2/10",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 10 items from 35 distinct items?",
+   "answer": "183579396",
+   "data": {
+    "n": 35,
+    "k": 10
+   },
+   "question_sha256": "796470503a5cbb9b94042c8918ddbd4425e2fb40469c66e635b9611a3c93cbea",
+   "draw": 0,
+   "reallocated_from_depleted_cell": true
+  },
+  {
+   "id": "final/binomial/2/11",
+   "family": "binomial",
+   "difficulty": 2,
+   "question": "How many ways are there to choose 13 items from 32 distinct items?",
+   "answer": "347373600",
+   "data": {
+    "n": 32,
+    "k": 13
+   },
+   "question_sha256": "9114baddd0e24f31048525c55122f01d47998cfb31551087da2addf48758ade3",
+   "draw": 3,
+   "reallocated_from_depleted_cell": true
+  },
+  {
+   "id": "final/base_convert/0/0",
+   "family": "base_convert",
+   "difficulty": 0,
+   "question": "Convert the base-9 number 53421623 to base 10.",
+   "answer": "25759722",
+   "data": {
+    "digits": [
+     5,
+     3,
+     4,
+     2,
+     1,
+     6,
+     2,
+     3
+    ],
+    "b": 9
+   },
+   "question_sha256": "7f026a166ca70eaaca2ebdfcdd2cfb443b90dcc60615fb4e5d2ef7c1c2a70197",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/0/1",
+   "family": "base_convert",
+   "difficulty": 0,
+   "question": "Convert the base-2 number 10101011 to base 10.",
+   "answer": "171",
+   "data": {
+    "digits": [
+     1,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     1
+    ],
+    "b": 2
+   },
+   "question_sha256": "055e70fc35f262008668822d670eb16dac1a1cd19605669ddd0ae2c76d4400ca",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/0/2",
+   "family": "base_convert",
+   "difficulty": 0,
+   "question": "Convert the base-7 number 63544613 to base 10.",
+   "answer": "5389520",
+   "data": {
+    "digits": [
+     6,
+     3,
+     5,
+     4,
+     4,
+     6,
+     1,
+     3
+    ],
+    "b": 7
+   },
+   "question_sha256": "4fab718aee86a8bcbb103a95d8ebcc00f22ab2ff361bda87d0aba31b85ff3719",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/0/3",
+   "family": "base_convert",
+   "difficulty": 0,
+   "question": "Convert the base-7 number 43232664 to base 10.",
+   "answer": "3688962",
+   "data": {
+    "digits": [
+     4,
+     3,
+     2,
+     3,
+     2,
+     6,
+     6,
+     4
+    ],
+    "b": 7
+   },
+   "question_sha256": "aed8ad0212898eaa21118ee78cf462ad70519ba5c43af48070fd462bd90fdded",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/0/4",
+   "family": "base_convert",
+   "difficulty": 0,
+   "question": "Convert the base-7 number 60001412 to base 10.",
+   "answer": "4941806",
+   "data": {
+    "digits": [
+     6,
+     0,
+     0,
+     0,
+     1,
+     4,
+     1,
+     2
+    ],
+    "b": 7
+   },
+   "question_sha256": "179c222cbe21921630099236aaeb88f07e1d5bfe32da09a4354315ad0efd56bb",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/0/5",
+   "family": "base_convert",
+   "difficulty": 0,
+   "question": "Convert the base-9 number 26546726 to base 10.",
+   "answer": "13081038",
+   "data": {
+    "digits": [
+     2,
+     6,
+     5,
+     4,
+     6,
+     7,
+     2,
+     6
+    ],
+    "b": 9
+   },
+   "question_sha256": "e7c13d20d8e29a0c18f4eae6548e6fd4ab7e9aaeb3298650c9e181f05ea5ce53",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/1/0",
+   "family": "base_convert",
+   "difficulty": 1,
+   "question": "Convert the base-3 number 211221000222 to base 10.",
+   "answer": "451277",
+   "data": {
+    "digits": [
+     2,
+     1,
+     1,
+     2,
+     2,
+     1,
+     0,
+     0,
+     0,
+     2,
+     2,
+     2
+    ],
+    "b": 3
+   },
+   "question_sha256": "2bc3f9cf77af19375356211c0f9e14489087eb88b915c70143e10b86a38d0966",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/1/1",
+   "family": "base_convert",
+   "difficulty": 1,
+   "question": "Convert the base-3 number 111110001122 to base 10.",
+   "answer": "264671",
+   "data": {
+    "digits": [
+     1,
+     1,
+     1,
+     1,
+     1,
+     0,
+     0,
+     0,
+     1,
+     1,
+     2,
+     2
+    ],
+    "b": 3
+   },
+   "question_sha256": "4e1bab4dde7e930b1dec56579c5b7a9ce15cb73b36cad2139c060b1c57e73b53",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/1/2",
+   "family": "base_convert",
+   "difficulty": 1,
+   "question": "Convert the base-5 number 140333432431 to base 10.",
+   "answer": "89358491",
+   "data": {
+    "digits": [
+     1,
+     4,
+     0,
+     3,
+     3,
+     3,
+     4,
+     3,
+     2,
+     4,
+     3,
+     1
+    ],
+    "b": 5
+   },
+   "question_sha256": "5fcf83dbef33939ceb6821e00b083af09643059e8a07911fb5fc5e23eae74c82",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/1/3",
+   "family": "base_convert",
+   "difficulty": 1,
+   "question": "Convert the base-8 number 461502420102 to base 10.",
+   "answer": "41020956738",
+   "data": {
+    "digits": [
+     4,
+     6,
+     1,
+     5,
+     0,
+     2,
+     4,
+     2,
+     0,
+     1,
+     0,
+     2
+    ],
+    "b": 8
+   },
+   "question_sha256": "9dc7525a2fc755ce0870b305ee4583f2f0b25b9aedac1320f746509c89d8b36a",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/1/4",
+   "family": "base_convert",
+   "difficulty": 1,
+   "question": "Convert the base-8 number 206305774003 to base 10.",
+   "answer": "18037078019",
+   "data": {
+    "digits": [
+     2,
+     0,
+     6,
+     3,
+     0,
+     5,
+     7,
+     7,
+     4,
+     0,
+     0,
+     3
+    ],
+    "b": 8
+   },
+   "question_sha256": "a9c7e2dd0b109cf5d3e395e72ee7a366a3536f1d4209c74e6df61eaf12cddcc3",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/1/5",
+   "family": "base_convert",
+   "difficulty": 1,
+   "question": "Convert the base-2 number 100010101101 to base 10.",
+   "answer": "2221",
+   "data": {
+    "digits": [
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     1,
+     0,
+     1,
+     1,
+     0,
+     1
+    ],
+    "b": 2
+   },
+   "question_sha256": "b3274b94d4f04f49115699bc7e812955c85c503eeb954ccffd3ddb5e876a9bf3",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/2/0",
+   "family": "base_convert",
+   "difficulty": 2,
+   "question": "Convert the base-2 number 101100010100111101 to base 10.",
+   "answer": "181565",
+   "data": {
+    "digits": [
+     1,
+     0,
+     1,
+     1,
+     0,
+     0,
+     0,
+     1,
+     0,
+     1,
+     0,
+     0,
+     1,
+     1,
+     1,
+     1,
+     0,
+     1
+    ],
+    "b": 2
+   },
+   "question_sha256": "3f1e196ba9502c1f52575354799f3c63780daee4454ae7116d63b56958a32865",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/2/1",
+   "family": "base_convert",
+   "difficulty": 2,
+   "question": "Convert the base-9 number 527863276802424000 to base 10.",
+   "answer": "88732389463740018",
+   "data": {
+    "digits": [
+     5,
+     2,
+     7,
+     8,
+     6,
+     3,
+     2,
+     7,
+     6,
+     8,
+     0,
+     2,
+     4,
+     2,
+     4,
+     0,
+     0,
+     0
+    ],
+    "b": 9
+   },
+   "question_sha256": "b0c69b66f96b1d9d3379d7636e6c7302b1f5e9e001b2a9d32d2d91abeb7871ca",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/2/2",
+   "family": "base_convert",
+   "difficulty": 2,
+   "question": "Convert the base-8 number 366622246703207317 to base 10.",
+   "answer": "8683003161939663",
+   "data": {
+    "digits": [
+     3,
+     6,
+     6,
+     6,
+     2,
+     2,
+     2,
+     4,
+     6,
+     7,
+     0,
+     3,
+     2,
+     0,
+     7,
+     3,
+     1,
+     7
+    ],
+    "b": 8
+   },
+   "question_sha256": "eb5f499b7d2674a14039fc6eaacffd5820561ada8dd32ee69b91982a366c82bc",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/2/3",
+   "family": "base_convert",
+   "difficulty": 2,
+   "question": "Convert the base-8 number 771416747777145103 to base 10.",
+   "answer": "17786727661619779",
+   "data": {
+    "digits": [
+     7,
+     7,
+     1,
+     4,
+     1,
+     6,
+     7,
+     4,
+     7,
+     7,
+     7,
+     7,
+     1,
+     4,
+     5,
+     1,
+     0,
+     3
+    ],
+    "b": 8
+   },
+   "question_sha256": "9e61b2cbdf22b1a54e1157183accc085f5cdec768daa1c857f10eb3576fe5b32",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/2/4",
+   "family": "base_convert",
+   "difficulty": 2,
+   "question": "Convert the base-3 number 210220001200221101 to base 10.",
+   "answer": "314115121",
+   "data": {
+    "digits": [
+     2,
+     1,
+     0,
+     2,
+     2,
+     0,
+     0,
+     0,
+     1,
+     2,
+     0,
+     0,
+     2,
+     2,
+     1,
+     1,
+     0,
+     1
+    ],
+    "b": 3
+   },
+   "question_sha256": "58f621e6407e8d920513bb828976a955921318c16397a000932a89730e7ab743",
+   "draw": 0
+  },
+  {
+   "id": "final/base_convert/2/5",
+   "family": "base_convert",
+   "difficulty": 2,
+   "question": "Convert the base-7 number 415260133555000151 to base 10.",
+   "answer": "989433553619645",
+   "data": {
+    "digits": [
+     4,
+     1,
+     5,
+     2,
+     6,
+     0,
+     1,
+     3,
+     3,
+     5,
+     5,
+     5,
+     0,
+     0,
+     0,
+     1,
+     5,
+     1
+    ],
+    "b": 7
+   },
+   "question_sha256": "ceebca7874d8c4b0641ab7896cd963ab5f37e5af141a37231423e9a2e016290d",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/0/0",
+   "family": "fractions",
+   "difficulty": 0,
+   "question": "Compute (-8/11) + (-1/2) + (-3/2).",
+   "answer": "-30/11",
+   "data": {
+    "terms": [
+     [
+      -8,
+      11
+     ],
+     [
+      -1,
+      2
+     ],
+     [
+      -3,
+      2
+     ]
+    ]
+   },
+   "question_sha256": "dfcce7a777c90990c98e8d9c743506e62d6748fa8f48b2b49e83332a5909c7c2",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/0/1",
+   "family": "fractions",
+   "difficulty": 0,
+   "question": "Compute (-24/5) + (2/1) + (5/4).",
+   "answer": "-31/20",
+   "data": {
+    "terms": [
+     [
+      -24,
+      5
+     ],
+     [
+      2,
+      1
+     ],
+     [
+      5,
+      4
+     ]
+    ]
+   },
+   "question_sha256": "b40381eddb50be01fcd9554f4e47e4d83793a2e2212ab1910e29eec5faaa87fa",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/0/2",
+   "family": "fractions",
+   "difficulty": 0,
+   "question": "Compute (-19/8) + (-21/4) + (13/1).",
+   "answer": "43/8",
+   "data": {
+    "terms": [
+     [
+      -19,
+      8
+     ],
+     [
+      -21,
+      4
+     ],
+     [
+      13,
+      1
+     ]
+    ]
+   },
+   "question_sha256": "f087df0ea85665dc9666140225803edd82f319c97d7d87250914350ebf48f95e",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/0/3",
+   "family": "fractions",
+   "difficulty": 0,
+   "question": "Compute (-7/2) + (23/12) + (1/6).",
+   "answer": "-17/12",
+   "data": {
+    "terms": [
+     [
+      -7,
+      2
+     ],
+     [
+      23,
+      12
+     ],
+     [
+      1,
+      6
+     ]
+    ]
+   },
+   "question_sha256": "5cb9f30145ec7652b08d6390f883d246309660bf29bd00421a57196186bc23ea",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/0/4",
+   "family": "fractions",
+   "difficulty": 0,
+   "question": "Compute (-15/4) + (13/2) + (2/1).",
+   "answer": "19/4",
+   "data": {
+    "terms": [
+     [
+      -15,
+      4
+     ],
+     [
+      13,
+      2
+     ],
+     [
+      2,
+      1
+     ]
+    ]
+   },
+   "question_sha256": "bd8f274d5f0f32e3abe2f1d530f0930b52a6fe932786f4981d5ca7a61b7a79eb",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/0/5",
+   "family": "fractions",
+   "difficulty": 0,
+   "question": "Compute (5/4) + (7/5) + (5/2).",
+   "answer": "103/20",
+   "data": {
+    "terms": [
+     [
+      5,
+      4
+     ],
+     [
+      7,
+      5
+     ],
+     [
+      5,
+      2
+     ]
+    ]
+   },
+   "question_sha256": "eb6177b358302c3b8ba49efc993b3aa691dbc764ef7c045822d78fabe9d07f66",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/1/0",
+   "family": "fractions",
+   "difficulty": 1,
+   "question": "Compute (-17/8) + (13/7) + (20/11) + (7/1).",
+   "answer": "5267/616",
+   "data": {
+    "terms": [
+     [
+      -17,
+      8
+     ],
+     [
+      13,
+      7
+     ],
+     [
+      20,
+      11
+     ],
+     [
+      7,
+      1
+     ]
+    ]
+   },
+   "question_sha256": "6ab6741191c4a2bba7af6350e2c1d6e655019b875a24a820660a61b31c095303",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/1/1",
+   "family": "fractions",
+   "difficulty": 1,
+   "question": "Compute (-23/14) + (-4/3) + (6/11) + (10/11).",
+   "answer": "-703/462",
+   "data": {
+    "terms": [
+     [
+      -23,
+      14
+     ],
+     [
+      -4,
+      3
+     ],
+     [
+      6,
+      11
+     ],
+     [
+      10,
+      11
+     ]
+    ]
+   },
+   "question_sha256": "55b2188e8d4395bd9ab88238d36e6d437c8cda781dd3d2653bef068959ad3257",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/1/2",
+   "family": "fractions",
+   "difficulty": 1,
+   "question": "Compute (-3/8) + (5/7) + (22/25) + (-1/16).",
+   "answer": "3239/2800",
+   "data": {
+    "terms": [
+     [
+      -3,
+      8
+     ],
+     [
+      5,
+      7
+     ],
+     [
+      22,
+      25
+     ],
+     [
+      -1,
+      16
+     ]
+    ]
+   },
+   "question_sha256": "880340509e3bcbd47bb63feacd2c1af0943a0785a3873bac1bfc56231dd0249c",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/1/3",
+   "family": "fractions",
+   "difficulty": 1,
+   "question": "Compute (-17/10) + (-1/1) + (11/15) + (3/5).",
+   "answer": "-41/30",
+   "data": {
+    "terms": [
+     [
+      -17,
+      10
+     ],
+     [
+      -1,
+      1
+     ],
+     [
+      11,
+      15
+     ],
+     [
+      3,
+      5
+     ]
+    ]
+   },
+   "question_sha256": "6eb855f032d7cbd1660536c2db6c6815510da59757f36188c8caccdc64d415c6",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/1/4",
+   "family": "fractions",
+   "difficulty": 1,
+   "question": "Compute (13/20) + (-20/3) + (-1/2) + (15/14).",
+   "answer": "-2287/420",
+   "data": {
+    "terms": [
+     [
+      13,
+      20
+     ],
+     [
+      -20,
+      3
+     ],
+     [
+      -1,
+      2
+     ],
+     [
+      15,
+      14
+     ]
+    ]
+   },
+   "question_sha256": "b25076cae05ed32314e77c335a2b7cbe526ee1c69fb8cc7fc6666e336360013d",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/1/5",
+   "family": "fractions",
+   "difficulty": 1,
+   "question": "Compute (-16/23) + (3/2) + (12/7) + (-5/4).",
+   "answer": "817/644",
+   "data": {
+    "terms": [
+     [
+      -16,
+      23
+     ],
+     [
+      3,
+      2
+     ],
+     [
+      12,
+      7
+     ],
+     [
+      -5,
+      4
+     ]
+    ]
+   },
+   "question_sha256": "d02b56c4bc543c88294c8c1bd328f36cd0b18cb17bf516b0be88c643a2f92c36",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/2/0",
+   "family": "fractions",
+   "difficulty": 2,
+   "question": "Compute (-22/7) + (27/35) + (5/3) + (-19/8) + (-25/18) + (-3/4).",
+   "answer": "-13151/2520",
+   "data": {
+    "terms": [
+     [
+      -22,
+      7
+     ],
+     [
+      27,
+      35
+     ],
+     [
+      5,
+      3
+     ],
+     [
+      -19,
+      8
+     ],
+     [
+      -25,
+      18
+     ],
+     [
+      -3,
+      4
+     ]
+    ]
+   },
+   "question_sha256": "0044007d7186d9f9942c39c5b4fd6a390e282ead0c6c14b8bd503fdef354276f",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/2/1",
+   "family": "fractions",
+   "difficulty": 2,
+   "question": "Compute (-3/19) + (29/5) + (-17/19) + (23/16) + (1/1) + (-1/1).",
+   "answer": "9401/1520",
+   "data": {
+    "terms": [
+     [
+      -3,
+      19
+     ],
+     [
+      29,
+      5
+     ],
+     [
+      -17,
+      19
+     ],
+     [
+      23,
+      16
+     ],
+     [
+      1,
+      1
+     ],
+     [
+      -1,
+      1
+     ]
+    ]
+   },
+   "question_sha256": "7e46ef281279c99c7f76332a1e1318bd79f0dbf02860d13519838640437f238e",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/2/2",
+   "family": "fractions",
+   "difficulty": 2,
+   "question": "Compute (19/22) + (-5/11) + (-23/39) + (-13/6) + (16/17) + (-3/5).",
+   "answer": "-73154/36465",
+   "data": {
+    "terms": [
+     [
+      19,
+      22
+     ],
+     [
+      -5,
+      11
+     ],
+     [
+      -23,
+      39
+     ],
+     [
+      -13,
+      6
+     ],
+     [
+      16,
+      17
+     ],
+     [
+      -3,
+      5
+     ]
+    ]
+   },
+   "question_sha256": "e2e6e43fe2a2b580e05895e335c29a53ceba5b1205aaa5370f56150109a15155",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/2/3",
+   "family": "fractions",
+   "difficulty": 2,
+   "question": "Compute (1/14) + (5/32) + (17/9) + (4/5) + (-8/29) + (-5/12).",
+   "answer": "650131/292320",
+   "data": {
+    "terms": [
+     [
+      1,
+      14
+     ],
+     [
+      5,
+      32
+     ],
+     [
+      17,
+      9
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      -8,
+      29
+     ],
+     [
+      -5,
+      12
+     ]
+    ]
+   },
+   "question_sha256": "202389e1d2ba0332d1fa5086699c0d9fcf02d9e3dbdba8ce6b4e246c79581fc5",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/2/4",
+   "family": "fractions",
+   "difficulty": 2,
+   "question": "Compute (-5/2) + (-3/19) + (-10/21) + (-1/1) + (-1/1) + (17/9).",
+   "answer": "-7769/2394",
+   "data": {
+    "terms": [
+     [
+      -5,
+      2
+     ],
+     [
+      -3,
+      19
+     ],
+     [
+      -10,
+      21
+     ],
+     [
+      -1,
+      1
+     ],
+     [
+      -1,
+      1
+     ],
+     [
+      17,
+      9
+     ]
+    ]
+   },
+   "question_sha256": "f2c1c1c26e92a6220bf03429826d8d6e104481b4df5afe262816ef14448312a2",
+   "draw": 0
+  },
+  {
+   "id": "final/fractions/2/5",
+   "family": "fractions",
+   "difficulty": 2,
+   "question": "Compute (-1/1) + (29/2) + (-2/1) + (7/5) + (-8/11) + (22/9).",
+   "answer": "14471/990",
+   "data": {
+    "terms": [
+     [
+      -1,
+      1
+     ],
+     [
+      29,
+      2
+     ],
+     [
+      -2,
+      1
+     ],
+     [
+      7,
+      5
+     ],
+     [
+      -8,
+      11
+     ],
+     [
+      22,
+      9
+     ]
+    ]
+   },
+   "question_sha256": "fb732286afcc99e837ca064f0f2fd0e8cf8497f2cb511230b77a9896b1d53a94",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/0/0",
+   "family": "recurrence",
+   "difficulty": 0,
+   "question": "A sequence has a_0 = -2, a_1 = -2, and a_k = (2)a_(k-1) + (2)a_(k-2) + (0) for k \u2265 2. Find a_8.",
+   "answer": "-3104",
+   "data": {
+    "p": 2,
+    "q": 2,
+    "r": 0,
+    "a0": -2,
+    "a1": -2,
+    "n": 8
+   },
+   "question_sha256": "d7d6264a0d581640736869e69766dd849fa8beecf2c892e1777cbd3cf2e21975",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/0/1",
+   "family": "recurrence",
+   "difficulty": 0,
+   "question": "A sequence has a_0 = 5, a_1 = -5, and a_k = (1)a_(k-1) + (2)a_(k-2) + (-1) for k \u2265 2. Find a_7.",
+   "answer": "-47",
+   "data": {
+    "p": 1,
+    "q": 2,
+    "r": -1,
+    "a0": 5,
+    "a1": -5,
+    "n": 7
+   },
+   "question_sha256": "ba006255836e7f172c590c3a20dae5730e9ce14d64f2b2b60967bce14e3b2477",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/0/2",
+   "family": "recurrence",
+   "difficulty": 0,
+   "question": "A sequence has a_0 = -1, a_1 = 7, and a_k = (3)a_(k-1) + (1)a_(k-2) + (3) for k \u2265 2. Find a_6.",
+   "answer": "2879",
+   "data": {
+    "p": 3,
+    "q": 1,
+    "r": 3,
+    "a0": -1,
+    "a1": 7,
+    "n": 6
+   },
+   "question_sha256": "5e6a7f8aa7d56c1d73595913f6978c5d5f9b0939815d8f438da7f1e726bde228",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/0/3",
+   "family": "recurrence",
+   "difficulty": 0,
+   "question": "A sequence has a_0 = 9, a_1 = -4, and a_k = (1)a_(k-1) + (2)a_(k-2) + (3) for k \u2265 2. Find a_6.",
+   "answer": "177",
+   "data": {
+    "p": 1,
+    "q": 2,
+    "r": 3,
+    "a0": 9,
+    "a1": -4,
+    "n": 6
+   },
+   "question_sha256": "e09c65bdee143e8e4925a4fb26efb94feed582a84eeeb25e9c75044ea07646fd",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/0/4",
+   "family": "recurrence",
+   "difficulty": 0,
+   "question": "A sequence has a_0 = -1, a_1 = 3, and a_k = (3)a_(k-1) + (-1)a_(k-2) + (1) for k \u2265 2. Find a_8.",
+   "answer": "3947",
+   "data": {
+    "p": 3,
+    "q": -1,
+    "r": 1,
+    "a0": -1,
+    "a1": 3,
+    "n": 8
+   },
+   "question_sha256": "41ef374769f3230164a64340aa05dbf115fdba69c1f7d1e851e0f1b841d06f7d",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/0/5",
+   "family": "recurrence",
+   "difficulty": 0,
+   "question": "A sequence has a_0 = 0, a_1 = 8, and a_k = (4)a_(k-1) + (-3)a_(k-2) + (-2) for k \u2265 2. Find a_9.",
+   "answer": "68896",
+   "data": {
+    "p": 4,
+    "q": -3,
+    "r": -2,
+    "a0": 0,
+    "a1": 8,
+    "n": 9
+   },
+   "question_sha256": "9218d9d5cf0f102b102f31f0f838e37ab720fee0d11192a256f338f37f4f40ef",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/1/0",
+   "family": "recurrence",
+   "difficulty": 1,
+   "question": "A sequence has a_0 = -7, a_1 = 3, and a_k = (4)a_(k-1) + (-1)a_(k-2) + (6) for k \u2265 2. Find a_13.",
+   "answer": "55623363",
+   "data": {
+    "p": 4,
+    "q": -1,
+    "r": 6,
+    "a0": -7,
+    "a1": 3,
+    "n": 13
+   },
+   "question_sha256": "d2eb7db25437a4982021b8e7c5e48b606adf0c9cdd18a45bcf7a3a9586426ee2",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/1/1",
+   "family": "recurrence",
+   "difficulty": 1,
+   "question": "A sequence has a_0 = -9, a_1 = 7, and a_k = (3)a_(k-1) + (1)a_(k-2) + (-2) for k \u2265 2. Find a_10.",
+   "answer": "145925",
+   "data": {
+    "p": 3,
+    "q": 1,
+    "r": -2,
+    "a0": -9,
+    "a1": 7,
+    "n": 10
+   },
+   "question_sha256": "24d8e2d1817aa6377fb33409f6d8f80e152ca88a93a6dd8e317a2e6dfbe5a4e6",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/1/2",
+   "family": "recurrence",
+   "difficulty": 1,
+   "question": "A sequence has a_0 = 2, a_1 = -5, and a_k = (4)a_(k-1) + (2)a_(k-2) + (3) for k \u2265 2. Find a_10.",
+   "answer": "-2006215",
+   "data": {
+    "p": 4,
+    "q": 2,
+    "r": 3,
+    "a0": 2,
+    "a1": -5,
+    "n": 10
+   },
+   "question_sha256": "7308c0c228d4d5dcf727d7231a6bda9e996a253131c9baca8b68b9a90d8c9039",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/1/3",
+   "family": "recurrence",
+   "difficulty": 1,
+   "question": "A sequence has a_0 = -4, a_1 = -7, and a_k = (1)a_(k-1) + (-3)a_(k-2) + (-6) for k \u2265 2. Find a_13.",
+   "answer": "3953",
+   "data": {
+    "p": 1,
+    "q": -3,
+    "r": -6,
+    "a0": -4,
+    "a1": -7,
+    "n": 13
+   },
+   "question_sha256": "8a51e4bdbb0b0044b243df1a274a678b5c1e8f914da923a4c0be803c86f8f550",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/1/4",
+   "family": "recurrence",
+   "difficulty": 1,
+   "question": "A sequence has a_0 = -6, a_1 = 4, and a_k = (4)a_(k-1) + (3)a_(k-2) + (6) for k \u2265 2. Find a_14.",
+   "answer": "730268644",
+   "data": {
+    "p": 4,
+    "q": 3,
+    "r": 6,
+    "a0": -6,
+    "a1": 4,
+    "n": 14
+   },
+   "question_sha256": "0ffa0a263d362f149a1237ea4f0382792547bf1925457c8e78ac6fbcfc360f7c",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/1/5",
+   "family": "recurrence",
+   "difficulty": 1,
+   "question": "A sequence has a_0 = -3, a_1 = -2, and a_k = (2)a_(k-1) + (3)a_(k-2) + (-6) for k \u2265 2. Find a_10.",
+   "answer": "-118099",
+   "data": {
+    "p": 2,
+    "q": 3,
+    "r": -6,
+    "a0": -3,
+    "a1": -2,
+    "n": 10
+   },
+   "question_sha256": "c21656bf9f4f951cdc894b1bea15169bf57fe14b81a9abe8fdc47d2e2c42f508",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/2/0",
+   "family": "recurrence",
+   "difficulty": 2,
+   "question": "A sequence has a_0 = -6, a_1 = 7, and a_k = (2)a_(k-1) + (3)a_(k-2) + (-3) for k \u2265 2. Find a_15.",
+   "answer": "-1793606",
+   "data": {
+    "p": 2,
+    "q": 3,
+    "r": -3,
+    "a0": -6,
+    "a1": 7,
+    "n": 15
+   },
+   "question_sha256": "893845aa32fcbeb34349fb3dd18acb724eab69f4bbb9a0fa3fcfd9b1df15a658",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/2/1",
+   "family": "recurrence",
+   "difficulty": 2,
+   "question": "A sequence has a_0 = 9, a_1 = 7, and a_k = (4)a_(k-1) + (-3)a_(k-2) + (-4) for k \u2265 2. Find a_17.",
+   "answer": "-258280281",
+   "data": {
+    "p": 4,
+    "q": -3,
+    "r": -4,
+    "a0": 9,
+    "a1": 7,
+    "n": 17
+   },
+   "question_sha256": "8330e410a0b68487ccde256e063057d6bd983fb76249faf9c942d1de35b06df2",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/2/2",
+   "family": "recurrence",
+   "difficulty": 2,
+   "question": "A sequence has a_0 = 8, a_1 = -1, and a_k = (2)a_(k-1) + (-1)a_(k-2) + (-2) for k \u2265 2. Find a_15.",
+   "answer": "-337",
+   "data": {
+    "p": 2,
+    "q": -1,
+    "r": -2,
+    "a0": 8,
+    "a1": -1,
+    "n": 15
+   },
+   "question_sha256": "cb7fe965c77706a9eb1c2ea5f1e103c84dab477218bf19b27286d1fbae90e44b",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/2/3",
+   "family": "recurrence",
+   "difficulty": 2,
+   "question": "A sequence has a_0 = 1, a_1 = -5, and a_k = (3)a_(k-1) + (2)a_(k-2) + (-2) for k \u2265 2. Find a_19.",
+   "answer": "-38329206393",
+   "data": {
+    "p": 3,
+    "q": 2,
+    "r": -2,
+    "a0": 1,
+    "a1": -5,
+    "n": 19
+   },
+   "question_sha256": "34fa0d7e48e2aa900b508687bdc492af0518d59983d27cbcc480bb099e18b5b6",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/2/4",
+   "family": "recurrence",
+   "difficulty": 2,
+   "question": "A sequence has a_0 = 7, a_1 = 2, and a_k = (1)a_(k-1) + (-2)a_(k-2) + (-1) for k \u2265 2. Find a_18.",
+   "answer": "-3853",
+   "data": {
+    "p": 1,
+    "q": -2,
+    "r": -1,
+    "a0": 7,
+    "a1": 2,
+    "n": 18
+   },
+   "question_sha256": "2c738aeb1358deeba5b4c4ff397a4e802993f4d7026058d86a30e159d3526d7a",
+   "draw": 0
+  },
+  {
+   "id": "final/recurrence/2/5",
+   "family": "recurrence",
+   "difficulty": 2,
+   "question": "A sequence has a_0 = -7, a_1 = 6, and a_k = (2)a_(k-1) + (2)a_(k-2) + (-2) for k \u2265 2. Find a_18.",
+   "answer": "-5792938",
+   "data": {
+    "p": 2,
+    "q": 2,
+    "r": -2,
+    "a0": -7,
+    "a1": 6,
+    "n": 18
+   },
+   "question_sha256": "f861050647a8f420f49cb2272c3890707caf22f4f001643c306ca2fc67798665",
+   "draw": 0
+  }
+ ]
+}

@@ -33,9 +33,9 @@ from .model import LAYERS, LINEARS, Model, evaluate, forward_logits, rope
 # ----------------------------------------------------------------------------- types
 
 
-def SET(levels, name: str | None = None) -> Domain:
+def SET(levels, name: str | None = None, bits: float | None = None) -> Domain:
     lv = tuple(sorted({float(x) for x in levels}))
-    return Domain("set", float(math.ceil(math.log2(len(lv)))), lv[0], lv[-1], levels=lv)
+    return Domain("set", float(math.ceil(math.log2(len(lv)))) if bits is None else bits, lv[0], lv[-1], levels=lv)
 
 
 def ONEHOT(K: int, axis: str = "k") -> Domain:

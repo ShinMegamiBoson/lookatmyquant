@@ -3,4 +3,5 @@ transformers==5.16.1
 datasets==4.6.1
 safetensors==0.8.0
 numpy
+pandas
 modal

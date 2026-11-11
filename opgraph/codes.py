@@ -42,6 +42,8 @@ from .verbs import FP4_E2M1, FP8_E4M3, SET, _vectors, kmeans, nearest, restrict_
 CACHE = Path(__file__).resolve().parents[1] / "cache" / "codes"
 from .model import DEVICE  # the nearest-codeword search runs where the model does
 
+GPU_SWEEP = False  # ldlq_words: rotating H, its factors and the sweep's Refit on DEVICE in float64 too, not only the trellis search
+
 # ----------------------------------------------------------------------------- types
 
 E8M0 = SET([2.0**e for e in range(-127, 128)])
@@ -95,6 +97,13 @@ def _paley(q: int) -> torch.Tensor:
 def hadamard(n: int) -> torch.Tensor:
     """An orthogonal Hadamard matrix of order n = 2^a·p with p = 1, 2 or q + 1 for a prime q ≡ 3 (mod 4):
     Sylvester's construction for the power of two, Kronecker with Paley's for the rest (960 = 16·60, 2560 = 128·20)."""
+    A, B = hadamard_factors(n)
+    return torch.kron(A, B) / math.sqrt(n)
+
+
+def hadamard_factors(n: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """A and B with hadamard(n) = (A ⊗ B) / √n, as small as the construction allows: Sylvester's matrix of order 2^a is itself
+    the product of those of orders 2^(a//2) and 2^(a − a//2), so a pure power of two splits in the middle."""
     for a in range(int(math.log2(n)), -1, -1):
         if n % 2**a:
             continue
@@ -104,8 +113,17 @@ def hadamard(n: int) -> torch.Tensor:
             while H.shape[0] < 2**a:
                 H = torch.cat([torch.cat([H, H], 1), torch.cat([H, -H], 1)], 0)
             P = torch.tensor([[1.0, 1.0], [1.0, -1.0]], dtype=torch.float64) if p == 2 else torch.ones(1, 1, dtype=torch.float64) if p == 1 else _paley(p - 1)
-            return torch.kron(H, P) / math.sqrt(n)
+            if p == 1 and a > 1:
+                return _sylvester(a // 2), _sylvester(a - a // 2)
+            return H, P
     raise ValueError(f"no Hadamard construction here for order {n}")
+
+
+def _sylvester(a: int) -> torch.Tensor:
+    H = torch.ones(1, 1, dtype=torch.float64)
+    while H.shape[0] < 2**a:
+        H = torch.cat([torch.cat([H, H], 1), torch.cat([H, -H], 1)], 0)
+    return H
 
 
 def rht(n: int, seed: int) -> torch.Tensor:
@@ -139,7 +157,7 @@ def viterbi(X: torch.Tensor, values: torch.Tensor, L: int, k: int, chunk: int | 
     nb, R = 1 << k, 1 << (L - k)
     chunk = chunk or (4096 if DEVICE == "cuda" else 512)  # rows per pass: the back-pointers are T × chunk × 2^(L−k) bytes
     C = values.to(DEVICE, torch.float32)
-    out = torch.empty(X.shape, dtype=torch.long)
+    out = torch.empty(X.shape, dtype=torch.long, device=X.device)  # the states where the input is
     for b in range(0, len(X), chunk):
         x = X[b : b + chunk].to(DEVICE, torch.float32)
         B, T = x.shape
@@ -159,7 +177,7 @@ def viterbi(X: torch.Tensor, values: torch.Tensor, L: int, k: int, chunk: int | 
             r = s >> k
             s = r + back[t].gather(1, r[:, None]).squeeze(1).long() * R
             path[:, t - 1] = s
-        out[b : b + chunk] = path.cpu()
+        out[b : b + chunk] = path.to(out.device)
     return out
 
 
@@ -174,8 +192,8 @@ def trellis_values(L: int, k: int, T: int = 320, seed: int = 0, refine: int | No
     sum and count, the new batch's weight falling from 0.5 to 0.01 along a cosine (e-means' update, arXiv 2611.09501). On
     held-out Gaussians under the row search "ema" leaves 4.5% less error at 2 bits, 6.2% less at 3 and 19.8% less at 6. Lloyd
     steps do not get there (48 of them gain 1.2% at 3 bits), and past 384 passes a doubling of the fit gains under a quarter
-    of a point. A fit takes 3 to 5 minutes on an L40S, once per width. Like the Gaussian codebook the table is fixed by
-    (L, k, seed, fit), not stored per model."""
+    of a point (experiments/trellis_ema_converge_20261110; fit_trellis_tables.py fits the tables in use once, on a GPU).
+    Like the Gaussian codebook the table is fixed by (L, k, seed, fit), not stored per model."""
     fit = fit or TRELLIS_FIT
     assert fit in ("lloyd", "ema"), fit
     path = CACHE / f"trellis_L{L}_k{k}_T{T}_s{seed}{'' if fit == 'lloyd' else '_' + fit}.pt"
@@ -356,7 +374,7 @@ class TrellisCode:
 
     def project(self, X):
         o, w = X.shape
-        Q = self.values.to(X.dtype)[viterbi(self._seqs(X), self.values, self.L, self.k)]
+        Q = self.values.to(X.device, X.dtype)[viterbi(self._seqs(X), self.values, self.L, self.k)]
         return Q.reshape(o // self.T, w, self.T).permute(0, 2, 1).reshape(o, w)
 
     def apply(self, net, core, rows, cols, settled=None):
@@ -379,11 +397,11 @@ class RowTrellisCode:
     def step(self, j, X, ahead):
         """Column j onward, `width` columns: the block's settled values, continuing each row's path."""
         if j == 0:
-            self.state = torch.zeros(len(X), dtype=torch.long)
+            self.state = torch.zeros(len(X), dtype=torch.long, device=X.device)
         w = X.shape[1]
         path = viterbi(torch.cat([X, ahead], 1), self.values, self.L, self.k, start=self.state)[:, :w]
         self.state = path[:, -1]
-        return self.values.to(X.dtype)[path]
+        return self.values.to(X.device, X.dtype)[path]
 
     def apply(self, net, core, rows, cols, settled=None):
         if settled is None:  # no sweep: each whole row at once
@@ -400,21 +418,25 @@ def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list
     sweeping each alone. With H, columns are settled `code.width` at a time and the later ones re-solved under H;
     without H, the code is applied directly (round to nearest). `in_seed` is one input rotation shared by several calls;
     without `out_rot` the rows are not rotated at all (the column-wise TrellisCode splits the rows, so it needs them rotated)."""
-    Ws = [W.cpu().double() for W in Ws]
+    dev = DEVICE if GPU_SWEEP else "cpu"
+    Ws = [W.to(dev).double() for W in Ws]
     n = Ws[0].shape[1]
     rows, cols = ("u" if out_rot else "o", "v") if incoherent else ("o", "i")
-    R_in = rht(n, seeds[0] + 1 if in_seed is None else in_seed) if incoherent else None
+    R_in = rht(n, seeds[0] + 1 if in_seed is None else in_seed).to(dev) if incoherent else None
     nets = []
     for W, s in zip(Ws, seeds):
         net = matrix_net(W)
-        if incoherent:
-            net = incoherence(net, rht(W.shape[0], s), R_in) if out_rot else incoherence_in(net, R_in)
+        if incoherent:  # dense products of n × n: on the GPU when GPU_SWEEP
+            net = incoherence(net, rht(W.shape[0], s).to(dev), R_in) if out_rot else incoherence_in(net, R_in)
         nets.append(net)
     X = torch.cat([net.cores["W"].data for net in nets])
+    for net in nets:  # the code's Restrict and Split run on the CPU
+        for c in net.cores.values():
+            c.data = c.data.cpu()
     S = X.pow(2).mean(1).sqrt().clamp(min=1e-12)
     settled = None
     if H is not None:
-        H = R_in @ H.double() @ R_in.T if incoherent else H.double()
+        H = (R_in @ H.double().to(dev) @ R_in.T) if incoherent else H.double().to(dev)
         settled = torch.empty_like(X)  # the sweep's projection, in units of the row scale
 
         def project(j, x, T):
@@ -428,6 +450,8 @@ def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list
             return q[:, 0] if code.width == 1 else q
 
         X = sweep(X, Environment(H), project, width=code.width)
+        settled = settled.cpu()
+    X, S = X.cpu(), S.cpu()
     out, r0 = [], 0
     for net in nets:
         r1 = r0 + net.cores["W"].data.shape[0]
