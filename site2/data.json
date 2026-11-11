@@ -1,0 +1,348 @@
+{
+ "models": [
+  {
+   "key": "ours",
+   "name": "Qwen3.5-4B, ours",
+   "note": "2.3 bits per weight, trellis-coded",
+   "gb": 1.23,
+   "group": "ours",
+   "math": 330,
+   "kl13": 0.4468,
+   "klw": 0.4245
+  },
+  {
+   "key": "bonsai",
+   "name": "Bonsai 2 Ternary 4B",
+   "note": "Prism ML, ternary weights",
+   "gb": 1.201,
+   "group": "rival",
+   "math": 328,
+   "kl13": 0.5875,
+   "klw": 0.4998
+  },
+  {
+   "key": "q2b5",
+   "name": "Qwen3.5-2B at 5 bits",
+   "note": "1.9B parameters, MLX-style affine quantization",
+   "gb": 1.294,
+   "group": "smaller",
+   "math": 284,
+   "kl13": 0.5083,
+   "klw": 0.4468
+  },
+  {
+   "key": "q2b4",
+   "name": "Qwen3.5-2B at 4 bits",
+   "note": "1.9B parameters, MLX-style affine quantization",
+   "gb": 1.059,
+   "group": "smaller",
+   "math": 242,
+   "kl13": 0.6035,
+   "klw": 0.5077
+  },
+  {
+   "key": "q08b8",
+   "name": "Qwen3.5-0.8B at 8 bits",
+   "note": "0.8B parameters, MLX-style affine quantization",
+   "gb": 0.8,
+   "group": "smaller",
+   "math": 205,
+   "kl13": 0.7518,
+   "klw": 0.7009
+  },
+  {
+   "key": "original",
+   "name": "Qwen3.5-4B, original",
+   "note": "bf16",
+   "gb": 8.412,
+   "group": "original",
+   "math": 359,
+   "kl13": 0.0,
+   "klw": 0.0
+  }
+ ],
+ "against": {
+  "bonsai": [
+   62,
+   60,
+   0.928
+  ],
+  "q2b5": [
+   93,
+   47,
+   0.0
+  ],
+  "q2b4": [
+   115,
+   27,
+   0.0
+  ],
+  "q08b8": [
+   149,
+   24,
+   0.0
+  ],
+  "original": [
+   34,
+   63,
+   0.004
+  ]
+ },
+ "sources": [
+  {
+   "name": "English",
+   "ours": 0.324,
+   "bonsai": 0.352
+  },
+  {
+   "name": "chat",
+   "ours": 0.276,
+   "bonsai": 0.2
+  },
+  {
+   "name": "code",
+   "ours": 0.24,
+   "bonsai": 0.266
+  },
+  {
+   "name": "Spanish",
+   "ours": 0.343,
+   "bonsai": 0.475
+  },
+  {
+   "name": "French",
+   "ours": 0.382,
+   "bonsai": 0.503
+  },
+  {
+   "name": "German",
+   "ours": 0.433,
+   "bonsai": 0.565
+  },
+  {
+   "name": "Portuguese",
+   "ours": 0.426,
+   "bonsai": 0.54
+  },
+  {
+   "name": "Russian",
+   "ours": 0.461,
+   "bonsai": 0.543
+  },
+  {
+   "name": "Arabic",
+   "ours": 0.498,
+   "bonsai": 0.837
+  },
+  {
+   "name": "Hindi",
+   "ours": 0.737,
+   "bonsai": 0.489
+  },
+  {
+   "name": "Chinese",
+   "ours": 0.7,
+   "bonsai": 1.107
+  },
+  {
+   "name": "Japanese",
+   "ours": 0.464,
+   "bonsai": 0.84
+  },
+  {
+   "name": "Korean",
+   "ours": 0.526,
+   "bonsai": 0.919
+  }
+ ],
+ "ladder": [
+  [
+   "first",
+   "Scalar Lloyd\u2013Max, generic calibration text",
+   1
+  ],
+  [
+   "gsm",
+   "Half of the calibration set GSM8K solutions",
+   28
+  ],
+  [
+   "trellis",
+   "Trellis-coded quantization",
+   117
+  ],
+  [
+   "digits",
+   "All-math calibration, digit tokens weighted 10\u00d7",
+   147
+  ],
+  [
+   "long",
+   "Long MATH solutions as the calibration set",
+   224
+  ],
+  [
+   "half",
+   "QEP cross term at \u03b1 = 0.5 in place of 1",
+   265
+  ],
+  [
+   "split",
+   "Top and bottom eighth of rows \u00b11 bit, by Fisher",
+   292
+  ],
+  [
+   "rows",
+   "Global per-row bit allocation",
+   300
+  ],
+  [
+   "tables",
+   "e-means-fitted trellis codebooks",
+   317
+  ],
+  [
+   "held",
+   "Distillation with a pull toward the codes",
+   321
+  ],
+  [
+   "again",
+   "Mid-training re-quantization",
+   330
+  ]
+ ],
+ "runs": [
+  {
+   "base": "Build A, e-means codebooks at every bit rate",
+   "kind": "Post-training quantization only",
+   "ours": false,
+   "math": 317,
+   "kl13": 1.4088,
+   "klw": 1.0671
+  },
+  {
+   "base": "Build A, e-means codebooks at every bit rate",
+   "kind": "Fine-tuned",
+   "ours": false,
+   "math": 321,
+   "kl13": 0.7946,
+   "klw": 0.6424
+  },
+  {
+   "base": "Build A, e-means codebooks at every bit rate",
+   "kind": "Fine-tuned, with mid-training re-quantization",
+   "ours": true,
+   "math": 330,
+   "kl13": 0.4468,
+   "klw": 0.4245
+  },
+  {
+   "base": "Build B, e-means codebooks at 2 and 3 bits only",
+   "kind": "Post-training quantization only",
+   "ours": false,
+   "math": 311,
+   "kl13": 1.4319,
+   "klw": 1.0516
+  },
+  {
+   "base": "Build B, e-means codebooks at 2 and 3 bits only",
+   "kind": "Fine-tuned",
+   "ours": false,
+   "math": 314,
+   "kl13": 0.7962,
+   "klw": 0.6385
+  },
+  {
+   "base": "Build B, e-means codebooks at 2 and 3 bits only",
+   "kind": "Fine-tuned, with mid-training re-quantization",
+   "ours": false,
+   "math": 324,
+   "kl13": 0.454,
+   "klw": 0.4425
+  }
+ ],
+ "curves": {
+  "plain": [
+   {
+    "step": 0,
+    "text": 1.433
+   },
+   {
+    "step": 1000,
+    "text": 0.992
+   },
+   {
+    "step": 2000,
+    "text": 0.871
+   },
+   {
+    "step": 3000,
+    "text": 0.813
+   },
+   {
+    "step": 4000,
+    "text": 0.793
+   }
+  ],
+  "again": [
+   {
+    "step": 0,
+    "text": 1.433
+   },
+   {
+    "step": 1000,
+    "text": 1.001
+   },
+   {
+    "step": 2000,
+    "text": 0.515
+   },
+   {
+    "step": 3000,
+    "text": 0.452
+   },
+   {
+    "step": 4000,
+    "text": 0.438
+   }
+  ]
+ },
+ "again": {
+  "from": 1000,
+  "to": 1750,
+  "codes changed": 0.9770510479934637
+ },
+ "cost": [
+  {
+   "step": "Per-matrix sensitivity measurement for the bit allocation",
+   "gpu": "H100",
+   "hours": 1.6,
+   "dollars": 7.7407487999999995
+  },
+  {
+   "step": "Calibration set (the original generates 384 long solutions)",
+   "gpu": "H100",
+   "hours": 0.2563888888888889,
+   "dollars": 1.24040124
+  },
+  {
+   "step": "Row Fisher information and four codebook fits",
+   "gpu": "L40S",
+   "hours": 0.19333333333333333,
+   "dollars": 0.4996166399999999
+  },
+  {
+   "step": "Quantization (LDLQ and Viterbi, 32 layers)",
+   "gpu": "H100",
+   "hours": 0.6202777777777778,
+   "dollars": 3.31814868
+  },
+  {
+   "step": "Fine-tuning, 4,000 steps",
+   "gpu": "B200",
+   "hours": 2.742777777777778,
+   "dollars": 20.98185504
+  }
+ ]
+}

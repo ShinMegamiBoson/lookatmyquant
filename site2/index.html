@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LookAtMyQuant 2</title>
+<meta name="description" content="Qwen3.5-4B compressed to 1.2 GB: level with Bonsai 2 Ternary on exact-answer math, and closer to the original model on text.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="LookAtMyQuant 2">
+<meta property="og:description" content="Qwen3.5-4B compressed to 1.2 GB: level with Bonsai 2 Ternary on exact-answer math, and closer to the original model on text.">
+<meta property="og:url" content="https://lookatmyquant2.pages.dev/">
+<meta property="og:image" content="https://lookatmyquant2.pages.dev/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: the same academic project page as LookAtMyQuant. Centered title block, a teaser figure, then one reading column with wider figures.
+   Chart colors: blue is our file wherever it appears, orange is Bonsai, gray is every other model or run. */
+:root {
+  --bg: #FFFFFF; --ink: #1A1E24; --muted: #5B6370; --faint: #8C939E; --line: #E2E5EA; --soft: #F4F6F8; --link: #1F56C4;
+  --ours: #2A78D6; --rival: #EB6834; --other: #8D95A1; --band: #EEF2F8;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+    --ours: #3987E5; --rival: #D95926; --other: #666D79; --band: #1B212B; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+  --ours: #3987E5; --rival: #D95926; --other: #666D79; --band: #1B212B; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.62 var(--serif); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 56px 96px; }
+.col { max-width: 44rem; margin: 0 auto; }
+.wide { max-width: 62rem; margin: 0 auto; }
+figure.wide { margin: 34px auto 38px; }
+figure.col { margin: 30px auto 34px; }
+.col .scroll-x { margin: 0 0 30px; }
+section.wide { margin-top: 26px; margin-bottom: 30px; }
+header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
+h1 { font: 600 clamp(2.4rem, 6vw, 3.6rem)/1.05 var(--serif); letter-spacing: -0.015em; margin: 0; }
+.subtitle { font: 400 clamp(1.15rem, 2.6vw, 1.5rem)/1.3 var(--serif); color: var(--muted); margin: 0; max-width: 40ch; text-wrap: balance; }
+.authors { font: 500 1.05rem/1.4 var(--sans); margin: 6px 0 0; }
+.meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+.links a { font: 500 0.92rem var(--sans); color: var(--bg); background: var(--ink); text-decoration: none; padding: 7px 16px; border-radius: 999px; }
+.links a.back { color: var(--ink); background: var(--bg); box-shadow: inset 0 0 0 1px var(--faint); }
+.links a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+h2 { font: 600 clamp(1.35rem, 5vw, 1.6rem)/1.2 var(--serif); margin: 56px 0 14px; text-wrap: balance; letter-spacing: -0.005em; }
+.nb { white-space: nowrap; }
+h3 { font: 600 1.18rem/1.3 var(--serif); margin: 34px 0 10px; text-wrap: balance; }
+p { margin: 0 0 14px; }
+a { color: var(--link); text-underline-offset: 2px; }
+b, strong { font-weight: 600; }
+ul.plain { padding-left: 1.2em; margin: 0 0 14px; }
+ul.plain li { margin-bottom: 8px; }
+figure { margin: 30px auto 34px; display: grid; gap: 10px; min-width: 0; }
+figcaption, .tcap { font: 400 0.95rem/1.5 var(--sans); color: var(--muted); }
+figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
+.chart { position: relative; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 0.9rem var(--sans); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex: none; }
+.legend i.dot { border-radius: 50%; }
+.legend i.line { height: 2px; width: 18px; border-radius: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+.panel-title { font: 600 0.92rem var(--sans); color: var(--ink); margin: 0 0 6px; }
+.scroll-x { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font: 400 0.9rem/1.4 var(--sans); font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-weight: 600; color: var(--ink); border-bottom: 1.5px solid var(--ink); white-space: nowrap; vertical-align: bottom; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+td.num, th.num { text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { min-width: 12.5rem; }  /* on a phone the table scrolls sideways before its first column is squeezed */
+.col th:first-child, .col td:first-child { min-width: 8rem; }
+tr.ours td { font-weight: 600; }
+tr.ours td .note { font-weight: 400; }
+tr.group td { font: 600 0.78rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 14px; }
+table.recipe td { line-height: 1.5; }
+table.recipe td:first-child { font-weight: 600; white-space: nowrap; min-width: 0; }
+table.recipe th:first-child { min-width: 0; }
+table.recipe td + td { min-width: 13rem; }
+.tcap { margin: 0 0 8px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 7px; }
+.sw.ours { background: var(--ours); } .sw.rival { background: var(--rival); } .sw.smaller, .sw.original { background: var(--other); }
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.flow > div { padding: 14px 14px 16px; display: grid; gap: 6px; align-content: start; font: 400 0.88rem/1.45 var(--sans); color: var(--muted); }
+.flow > div + div { border-left: 1px solid var(--line); }
+.flow .k { font: 600 0.7rem var(--sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.flow .v { font: 600 0.95rem/1.3 var(--sans); color: var(--ink); overflow-wrap: anywhere; }
+sub { font-size: 0.72em; line-height: 0; }
+@media (max-width: 760px) { .flow { grid-template-columns: 1fr; } .flow > div + div { border-left: 0; border-top: 1px solid var(--line); } }
+pre.bib { font: 400 0.82rem/1.5 var(--mono); background: var(--soft); border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 0; }
+ol.refs { padding-left: 1.4em; font: 400 0.92rem/1.5 var(--sans); color: var(--muted); }
+ol.refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
+ol.refs li b { color: var(--ink); font-weight: 600; }
+.note { font: 400 0.86rem/1.4 var(--sans); color: var(--muted); }
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 6px 18px rgba(0,0,0,.14); padding: 7px 10px; font: 400 0.84rem/1.4 var(--sans); max-width: 19rem; }
+.tip b { font-weight: 600; }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+</style>
+</head>
+<body>
+<!-- The numbers in <span data-v> and the rows of both tables are written by site/build_lookatmyquant2.py from the result files. -->
+<div class="wrap">
+  <header class="title col">
+    <h1>LookAtMyQuant 2</h1>
+    <p class="subtitle">Qwen3.5-4B in 1.2 GB: <span data-v="ours">330</span> of 540 math problems to Bonsai 2 Ternary's <span data-v="bonsai">328</span>, and closer to the original on text</p>
+    <p class="authors">Shin Megami Boson</p>
+    <p class="meta">November 2026</p>
+    <nav class="links" aria-label="Sections">
+      <a href="#results">Results</a>
+      <a href="#findings">Findings</a>
+      <a href="#recipe">Recipe</a>
+      <a href="#compiler">Compiler</a>
+      <a href="#cost">Cost</a>
+      <a class="back" href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a>
+    </nav>
+  </header>
+
+  <figure class="wide" id="fig1">
+    <div class="legend">
+      <span><i style="background:var(--ours)"></i>Ours</span>
+      <span><i style="background:var(--rival)"></i>Bonsai 2 Ternary 4B</span>
+      <span><i style="background:var(--other)"></i>Smaller Qwen3.5 models at more bits per weight, and the original</span>
+    </div>
+    <div class="grid2">
+      <div><p class="panel-title">Math problems solved, of 540</p><div class="chart" id="f1math"></div></div>
+      <div><p class="panel-title">KL from the original on text (lower is better)</p><div class="chart" id="f1text"></div></div>
+    </div>
+    <figcaption><b>Figure 1.</b> Left: exact-match math problems solved, of 540. Right: KL(original ‖ model) between next-token distributions, averaged over held-out text from 13 sources. Sizes are language-model weights.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="results">At 1.2 GB our <span class="nb">Qwen3.5-4B</span> solves <span data-v="ours">330</span> of 540 math problems and Bonsai 2 Ternary solves <span data-v="bonsai">328</span></h2>
+    <p>Bonsai 2 Ternary 4B <a href="#r1">[1]</a> is Prism ML's ternary-weight version of Qwen3.5-4B <a href="#r2">[2]</a>. It stores 2-bit codes with a scale and a bias per 128 weights, and its language-model weights take <span data-v="bonsaiGb">1.20</span> GB. The original's take <span data-v="origGb">8.4</span> GB in bf16.</p>
+    <p>Our file is the same model at 2.3 bits per weight, <span data-v="oursGb">1.23</span> GB. It is post-training quantization with trellis codes from the <a href="https://lookatmyquant.pages.dev/">LookAtMyQuant</a> compiler, followed by 4,000 steps of distillation from the original.</p>
+    <p>The math test is 540 generated problems with exact integer or fraction answers, in twelve families at three difficulties, from long addition to determinants and modular exponentiation. Scoring is exact match on the final boxed answer. Decoding is greedy with thinking disabled and at most 2,048 new tokens.</p>
+    <p>Ours solves <span data-v="ours">330</span>, Bonsai <span data-v="bonsai">328</span> and the original <span data-v="orig">359</span>. <span data-v="onlyOurs">62</span> problems are solved only by ours and <span data-v="onlyBonsai">60</span> only by Bonsai (McNemar p = <span data-v="pBonsai">0.93</span>), so the test does not separate the two files.</p>
+    <p>On text, ours is closer to the original. KL(original ‖ model) on held-out text from 13 sources is <span data-v="oursKL">0.45</span> nats for ours and <span data-v="bonsaiKL">0.59</span> for Bonsai, and ours is lower on <span data-v="srcOurs">11</span> of the 13 (Figure 2). Bonsai is lower on <span data-v="srcBonsai">chat and Hindi</span>.</p>
+    <p>All sizes are the language model alone. Qwen3.5-4B also has a <span data-v="visionGb">0.67</span> GB vision tower, which Bonsai's <span data-v="bonsaiFileGb">1.87</span> GB download keeps in bf16. Our file omits it, and we did not evaluate image inputs.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 1.</b> Every model on the same math test and the same text. KL is KL(original ‖ model) in nats per token, on 52 windows of 512 tokens from 13 sources and on 64 windows of the WikiText-2 test split.</p>
+    <div class="scroll-x"><table><thead><tr><th>Model</th><th class="num">Weights (GB)</th><th class="num">Math, of 540</th><th class="num">KL, 13 sources</th><th class="num">KL, WikiText-2</th></tr></thead><tbody data-rows="t1"><tr class=ours><td><span class="sw ours"></span>Qwen3.5-4B, ours<br><span class="note">2.3 bits per weight, trellis-coded</span></td><td class="num">1.23</td><td class="num">330</td><td class="num">0.45</td><td class="num">0.42</td></tr><tr><td><span class="sw rival"></span>Bonsai 2 Ternary 4B<br><span class="note">Prism ML, ternary weights</span></td><td class="num">1.20</td><td class="num">328</td><td class="num">0.59</td><td class="num">0.50</td></tr><tr><td><span class="sw smaller"></span>Qwen3.5-2B at 5 bits<br><span class="note">1.9B parameters, MLX-style affine quantization</span></td><td class="num">1.29</td><td class="num">284</td><td class="num">0.51</td><td class="num">0.45</td></tr><tr><td><span class="sw smaller"></span>Qwen3.5-2B at 4 bits<br><span class="note">1.9B parameters, MLX-style affine quantization</span></td><td class="num">1.06</td><td class="num">242</td><td class="num">0.60</td><td class="num">0.51</td></tr><tr><td><span class="sw smaller"></span>Qwen3.5-0.8B at 8 bits<br><span class="note">0.8B parameters, MLX-style affine quantization</span></td><td class="num">0.80</td><td class="num">205</td><td class="num">0.75</td><td class="num">0.70</td></tr><tr><td><span class="sw original"></span>Qwen3.5-4B, original<br><span class="note">bf16</span></td><td class="num">8.41</td><td class="num">359</td><td class="num">0</td><td class="num">0</td></tr></tbody></table></div>
+  </section>
+
+  <figure class="col" id="fig2">
+    <div class="legend">
+      <span><i class="dot" style="background:var(--ours)"></i>Ours</span>
+      <span><i class="dot" style="background:var(--rival)"></i>Bonsai 2 Ternary 4B</span>
+    </div>
+    <div class="chart" id="bysource"></div>
+    <figcaption><b>Figure 2.</b> KL(original ‖ model) on each of the 13 sources: English, ten other languages, code and chat, four windows of 512 tokens each. Lower is better.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="smaller">A 4B model at 2.3 bits beats a 2B at 5 bits and a 0.8B at 8 bits</h2>
+    <p>The same space can hold a smaller model at a higher bit rate. We quantized the two smaller Qwen3.5 models the way MLX's standard files do <a href="#r8">[8]</a>: affine quantization in groups of 64 weights, each with a 16-bit scale and bias, which costs N + 0.5 bits per weight at N bits.</p>
+    <p>Qwen3.5-2B at 5 bits is <span data-v="q2b5Gb">1.29</span> GB and solves <span data-v="q2b5Math">284</span>. At 4 bits it is <span data-v="q2b4Gb">1.06</span> GB and solves <span data-v="q2b4Math">242</span>. Qwen3.5-0.8B at 8 bits is <span data-v="q08b8Gb">0.80</span> GB and solves <span data-v="q08b8Math">205</span>; more bits would not help it, since its relative weight error at 8 bits is already 0.5%. Their KL from the original 4B on text is <span data-v="q2b5KL">0.51</span>, <span data-v="q2b4KL">0.60</span> and <span data-v="q08b8KL">0.75</span>, against <span data-v="oursKL">0.45</span> for ours.</p>
+
+    <h2 id="findings">At 2.3 bits, KL from the original does not predict exact-answer math</h2>
+    <p>A scalar Lloyd–Max build at this size, calibrated on generic text, has WikiText-2 KL 0.60. Bonsai's is 0.50. The build solves <span data-v="s_first">1</span> problem of 540 and Bonsai solves <span data-v="bonsai">328</span>.</p>
+    <p>The two metrics also separate in the other direction. Our post-training build already solves <span data-v="s_tables">317</span> at a KL of <span data-v="baseKL">1.41</span> on the 13 sources. Fine-tuning then cuts that KL to <span data-v="oursKL">0.45</span> and adds <span data-v="trainGain">13</span> problems. So we selected every component below on the benchmark and report KL beside it. Figure 3 adds the components one at a time.</p>
+  </section>
+
+  <figure class="wide" id="fig3">
+    <div class="chart" id="ladder"></div>
+    <figcaption><b>Figure 3.</b> Cumulative ablation on the 540. Each bar adds one component to the build above it, at the same file size. Each blue bar is a single build, and builds of one recipe have differed by <span data-v="spread">31</span> problems.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2>Calibrating on the model's own long worked solutions, with digit tokens weighted 10×, nearly doubled the score at fixed codes</h2>
+    <p>Layer-wise quantization minimizes error under the input second moment H = E[w·xxᵀ], so the calibration set and the token weights w decide which errors count. With trellis codes fixed and half of the set the original's GSM8K solutions <a href="#r10">[10]</a>, the build solves <span data-v="s_trellis">117</span>.</p>
+    <p>An all-math set with w = 1 at positions that predict a digit and w = 0.1 elsewhere gives <span data-v="s_digits">147</span>. Replacing 256 sequences of 512 tokens with 64 of 2,048, the original's greedy solutions to MATH training problems <a href="#r9">[9]</a>, gives <span data-v="s_long">224</span>. These have long chains of intermediate results, like the benchmark's.</p>
+
+    <h2>Bits belong to rows: 10% of a matrix's rows can carry 79% of its Fisher information on digits</h2>
+    <p>For each output row i we measure s<sub>i</sub> = E[g<sub>i</sub>²]·E[y<sub>i</sub>²] on the original model. Here y is the row's output and g is the gradient of the log-likelihood of tokens sampled from the model's own predictions at digit-predicting positions. In the matrices that read a linear-attention layer's input, 10% of the rows carry 79% of the total.</p>
+    <p>A global allocation of 1 to 4 bits per row group, across all matrices and under the same byte budget, took the score from <span data-v="s_half">265</span> to <span data-v="s_rows">300</span>. It puts 13% of the matrix weights at 1 bit, 47% at 2, 36% at 3 and 4% at 4. Rotating the output side as well would average this structure away, so the incoherence transform is on the input side only.</p>
+
+    <h2>e-means codebooks cut trellis MSE by 4% to 9% at the same bytes and added <span data-v="tableGain">17</span> problems</h2>
+    <p>A trellis code decodes each weight from a 4,096-entry codebook. We had fit it with six full-batch Lloyd iterations on a fixed set of Gaussian sequences. e-means <a href="#r7">[7]</a> replaces full passes with mini-batch updates through exponential moving averages. Fit that way, with fresh Gaussian samples in every batch, an EMA of the sum and count for each codeword, and a batch weight on a cosine schedule from 0.5 to 0.01, the codebook's MSE under the deployed encoder falls 4.0%, 4.5%, 6.2% and 8.8% at 1 to 4 bits.</p>
+    <p>The file size and the decoder do not change. The score went from <span data-v="s_rows">300</span> to <span data-v="s_tables">317</span>, and KL on the 13 sources fell <span data-v="tableKL2">4</span>%. With e-means codebooks at 2 and 3 bits only, the score was <span data-v="tablesPart">311</span>.</p>
+
+    <h2>Error propagation at half strength beat full strength by <span data-v="qepGain">41</span> problems</h2>
+    <p>QEP <a href="#r6">[6]</a> adds a cross term to the layer objective, so that the quantized layer on quantized inputs matches the original layer on clean inputs, with a strength α. At α = 1 the build solves <span data-v="s_long">224</span>. At α = 0.5 it solves <span data-v="s_half">265</span>, and WikiText-2 KL falls from 0.85 to 0.66.</p>
+
+    <h2>Fine-tuning leaves trellis codes where they are; re-quantizing from the original weights mid-training cut KL on text by another <span data-v="againCut">43</span>%</h2>
+    <p>Our fine-tuning is distillation on latent full-precision weights W that are pulled toward their quantized values P and re-quantized every 1,000 steps (Figure 5). It took the score from <span data-v="s_tables">317</span> to <span data-v="heldMath">321</span> and KL on the 13 sources from <span data-v="baseKL">1.41</span> to <span data-v="plainKL">0.79</span>. The codes hardly moved: <span data-v="codesKept">0.1</span>% of a layer's codes change at a re-quantization, because a weight held near its quantized value quantizes back to the same code.</p>
+    <p>So between steps 1,000 and 1,750, each layer is re-quantized once from the original weights W<sub>0</sub> in place of W. H comes from an exponential moving average over the training batches' own activations, about 2,000 sequences of the partly fine-tuned model, eight times the build's calibration tokens. <span data-v="codesChanged">97</span>% of the codes change, W restarts at the new P, and training continues.</p>
+    <p>On two builds this gave <span data-v="againMath">330 and 324</span> problems at KL <span data-v="againKLs">0.45 and 0.45</span>, against <span data-v="plainMath">321 and 314</span> at <span data-v="plainKLs">0.79 and 0.80</span> without it (Table 2). Part of the gain on text comes from the data mix: the running H is 30% non-math text, and the build's calibration set is all math.</p>
+  </section>
+
+  <figure class="col" id="fig5">
+    <div class="legend">
+      <span><i class="line" style="background:var(--other)"></i>Fine-tuned</span>
+      <span><i class="line" style="background:var(--ours)"></i>Fine-tuned, with mid-training re-quantization (our file)</span>
+      <span><i style="background:var(--band);box-shadow:inset 0 0 0 1px var(--line)"></i>Steps 1,000 to 1,750: re-quantization from the original weights</span>
+    </div>
+    <p class="panel-title">KL from the original on text (lower is better)</p>
+    <div class="chart" id="c-text"></div>
+    <figcaption><b>Figure 4.</b> KL from the original on the training run's held-out text, for the quantized model P at steps 0, 1,000, 2,000, 3,000 and 4,000. Both runs start from the same build.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p class="tcap"><b>Table 2.</b> Two builds, each with post-training quantization only, fine-tuned, and fine-tuned with mid-training re-quantization.</p>
+    <div class="scroll-x"><table><thead><tr><th>Training</th><th class="num">Math, of 540</th><th class="num">KL, 13 sources</th><th class="num">KL, WikiText-2</th></tr></thead><tbody data-rows="t2"><tr class="group"><td colspan="4">Build A, e-means codebooks at every bit rate</td></tr><tr><td>Post-training quantization only</td><td class="num">317</td><td class="num">1.41</td><td class="num">1.07</td></tr><tr><td>Fine-tuned</td><td class="num">321</td><td class="num">0.79</td><td class="num">0.64</td></tr><tr class=ours><td>Fine-tuned, with mid-training re-quantization (our file)</td><td class="num">330</td><td class="num">0.45</td><td class="num">0.42</td></tr><tr class="group"><td colspan="4">Build B, e-means codebooks at 2 and 3 bits only</td></tr><tr><td>Post-training quantization only</td><td class="num">311</td><td class="num">1.43</td><td class="num">1.05</td></tr><tr><td>Fine-tuned</td><td class="num">314</td><td class="num">0.80</td><td class="num">0.64</td></tr><tr><td>Fine-tuned, with mid-training re-quantization</td><td class="num">324</td><td class="num">0.45</td><td class="num">0.44</td></tr></tbody></table></div>
+
+    <h2 id="recipe">The recipe is post-training quantization aimed at digits, then distillation that ends exactly on the codes</h2>
+    <p class="tcap"><b>Table 3.</b> The final recipe.</p>
+    <div class="scroll-x"><table class="recipe"><thead><tr><th>Component</th><th>Setting</th></tr></thead><tbody>
+      <tr class="group"><td colspan="2">Post-training quantization</td></tr>
+      <tr><td>Codes</td><td>Trellis-coded quantization as in QTIP <a href="#r3">[3]</a>: a bitshift trellis with L = 12 and V = 1, at 1 to 4 bits per weight, decoded from a 4,096-entry codebook per bit rate. Codebooks are fit with e-means.</td></tr>
+      <tr><td>Basis</td><td>A randomized Hadamard transform on each matrix's input side <a href="#r4">[4]</a>, shared by the matrices that read the same activations. One scale per row.</td></tr>
+      <tr><td>Rounding</td><td>Viterbi along each row, 16 columns at a time with 8 of look-ahead, with LDLQ error feedback <a href="#r5">[5]</a> under H = E[w·xxᵀ].</td></tr>
+      <tr><td>Calibration</td><td>64 sequences of 2,048 tokens: the original's greedy solutions to MATH training problems. w = 1 at digit-predicting positions and 0.1 elsewhere.</td></tr>
+      <tr><td>Error propagation</td><td>QEP <a href="#r6">[6]</a> at α = 0.5.</td></tr>
+      <tr><td>Bit allocation</td><td>Per-matrix rates from the compiler, then a global allocation over 1,520 row groups in 190 matrices by Fisher information on digits. The 200 matrices average <span data-v="matBits">2.32</span> bits per weight.</td></tr>
+      <tr><td>Embedding</td><td>The tied embedding, 636M weights, in frequency buckets at 1 to 8 bits, <span data-v="embBits">1.88</span> on average.</td></tr>
+      <tr class="group"><td colspan="2">Fine-tuning, 4,000 steps</td></tr>
+      <tr><td>Student</td><td>Latent full-precision weights W, initialized at the dequantized build. P is W's current quantized value.</td></tr>
+      <tr><td>Loss</td><td>KL(original ‖ student) over the original's top 64 tokens plus one bucket for the tail, at 128 positions of each 512-token sequence, with digit-predicting positions weighted 10×. Batches of 8, half worked math solutions and half general text, science, code, instructions and tool calls.</td></tr>
+      <tr><td>Optimizer</td><td>Adam, learning rate 10⁻⁵, with ε set per tensor to its initial gradient RMS. Norm weights and the embedding's scales and codebooks train as well.</td></tr>
+      <tr><td>Pull</td><td>After each step, W ← W + β(P − W) with β = 10⁻³. Over the last 600 steps β rises to 0.03 and the learning rate falls to 0. Then W ← P.</td></tr>
+      <tr><td>Re-quantization</td><td>Every 250 steps, P ← Q(W) for a quarter of the layers with the build's own quantizer, and row scales and codebooks are refit. Between steps 1,000 and 1,750, each layer's P ← Q(W<sub>0</sub>) once, under a running H.</td></tr>
+    </tbody></table></div>
+    <p>The latent weights are there because a trellis-coded weight has no small step: one path bit changes the decoded values of the weights after it. Quantizing one layer takes 20 to 40 seconds, so a straight-through estimator that re-quantizes at every step is out of reach. The pull has to be strong. A run with β = 3·10⁻⁴, and re-quantization twice as often, left the weights nearly twice as far from their codes and lost the gain on math.</p>
+  </section>
+
+  <figure class="wide" id="fig4">
+    <div class="flow">
+      <div><span class="k">Init</span><span class="v">W ← P</span><span>The latent weights start at the dequantized build.</span></div>
+      <div><span class="k">Each step</span><span class="v">Distill</span><span>One Adam step on the token-weighted KL to the original's top-64 next-token probabilities.</span></div>
+      <div><span class="k">Each step</span><span class="v">W ← W + β(P − W)</span><span>A pull toward the quantized values, with β = 10⁻³.</span></div>
+      <div><span class="k">Every 250 steps</span><span class="v">P ← Q(W), a quarter of the layers</span><span>With the build's own quantizer. Once mid-training, from W<sub>0</sub>.</span></div>
+      <div><span class="k">Last 600 steps</span><span class="v">Anneal</span><span>β rises to 0.03 and the learning rate falls to 0. Then W ← P.</span></div>
+    </div>
+    <figcaption><b>Figure 5.</b> The fine-tuning loop. The result is exactly representable in the format: re-quantizing four of its matrices changed no code.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="compiler">The compiler now allocates bits to rows against a digit-weighted objective, and fine-tunes after allocation</h2>
+    <p><a href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a> measured the KL that each stored piece of a model costs when it alone is compressed, and chose one code per piece under a byte budget. It stopped at post-training quantization and listed fine-tuning after allocation as further work. Table 4 lists what this recipe changes. Of these, the e-means codebook fit is in the <a href="https://github.com/ShinMegamiBoson/lookatmyquant">public repository</a>.</p>
+    <p class="tcap"><b>Table 4.</b> The compiler in LookAtMyQuant 1 and in this recipe.</p>
+    <div class="scroll-x"><table class="recipe"><thead><tr><th>Step</th><th>LookAtMyQuant 1</th><th>This recipe</th></tr></thead><tbody>
+      <tr><td>Pieces</td><td>Whole matrices, embedding buckets by token frequency, key–value caches.</td><td>Also row groups inside each matrix.</td></tr>
+      <tr><td>Sensitivity</td><td>KL on held-out text with one piece compressed.</td><td>Also Fisher information per output row at digit-predicting positions.</td></tr>
+      <tr><td>Calibration</td><td>A text mix with every token weighted equally.</td><td>A set chosen for the target, with token weights in H.</td></tr>
+      <tr><td>Codes</td><td>llama.cpp's types, or Lloyd–Max and trellis codes with Lloyd codebooks.</td><td>Trellis codes at 1 to 4 bits per row group, with e-means codebooks.</td></tr>
+      <tr><td>After allocation</td><td>Nothing.</td><td>Distillation that ends on the codes, with one re-quantization from the original weights.</td></tr>
+      <tr><td>Acceptance</td><td>KL from the original.</td><td>An exact-answer benchmark as well as KL.</td></tr>
+    </tbody></table></div>
+
+    <h2 id="cost">Calibration and training cost about $<span data-v="costAll">34</span> of GPU time in all</h2>
+    <p>Table 5 prices each step of making the file once, at Modal's on-demand rates <a href="#r11">[11]</a> for the GPU, CPU and memory the step used. Everything before fine-tuning costs $<span data-v="costCalib">13</span> and fine-tuning costs $<span data-v="costTrain">21</span>, <span data-v="hoursAll">5.4</span> GPU-hours in all. Calibration uses 131k tokens and fine-tuning sees <span data-v="trainTokens">16</span>M.</p>
+    <p class="tcap"><b>Table 5.</b> The time and cost of each step.</p>
+    <div class="scroll-x"><table><thead><tr><th>Step</th><th>GPU</th><th class="num">Hours</th><th class="num">Cost</th></tr></thead><tbody data-rows="t3"><tr><td>Per-matrix sensitivity measurement for the bit allocation</td><td>H100</td><td class="num">1.6</td><td class="num">$7.74</td></tr><tr><td>Calibration set (the original generates 384 long solutions)</td><td>H100</td><td class="num">0.3</td><td class="num">$1.24</td></tr><tr><td>Row Fisher information and four codebook fits</td><td>L40S</td><td class="num">0.2</td><td class="num">$0.50</td></tr><tr><td>Quantization (LDLQ and Viterbi, 32 layers)</td><td>H100</td><td class="num">0.6</td><td class="num">$3.32</td></tr><tr><td>Fine-tuning, 4,000 steps</td><td>B200</td><td class="num">2.7</td><td class="num">$20.98</td></tr><tr class="ours"><td>Total</td><td></td><td class="num">5.4</td><td class="num">$33.78</td></tr></tbody></table></div>
+
+    <h2 id="limits">Limitations</h2>
+    <ul class="plain">
+      <li>Each file is a single run. Builds of one recipe have differed by <span data-v="spread">31</span> of 540 problems, so a difference of a few problems is noise.</li>
+      <li>The 540 was our development set, which favors our files and not Bonsai. On a second set of 216 problems from the same generator, which we used less, our file solves <span data-v="ours216">125</span> and Bonsai <span data-v="bonsai216">138</span>.</li>
+      <li>The calibration and distillation data are mostly math. Beyond KL on text, we have not evaluated coding, tool use or instruction following.</li>
+      <li>Our language-model weights are <span data-v="oursGb">1.23</span> GB packed, <span data-v="sizeOver">2</span>% more than Bonsai's <span data-v="bonsaiGb">1.20</span> GB. That is the packed size of a build with the same layout. New codebooks and fine-tuning change the values a file stores and leave its layout alone, and we did not re-pack the fine-tuned file.</li>
+      <li>All scores are from the dequantized weights in fp32. We have not measured decode speed for this file.</li>
+    </ul>
+
+    <h2 id="refs">References</h2>
+    <ol class="refs">
+      <li id="r1"><b>Bonsai 2 Ternary 4B.</b> Prism ML. <a href="https://huggingface.co/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit">huggingface.co/prism-ml/Ternary-Bonsai-2-4B-mlx-2bit</a></li>
+      <li id="r2"><b>Qwen3.5-4B.</b> Qwen team. <a href="https://huggingface.co/Qwen/Qwen3.5-4B">huggingface.co/Qwen/Qwen3.5-4B</a></li>
+      <li id="r3"><b>QTIP.</b> Tseng, Sun, Hou and De Sa, QTIP: Quantization with Trellises and Incoherence Processing. NeurIPS 2024. <a href="https://arxiv.org/abs/2406.11235">arXiv:2406.11235</a></li>
+      <li id="r4"><b>QuIP#.</b> Tseng et al., QuIP#: Even Better LLM Quantization with Hadamard Incoherence and Lattice Codebooks. ICML 2024. <a href="https://arxiv.org/abs/2402.04396">arXiv:2402.04396</a></li>
+      <li id="r5"><b>GPTQ.</b> Frantar et al., GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers. ICLR 2023. <a href="https://arxiv.org/abs/2210.17323">arXiv:2210.17323</a></li>
+      <li id="r6"><b>QEP.</b> Arai and Ichikawa, Quantization Error Propagation: Revisiting Layer-Wise Post-Training Quantization. NeurIPS 2025. <a href="https://arxiv.org/abs/2504.09629">arXiv:2504.09629</a></li>
+      <li id="r7"><b>e-means.</b> Bessa, Mazaré, Szilvasy, Touvron, Picard, Douze and Jégou, e-means: outperforming k-means (in one-tenth the epochs). 2026. <a href="https://arxiv.org/abs/2611.09501">arXiv:2611.09501</a>, <a href="https://e-means.github.io">e-means.github.io</a></li>
+      <li id="r8"><b>MLX.</b> Apple machine learning research. <a href="https://github.com/ml-explore/mlx">github.com/ml-explore/mlx</a></li>
+      <li id="r9"><b>MATH.</b> Hendrycks et al., Measuring Mathematical Problem Solving With the MATH Dataset. NeurIPS 2021. <a href="https://arxiv.org/abs/2103.03874">arXiv:2103.03874</a></li>
+      <li id="r10"><b>GSM8K.</b> Cobbe et al., Training Verifiers to Solve Math Word Problems. 2021. <a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a></li>
+      <li id="r11"><b>Modal.</b> Pricing, read on 10 November 2026. <a href="https://modal.com/pricing">modal.com/pricing</a></li>
+    </ol>
+
+    <h2 id="citation">Citation</h2>
+    <pre class="bib">@misc{boson2026lookatmyquant2,
+  title  = {LookAtMyQuant 2: Qwen3.5-4B in 1.2 GB},
+  author = {{Shin Megami Boson}},
+  year   = {2026},
+  month  = nov
+}</pre>
+
+    <footer>LookAtMyQuant 2 · November 2026 · <a href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a></footer>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+(async function () {
+  const D = await (await fetch('data.json')).json();
+  const tip = document.getElementById('tip');
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const show = (e) => {
+    const t = e.target.closest && e.target.closest('[data-tip]');
+    if (!t) { tip.hidden = true; return; }
+    tip.innerHTML = t.getAttribute('data-tip'); tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY - h - 12;
+    if (x + w > innerWidth - 8) x = Math.max(8, e.clientX - w - 14);
+    if (y < 8) y = e.clientY + 18;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  };
+  document.addEventListener('pointermove', show);
+  document.addEventListener('pointerdown', show);
+  addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
+
+  const kl = (v) => v.toFixed(2), gb = (v) => v.toFixed(2), pct = (a, b) => (100 * a / b).toFixed(1);
+  const COL = { ours: 'var(--ours)', rival: 'var(--rival)', smaller: 'var(--other)', original: 'var(--other)' };
+  const T = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 13}" fill="${o.fill || 'var(--muted)'}" text-anchor="${o.anchor || 'start'}" font-family="var(--sans)"${o.weight ? ` font-weight="${o.weight}"` : ''}${o.caps ? ' letter-spacing="0.06em"' : ''}>${s}</text>`;
+  const W = (el) => Math.max(280, el.clientWidth || 460);
+  // a bar from x of this width and height, its right end rounded
+  const bar = (x, y, w, h, c) => `<path d="M${x} ${y}h${Math.max(0, w - 4)}a4 4 0 0 1 4 4v${h - 8}a4 4 0 0 1 -4 4h-${Math.max(0, w - 4)}z" fill="${c}"/>`;
+
+  // ---- Figure 1: one bar per model
+  function bars(id, value, max, label, tipOf) {
+    const el = document.getElementById(id), w = W(el), rows = D.models, rh = 46, right = 46, top = 2;
+    const h = top + rows.length * rh, bw = w - right;
+    let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(el.previousElementSibling.textContent)}">`;
+    rows.forEach((m, i) => {
+      const y = top + i * rh, v = value(m), ww = v > 0 ? Math.max(5, bw * v / max) : 0;
+      s += `<g data-tip="${esc(tipOf(m))}">`;
+      s += T(0, y + 14, esc(m.name), { fill: 'var(--ink)', weight: m.group === 'ours' ? 600 : 400 }) + T(bw, y + 14, gb(m.gb) + ' GB', { anchor: 'end', size: 12 });
+      s += `<rect x="0" y="${y + 21}" width="${bw}" height="14" rx="4" fill="var(--soft)"/>` + (ww ? bar(0, y + 21, ww, 14, COL[m.group]) : '');
+      s += T(bw + 8, y + 33, label(m), { fill: 'var(--ink)', weight: m.group === 'ours' ? 600 : 500 });
+      s += `<rect x="0" y="${y}" width="${w}" height="${rh}" fill="transparent"/></g>`;
+    });
+    el.innerHTML = s + '</svg>';
+  }
+  function fig1() {
+    bars('f1math', (m) => m.math, 540, (m) => m.math, (m) => `<b>${m.name}</b><br>${m.math} of 540, ${pct(m.math, 540)}%`);
+    bars('f1text', (m) => m.kl13, Math.max(...D.models.map((m) => m.kl13)), (m) => (m.kl13 ? kl(m.kl13) : '0'), (m) => `<b>${m.name}</b><br>KL on the 13 sources ${kl(m.kl13)}<br>KL on WikiText-2 ${kl(m.klw)}`);
+  }
+
+  // ---- Figure 2: each source, ours beside Bonsai
+  function sources() {
+    const el = document.getElementById('bysource'), w = W(el), S = [...D.sources].sort((a, b) => (b.bonsai - b.ours) - (a.bonsai - a.ours));
+    const left = 88, right = 14, top = 6, rh = 26, h = top + S.length * rh + 30;
+    const step = w < 480 ? 0.4 : 0.2, max = Math.ceil(Math.max(...S.map((r) => Math.max(r.ours, r.bonsai))) / 0.2) * 0.2, x = (v) => left + (w - left - right) * v / max;
+    let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL from the original on each source, ours and Bonsai">`;
+    for (let v = 0; v <= max + 1e-9; v += step) s += `<line x1="${x(v)}" y1="${top}" x2="${x(v)}" y2="${h - 26}" stroke="var(--line)"/>` + T(x(v), h - 8, v ? v.toFixed(1) : '0', { anchor: 'middle', size: 12 });
+    S.forEach((r, i) => {
+      const y = top + i * rh + rh / 2;
+      s += `<g data-tip="${esc(`<b>${r.name[0].toUpperCase() + r.name.slice(1)}</b><br>Ours ${kl(r.ours)}<br>Bonsai ${kl(r.bonsai)}`)}">` + T(left - 12, y + 4, r.name[0].toUpperCase() + r.name.slice(1), { anchor: 'end', fill: 'var(--ink)' });
+      s += `<line x1="${x(r.ours)}" y1="${y}" x2="${x(r.bonsai)}" y2="${y}" stroke="var(--faint)" stroke-width="1.5"/>`;
+      s += `<circle cx="${x(r.bonsai)}" cy="${y}" r="5.5" fill="var(--rival)" stroke="var(--bg)" stroke-width="2"/><circle cx="${x(r.ours)}" cy="${y}" r="5.5" fill="var(--ours)" stroke="var(--bg)" stroke-width="2"/>`;
+      s += `<rect x="0" y="${y - rh / 2}" width="${w}" height="${rh}" fill="transparent"/></g>`;
+    });
+    el.innerHTML = s + '</svg>';
+  }
+
+  // ---- Figure 3: the score after each change, then Bonsai and the original for comparison
+  function ladder() {
+    const el = document.getElementById('ladder'), w = W(el), narrow = w < 600, rh = narrow ? 44 : 30, gh = 30;
+    const at = Object.fromEntries(D.models.map((m) => [m.key, m]));
+    const rows = [...D.ladder.map(([key, name, v]) => [key === 'held' || key === 'again' ? 'Then fine-tuned' : 'Post-training quantization', name, v, 'var(--ours)']),
+      ['For comparison', at.bonsai.name, at.bonsai.math, 'var(--rival)'], ['For comparison', at.original.name, at.original.math, 'var(--other)']];
+    const left = narrow ? 0 : Math.min(390, w * 0.45), right = 40, bw = w - left - right, top = Math.max(...rows.map((r) => r[2])), x = (v) => left + bw * v / top;
+    let y = 0, s = '', group = '';
+    rows.forEach(([g, name, v, c], i) => {
+      if (g !== group) { group = g; y += i ? 8 : 0; s += T(0, y + 18, g.toUpperCase(), { size: 11, weight: 600, caps: 1 }); y += gh; }
+      const by = narrow ? y + 20 : y + 7, ww = Math.max(5, x(v) - left), d = i && i < D.ladder.length ? v - rows[i - 1][2] : 0;
+      s += `<g data-tip="${esc(`<b>${name}</b><br>${v} of 540${d ? ` (${d > 0 ? '+' : ''}${d})` : ''}`)}">`;
+      s += narrow ? T(0, y + 13, esc(name), { fill: 'var(--ink)' }) : T(left - 12, y + 20, esc(name), { anchor: 'end', fill: 'var(--ink)' });
+      s += bar(left, by, ww, 16, c) + T(left + ww + 7, by + 13, v, { fill: 'var(--ink)', weight: 600 });
+      s += `<rect x="0" y="${y}" width="${w}" height="${rh}" fill="transparent"/></g>`;
+      y += rh;
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${y + 4}" role="img" aria-label="Math problems solved, of 540, after each change">` + s + '</svg>';
+  }
+
+  // ---- Figure 5: held-out KL of the stored model during training
+  function curve(id, key, ticks, places) {
+    const C = { plain: D.curves.plain, rebuild: D.curves.again };
+    const el = document.getElementById(id), w = W(el), h = 264, ml = 44, mr = 16, mt = 12, mb = 48;
+    const hi = Math.max(...[...C.plain, ...C.rebuild].map((p) => p[key])) * 1.1;
+    const x = (st) => ml + (w - ml - mr) * st / 4000, y = (v) => mt + (h - mt - mb) * (1 - v / hi);
+    let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(el.previousElementSibling.textContent)} against training step, with and without mid-training re-quantization">`;
+    s += `<rect x="${x(D.again.from)}" y="${mt}" width="${x(D.again.to) - x(D.again.from)}" height="${h - mt - mb}" fill="var(--band)"/>`;
+    ticks.forEach((v) => { s += `<line x1="${ml}" y1="${y(v)}" x2="${w - mr}" y2="${y(v)}" stroke="var(--line)"/>` + T(ml - 8, y(v) + 4, v, { anchor: 'end', size: 12 }); });
+    [0, 1000, 2000, 3000, 4000].forEach((st) => { s += T(x(st), h - mb + 18, st.toLocaleString('en-US'), { anchor: 'middle', size: 12 }); });
+    s += T((ml + w - mr) / 2, h - 8, 'Training step', { anchor: 'middle', size: 12 });
+    const ends = { plain: C.plain.at(-1)[key], rebuild: C.rebuild.at(-1)[key] };
+    [['plain', 'var(--other)', 'Fine-tuned'], ['rebuild', 'var(--ours)', 'Fine-tuned, with mid-training re-quantization']].forEach(([k, c, name]) => {
+      const P = C[k], e = P.at(-1), above = ends[k] >= Math.max(ends.plain, ends.rebuild);
+      s += `<polyline points="${P.map((p) => `${x(p.step)},${y(p[key])}`).join(' ')}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>`;
+      P.forEach((p) => { s += `<circle cx="${x(p.step)}" cy="${y(p[key])}" r="5" fill="${c}" stroke="var(--bg)" stroke-width="2" data-tip="${esc(`<b>${name}</b><br>Step ${p.step.toLocaleString('en-US')}: KL ${p[key].toFixed(places + 1)}`)}"/>`; });
+      s += T(x(e.step) - 4, y(e[key]) + (above ? -11 : 21), e[key].toFixed(places), { anchor: 'end', fill: 'var(--ink)', weight: 600, size: 12 });
+    });
+    el.innerHTML = s + '</svg>';
+  }
+
+  const draw = () => { fig1(); sources(); ladder(); curve('c-text', 'text', [0, 0.5, 1, 1.5], 2); };
+  draw();
+  let t, last = innerWidth;
+  addEventListener('resize', () => { if (innerWidth === last) return; last = innerWidth; clearTimeout(t); t = setTimeout(draw, 120); });
+})();
+</script>
+</body>
+</html>

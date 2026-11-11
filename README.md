@@ -6,6 +6,14 @@ On Gemma 4 E2B, its GGUF has 12× lower KL than Q4_K_M at the same file size. Th
 
 The code is under the MIT license.
 
+## LookAtMyQuant 2: Qwen3.5-4B in 1.2 GB
+
+[LookAtMyQuant 2](https://lookatmyquant2.pages.dev) takes Qwen3.5-4B to 1.23 GB, 2.3 bits per weight. The file solves 330 of 540 exact-answer math problems. Prism ML's Bonsai 2 Ternary 4B solves 328 at 1.20 GB, and the original solves 359. Its KL from the original on held-out text is 0.45 nats, against 0.59 for Bonsai.
+
+The recipe is post-training quantization with trellis codes, calibrated on the model's own worked math solutions with digit tokens weighted 10×, and with bits allocated per row by Fisher information. 4,000 steps of distillation follow, in which every layer is re-quantized once from the original weights. The page has the findings, the full recipe and its cost, about $34 of GPU time.
+
+Of that recipe, this repository has the trellis codes and the e-means fit of their codebooks. New measurements and plans use that fit by default; `--trellis-fit lloyd` gives the earlier codebooks, and older plans keep them.
+
 ## Run the compiler on SmolLM2-360M in three commands
 
 Install the dependencies and download the model and WikiText-2. The code reads SmolLM2-360M's config when it starts, so do this first.
@@ -86,6 +94,7 @@ python runtime_mlx/bench.py lamq path/to/export
 | `results/batch/`, `results/gguf/` | The measurements and plan runs behind the site |
 | `results/COMPILER.md`, `results/COMPLETENESS.md` | Write-ups of the compiler on SmolLM2-360M and Qwen3.5-4B, and of the reproduction check |
 | `site/` | The website. Run `python3 -m http.server 8000` inside it, then visit http://localhost:8000 |
+| `site2/` | The LookAtMyQuant 2 page. It runs the same way |
 | `tests/` | Tests of the grammar and the codes |
 
 ## The tests need SmolLM2-360M and WikiText-2
@@ -107,3 +116,4 @@ python tests/test_nested.py
 - **Model weights.** Everything downloads from Hugging Face. The Qwen3.5-4B jobs expect that model in `models/Qwen3.5-4B` on the volume.
 - **Benchmark copies.** `eval_tasks.py` downloads its benchmarks. On an offline machine it reads exported copies from `data/bench/`, which are not here. The Modal images run offline, so cache the benchmarks on the volume first.
 - **The script that assembled `site/data.json`.** It was a set of one-off steps. The source numbers are all in `results/`.
+- **The rest of the LookAtMyQuant 2 recipe.** Token-weighted calibration, the QEP strength α, the per-row bit allocation, the fine-tuning and the math benchmark are not here. Neither are the result files behind `site2/data.json`, or the script that writes the page's numbers from them.
