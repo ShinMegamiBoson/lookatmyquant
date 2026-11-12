@@ -109,6 +109,25 @@ On Gemma 4 E2B at 2.5 GB, the trellis plan has 26% lower KL than the Lloyd–Max
 python runtime_mlx/bench.py lamq path/to/export
 ```
 
+## A drafter makes the 1.2 GB file generate 1.5 to 2 times faster on Apple silicon
+
+`runtime_mlx/fast_q35.py` decodes the packed 1.2 GB Qwen3.5-4B file one token at a time, straight from its trellis codes. `runtime_mlx/drafter_q35.py` adds speculative decoding. A small drafter proposes the seven tokens after the model's latest one in a single pass. The model then checks all eight positions in one pass over its coded weights (`runtime_mlx/block_q35.py`) and keeps the proposals that match its own choice, so the text is exactly its own greedy text.
+
+On an M5 Max, over 30 held-out prompts of up to 256 tokens, generation with the drafter was 2.0 times as fast: 176 tokens a second against 88, timed in alternation in one process on 2026-11-11. A check kept 4.3 tokens on average. Over eight everyday prompts it was 1.5 times as fast. The gain follows how predictable the text is: 2.5 times on algebra, 2.0 on code, 1.2 on chat and 1.05 on a story, and one of the 30 held-out prompts ran slower with the drafter. The text matched plain greedy decoding on every prompt. These are speeds after the first token; reading the prompt takes about 0.1 s either way.
+
+Two later changes are in this code. Each was measured against the version before it on 40 paired generations: proposing from the 96,033 most common tokens was 6.0% faster, and picking the winning token inside the packed product was 5.3% faster.
+
+The drafter is a DSpine model, trained with [SpecForge](https://github.com/sgl-project/SpecForge) from the published DFlash drafter for Qwen3.5-4B on the 1.2 GB file's own greedy answers. `modal_drafter.py` runs the training as one Modal job, and it cost $42. On 300 held-out prompts the trained drafter gets 4.65 tokens per check, against 4.30 for the stock DFlash drafter.
+
+```sh
+python runtime_mlx/test_fast_q35.py
+LAMQ_Q35_PACKED=path/to/packed python runtime_mlx/test_block_q35.py
+python runtime_mlx/check_drafter.py path/to/packed path/to/drafter
+python runtime_mlx/bench_drafted.py path/to/packed path/to/drafter --heldout path/to/drafter/heldout/heldout.json --take 30
+```
+
+`runtime_mlx/pack_dense.py` writes the packed file from the fine-tuned build's dense weights, and `runtime_mlx/modal_pack.py` runs it on Modal. `check_drafter.py` compares the drafter in MLX with SpecForge's own model on reference blocks that `drafter/reference.py` writes.
+
 ## Where everything is
 
 | Path | What it holds |
@@ -122,6 +141,8 @@ python runtime_mlx/bench.py lamq path/to/export
 | `math_bench.py`, `math_eval.py`, `text_kl.py` | The exact-answer math benchmark, its runner for the Qwen3.5 family and Bonsai, and KL from the original on text |
 | `gguf_compiler.py`, `public_eval.py`, `eval_tasks.py` | The llama.cpp route, public quantizations and task benchmarks |
 | `lamq_export.py`, `runtime_mlx/` | The export format and the Apple Silicon runtime |
+| `runtime_mlx/fast_q35.py`, `block_q35.py`, `block_argmax_q35.py`, `pack_dense.py`, `modal_pack.py` | The runtime for the packed 1.2 GB file: one token at a time, a block of 8 or 16 tokens in one pass, and the packer |
+| `runtime_mlx/drafter_q35.py`, `draft_vocab_q35.py`, `check_drafter.py`, `bench_drafted.py`, `drafter/`, `modal_drafter.py` | Speculative decoding with a DSpine drafter, and the drafter's training |
 | `opgraph/` | The grammar: a model as a tensor network, and the rewrites and codes that act on it |
 | `run_completeness.py`, `make_report.py` | The check that nine published methods are reproduced exactly |
 | `analyze_compiler.py` | The tables of plan results |
@@ -150,9 +171,12 @@ python tests/test_rowgroup_alloc.py
 
 `runtime_mlx/test_core.py` checks the runtime against the quantizer's math. Run `python runtime_mlx/make_ref.py` first, which writes 1.6 GB of reference files.
 
+`runtime_mlx/test_fast_q35.py` and `runtime_mlx/test_block_q35.py` check the Qwen3.5 kernels against NumPy products of independently unpacked codes, with no model. When `LAMQ_Q35_PACKED` names a packed file, the second also checks a block of tokens against decoding them one at a time.
+
 ## What this repository leaves out
 
 - **Model weights.** Everything downloads from Hugging Face. The Qwen3.5-4B jobs expect that model in `models/Qwen3.5-4B` on the volume.
 - **Benchmark copies.** `eval_tasks.py` downloads its benchmarks. On an offline machine it reads exported copies from `data/bench/`, which are not here. The Modal images run offline, so cache the benchmarks on the volume first.
 - **The script that assembled `site/data.json`.** It was a set of one-off steps. The source numbers are all in `results/`.
 - **LookAtMyQuant 2's weights and result files.** The 1.2 GB file is not published, and neither are the per-problem results behind `site2/data.json` or the script that writes the page's numbers from them.
+- **The drafter's weights.** The trained drafter is 1.8 GB and is not published. `modal_drafter.py` trains it.
