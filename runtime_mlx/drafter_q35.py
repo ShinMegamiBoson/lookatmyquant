@@ -143,6 +143,29 @@ class Lin:
         return x @ self.w.T
 
 
+def _weights(path):
+    """The drafter's tensors by name. `path` holds model.safetensors as SpecForge exports it, or the packed file that
+    pack_drafter.py writes (artifact.json and weights.bin): its coded matrices are written out dense here, each weight
+    its table's value at the row's state times the row's scale, with the input rotation undone."""
+    if not (path / "artifact.json").exists():
+        return mx.load(str(path / "model.safetensors"))
+    import numpy as np
+    from compiler_artifact import decode_rotated, read_artifact
+    import lamq                      # fast_q35, loaded before any drafter, has put it in sys.modules
+    arrays, manifest = read_artifact(path, verify=False)
+    w = {}
+    for name in manifest["dense"]:
+        value = mx.array(arrays[name])
+        w[name] = value.view(mx.bfloat16) if manifest["tensors"][name]["dtype"] == "BF16" else value
+    for name, meta in manifest["matrices"].items():
+        rot = lamq.Rot(np.asarray(arrays[meta["signs"]], dtype=np.float32))
+        coded = decode_rotated(arrays, meta)                                   # W Rᵀ, in float32
+        rows = [rot.bwd(mx.array(coded[i : i + 8192])).astype(mx.float16) for i in range(0, len(coded), 8192)]   # each row times R
+        w[name] = mx.concatenate(rows) if len(rows) > 1 else rows[0]
+        mx.eval(w[name])
+    return w
+
+
 class Drafter:
     def __init__(self, path, block, dtype=mx.float16, bits=None, select=False, int8=True):
         """dtype: the drafter's arithmetic. int8: the matrices that only ever multiply the block (q, o and the
@@ -159,7 +182,7 @@ class Drafter:
         self.explicit_mask = False   # check_drafter sets it: the sliding layers' mask built even where it hides nothing
         path = Path(path)
         c = json.loads((path / "config.json").read_text())
-        w = mx.load(str(path / "model.safetensors"))
+        w = _weights(path)
         self.block, self.table, self.dtype = block, block.table, dtype
         self.H, self.heads, self.kv, self.hd = c["hidden_size"], c["num_attention_heads"], c["num_key_value_heads"], c["head_dim"]
         self.eps, self.theta = float(c["rms_norm_eps"]), float(c["rope_theta"])

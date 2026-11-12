@@ -119,11 +119,14 @@ Two later changes are in this code. Each was measured against the version before
 
 The drafter is a DSpine model, trained with [SpecForge](https://github.com/sgl-project/SpecForge) from the published DFlash drafter for Qwen3.5-4B on the 1.2 GB file's own greedy answers. `modal_drafter.py` runs the training as one Modal job, and it cost $42. On 300 held-out prompts the trained drafter gets 4.65 tokens per check, against 4.30 for the stock DFlash drafter.
 
+`pack_drafter.py` stores the drafter at 4 bits a weight in the build's own code, with no calibration data: 464 MB against 1.83 GB at 16 bits. On 60 held-out prompts the 4-bit drafter kept 4.35 tokens per check against 4.38, and the text was the same. `drafter_q35.py` loads either form and writes the packed one out dense as it loads. The 4-bit drafter is the [`lm2-drafter-4bit` release](https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-drafter-4bit). It runs only beside the packed 1.2 GB file, which is not published.
+
 ```sh
 python runtime_mlx/test_fast_q35.py
 LAMQ_Q35_PACKED=path/to/packed python runtime_mlx/test_block_q35.py
 python runtime_mlx/check_drafter.py path/to/packed path/to/drafter
 python runtime_mlx/bench_drafted.py path/to/packed path/to/drafter --heldout path/to/drafter/heldout/heldout.json --take 30
+python pack_drafter.py path/to/drafter path/to/drafter-4bit
 ```
 
 `runtime_mlx/pack_dense.py` writes the packed file from the fine-tuned build's dense weights, and `runtime_mlx/modal_pack.py` runs it on Modal. `check_drafter.py` compares the drafter in MLX with SpecForge's own model on reference blocks that `drafter/reference.py` writes.
@@ -142,7 +145,7 @@ python runtime_mlx/bench_drafted.py path/to/packed path/to/drafter --heldout pat
 | `gguf_compiler.py`, `public_eval.py`, `eval_tasks.py` | The llama.cpp route, public quantizations and task benchmarks |
 | `lamq_export.py`, `runtime_mlx/` | The export format and the Apple Silicon runtime |
 | `runtime_mlx/fast_q35.py`, `block_q35.py`, `block_argmax_q35.py`, `pack_dense.py`, `modal_pack.py` | The runtime for the packed 1.2 GB file: one token at a time, a block of 8 or 16 tokens in one pass, and the packer |
-| `runtime_mlx/drafter_q35.py`, `draft_vocab_q35.py`, `check_drafter.py`, `bench_drafted.py`, `drafter/`, `modal_drafter.py` | Speculative decoding with a DSpine drafter, and the drafter's training |
+| `runtime_mlx/drafter_q35.py`, `draft_vocab_q35.py`, `check_drafter.py`, `bench_drafted.py`, `drafter/`, `modal_drafter.py`, `pack_drafter.py` | Speculative decoding with a DSpine drafter, the drafter's training, and the drafter stored at 4 bits |
 | `opgraph/` | The grammar: a model as a tensor network, and the rewrites and codes that act on it |
 | `run_completeness.py`, `make_report.py` | The check that nine published methods are reproduced exactly |
 | `analyze_compiler.py` | The tables of plan results |
@@ -179,4 +182,4 @@ python tests/test_rowgroup_alloc.py
 - **Benchmark copies.** `eval_tasks.py` downloads its benchmarks. On an offline machine it reads exported copies from `data/bench/`, which are not here. The Modal images run offline, so cache the benchmarks on the volume first.
 - **The script that assembled `site/data.json`.** It was a set of one-off steps. The source numbers are all in `results/`.
 - **LookAtMyQuant 2's weights and result files.** The 1.2 GB file is not published, and neither are the per-problem results behind `site2/data.json` or the script that writes the page's numbers from them.
-- **The drafter's weights.** The trained drafter is 1.8 GB and is not published. `modal_drafter.py` trains it.
+- **The drafter at 16 bits.** The drafter as trained is 1.8 GB and is not published. The 4-bit one is a release file, and `modal_drafter.py` trains it.
