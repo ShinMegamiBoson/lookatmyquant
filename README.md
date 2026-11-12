@@ -12,7 +12,7 @@ The code is under the MIT license.
 
 The recipe is post-training quantization with trellis codes, calibrated on the model's own worked math solutions with digit tokens weighted 10×, and with bits allocated per row by Fisher information. 4,000 steps of distillation follow, in which every layer is re-quantized once from the original weights. The page has the findings, the full recipe and its cost, about $34 of GPU time.
 
-The recipe's code is here, and the next section runs it.
+The recipe's code is here, and the next section runs it. The 1.23 GB file itself is the [`lm2-qwen35-4b-1.2gb` release](https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-qwen35-4b-1.2gb), packed for the Apple Silicon runtime.
 
 ## Run the compiler on SmolLM2-360M in three commands
 
@@ -119,7 +119,15 @@ Two later changes are in this code. Each was measured against the version before
 
 The drafter is a DSpine model, trained with [SpecForge](https://github.com/sgl-project/SpecForge) from the published DFlash drafter for Qwen3.5-4B on the 1.2 GB file's own greedy answers. `modal_drafter.py` runs the training as one Modal job, and it cost $42. On 300 held-out prompts the trained drafter gets 4.65 tokens per check, against 4.30 for the stock DFlash drafter.
 
-`pack_drafter.py` stores the drafter at 4 bits a weight in the build's own code, with no calibration data: 464 MB against 1.83 GB at 16 bits. On 60 held-out prompts the 4-bit drafter kept 4.35 tokens per check against 4.38, and the text was the same. `drafter_q35.py` loads either form and writes the packed one out dense as it loads. The 4-bit drafter is the [`lm2-drafter-4bit` release](https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-drafter-4bit). It runs only beside the packed 1.2 GB file, which is not published.
+`pack_drafter.py` stores the drafter at 4 bits a weight in the build's own code, with no calibration data: 464 MB against 1.83 GB at 16 bits. On 60 held-out prompts the 4-bit drafter kept 4.35 tokens per check against 4.38, and the text was the same. `drafter_q35.py` loads either form and writes the packed one out dense as it loads. The 4-bit drafter is the [`lm2-drafter-4bit` release](https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-drafter-4bit). It runs beside the packed 1.2 GB file, the [`lm2-qwen35-4b-1.2gb` release](https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-qwen35-4b-1.2gb).
+
+```sh
+gh release download lm2-qwen35-4b-1.2gb --repo ShinMegamiBoson/lookatmyquant -D q35-1.2gb
+gh release download lm2-drafter-4bit --repo ShinMegamiBoson/lookatmyquant -D drafter-4bit
+python runtime_mlx/bench_drafted.py q35-1.2gb drafter-4bit
+```
+
+The checks, and the packer for a drafter of your own:
 
 ```sh
 python runtime_mlx/test_fast_q35.py
@@ -181,5 +189,5 @@ python tests/test_rowgroup_alloc.py
 - **Model weights.** Everything downloads from Hugging Face. The Qwen3.5-4B jobs expect that model in `models/Qwen3.5-4B` on the volume.
 - **Benchmark copies.** `eval_tasks.py` downloads its benchmarks. On an offline machine it reads exported copies from `data/bench/`, which are not here. The Modal images run offline, so cache the benchmarks on the volume first.
 - **The script that assembled `site/data.json`.** It was a set of one-off steps. The source numbers are all in `results/`.
-- **LookAtMyQuant 2's weights and result files.** The 1.2 GB file is not published, and neither are the per-problem results behind `site2/data.json` or the script that writes the page's numbers from them.
+- **LookAtMyQuant 2's dense weights and result files.** The 1.2 GB file is a release in the packed format. The dense weights the benchmarks ran on are not published, and neither are the per-problem results behind `site2/data.json` or the script that writes the page's numbers from them.
 - **The drafter at 16 bits.** The drafter as trained is 1.8 GB and is not published. The 4-bit one is a release file, and `modal_drafter.py` trains it.
