@@ -366,7 +366,7 @@ def generate(model, block, drafter, prompt, max_tokens, size=8, eos=(), *, mode=
     """Greedy text from the target with the drafter proposing blocks of `size`. Returns the tokens and a record of the
     run: rounds, tokens kept per round, and seconds (the prompt, the drafter's reading of it, the rounds).
     Use mode="chat-fork" for an eight-slot verifier with one alternate branch, or mode="copy-wide" for
-    16-slot checks on known contiguous copies.
+    16-slot checks with tuned feed-forward kernels on known contiguous copies.
     Memory is wired for the run as mlx_lm's own generation wires it (a run that follows one of mlx_lm's without this
     measured 25 to 30 ms a round against 22.7)."""
     if mode not in ("linear", "chat-fork", "copy-wide"):
@@ -388,14 +388,14 @@ def generate(model, block, drafter, prompt, max_tokens, size=8, eos=(), *, mode=
             return generate_tree(model, block, drafter, prompt, max_tokens, size, eos)
 
         if __package__:
+            from .strategies.copy_wide_q35 import CopyWideGeometry
             from .strategies.ngram_source_cursor import generate as generate_copy
-            from .strategies.wide_gate_up_q35 import GateUpGeometry
         else:
+            from strategies.copy_wide_q35 import CopyWideGeometry
             from strategies.ngram_source_cursor import generate as generate_copy
-            from strategies.wide_gate_up_q35 import GateUpGeometry
-        if not hasattr(block, "_copy_gate_up"):
-            block._copy_gate_up = GateUpGeometry(block, (2, 16, 1))
-        with block._copy_gate_up.installed():
+        if not hasattr(block, "_copy_wide_geometry"):
+            block._copy_wide_geometry = CopyWideGeometry(block)
+        with block._copy_wide_geometry.installed():
             return generate_copy(model, block, drafter, prompt, max_tokens, size, eos, wide=True)
     finally:
         block.discard()  # generation owns its caches; no caller will resume them

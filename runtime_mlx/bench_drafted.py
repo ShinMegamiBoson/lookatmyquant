@@ -66,7 +66,7 @@ def main():
     ap.add_argument("--mlx", default="")
     ap.add_argument("--size", type=int, default=8)
     ap.add_argument("--mode", choices=("linear", "chat-fork", "copy-wide"), default="linear",
-                    help="verifier strategy; use copy-wide for known contiguous copies")
+                    help="verifier strategy (copy-wide uses tuned 16-slot checks on contiguous copies)")
     ap.add_argument("--tokens", type=int, default=256)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--prompts", default="")
