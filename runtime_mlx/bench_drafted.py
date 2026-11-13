@@ -12,6 +12,7 @@ import json
 import statistics
 import sys
 import time
+from functools import partial
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -64,6 +65,8 @@ def main():
     ap.add_argument("drafter")
     ap.add_argument("--mlx", default="")
     ap.add_argument("--size", type=int, default=8)
+    ap.add_argument("--mode", choices=("linear", "chat-fork", "copy-wide"), default="linear",
+                    help="verifier strategy; use copy-wide for known contiguous copies")
     ap.add_argument("--tokens", type=int, default=256)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--prompts", default="")
@@ -77,6 +80,9 @@ def main():
     ap.add_argument("--full-vocab", action="store_true", help="score the whole vocabulary for proposals as well as verification")
     ap.add_argument("--out", default="")
     args = ap.parse_args()
+    if args.mode != "linear" and (args.size != 8 or args.select):
+        ap.error(f"--mode {args.mode} requires --size 8 and greedy proposals")
+    generate = partial(drafter_q35.generate, mode=args.mode)
     model, tok, blk, drafter = drafter_q35.load(
         args.packed, args.drafter, dtype=getattr(mx, args.dtype), bits=args.bits or None,
         select=args.select, int8=not args.dense, full_vocab=args.full_vocab,
@@ -94,7 +100,7 @@ def main():
         prompts = {f"{h['source'].split('/')[-1][:18]} {i}": h["input_ids"][: h["prompt_len"]] for i, h in list(enumerate(held))[::step][: args.take]}
     first = next(iter(prompts.values()))
     plain(model, tok, first, 16)                                  # kernels compile on first use
-    drafter_q35.generate(model, blk, drafter, first, 24, size=args.size, eos=eos)
+    generate(model, blk, drafter, first, 24, size=args.size, eos=eos)
     if ref:
         plain(*ref, chat(ref[1], PROMPTS['essay']), 16)
     res = {name: {"plain tok/s": [], "drafted tok/s": [], "tokens per check": [], "same": [], "tokens": []} for name in prompts}
@@ -104,11 +110,11 @@ def main():
             quiet.append(round(plain(*ref, chat(ref[1], PROMPTS['essay']), args.tokens)[1], 1))
         for name, prompt in prompts.items():
             if args.reverse:
-                got, st = drafter_q35.generate(model, blk, drafter, prompt, args.tokens, size=args.size, eos=eos)
+                got, st = generate(model, blk, drafter, prompt, args.tokens, size=args.size, eos=eos)
                 want, tps = plain(model, tok, prompt, args.tokens)
             else:
                 want, tps = plain(model, tok, prompt, args.tokens)
-                got, st = drafter_q35.generate(model, blk, drafter, prompt, args.tokens, size=args.size, eos=eos)
+                got, st = generate(model, blk, drafter, prompt, args.tokens, size=args.size, eos=eos)
             n = min(len(want), len(got))
             diff = next((i for i in range(n) if want[i] != got[i]), None if len(want) == len(got) else n)
             r = res[name]
@@ -138,7 +144,7 @@ def main():
     total = sum(r["tokens"][-1] for r in res.values())
     plain_s, drafted_s = sum(r["tokens"][-1] / r["median plain"] for r in res.values()), sum(r["tokens"][-1] / r["median drafted"] for r in res.values())
     print(f"{'all prompts':{width}s} {total / plain_s:7.1f} {total / drafted_s:8.1f} {plain_s / drafted_s:6.2f}   (tokens over summed time)" + (f"   MLX 4-bit by round: {quiet}" if ref else ""))
-    out = {"device": mx.device_info(), "size": args.size, "tokens": args.tokens, "rounds": args.rounds, "drafter dtype": args.dtype, "drafter bits": args.bits, "heldout": args.heldout, "reverse": args.reverse, "path selection": args.select, "drafter 8-bit rows": not args.dense, "proposal vocabulary": blk.table.V if drafter.proposal_head is None else int(drafter.proposal_head.ids.size),
+    out = {"device": mx.device_info(), "size": args.size, "mode": args.mode, "tokens": args.tokens, "rounds": args.rounds, "drafter dtype": args.dtype, "drafter bits": args.bits, "heldout": args.heldout, "reverse": args.reverse, "path selection": args.select, "drafter 8-bit rows": not args.dense, "proposal vocabulary": blk.table.V if drafter.proposal_head is None else int(drafter.proposal_head.ids.size),
            "MLX 4-bit tok/s by round": quiet, "results": res, "all prompts": {"plain tok/s": round(total / plain_s, 1), "drafted tok/s": round(total / drafted_s, 1),
                                                                              "tokens per check": round(sum(r["tokens"][-1] - 1 for r in res.values()) / sum((r["tokens"][-1] - 1) / med(r["tokens per check"]) for r in res.values()), 2),
                                                                              "same text": sum(all(r["same"]) for r in res.values()), "prompts": len(res)}}

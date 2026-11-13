@@ -127,6 +127,14 @@ gh release download lm2-drafter-4bit --repo ShinMegamiBoson/lookatmyquant -D dra
 python runtime_mlx/bench_drafted.py q35-1.2gb drafter-4bit
 ```
 
+The benchmark defaults to linear verification. Use `--mode chat-fork` to try a second candidate at an ambiguous early position, or `--mode copy-wide` for known contiguous copies. Copy mode uses the source cursor and tuned 16-slot gate/up kernel. Both modes verify all emitted tokens with the packed target. To benchmark the chat fork, run:
+
+```sh
+python runtime_mlx/bench_drafted.py q35-1.2gb drafter-4bit --mode chat-fork --prompts chat
+```
+
+For a copy benchmark, pass `--mode copy-wide --heldout path/to/copy-prompts.json`. The JSON entries carry `source`, `prompt_len`, and `input_ids` from the packed model's tokenizer.
+
 The checks, and the packer for a drafter of your own:
 
 ```sh

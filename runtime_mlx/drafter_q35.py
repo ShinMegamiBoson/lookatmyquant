@@ -362,17 +362,41 @@ def _prefill(model, block, prompt, cache, taps):
     return first, got
 
 
-def generate(model, block, drafter, prompt, max_tokens, size=8, eos=()):
+def generate(model, block, drafter, prompt, max_tokens, size=8, eos=(), *, mode="linear"):
     """Greedy text from the target with the drafter proposing blocks of `size`. Returns the tokens and a record of the
     run: rounds, tokens kept per round, and seconds (the prompt, the drafter's reading of it, the rounds).
+    Use mode="chat-fork" for an eight-slot verifier with one alternate branch, or mode="copy-wide" for
+    16-slot checks on known contiguous copies.
     Memory is wired for the run as mlx_lm's own generation wires it (a run that follows one of mlx_lm's without this
     measured 25 to 30 ms a round against 22.7)."""
+    if mode not in ("linear", "chat-fork", "copy-wide"):
+        raise ValueError(f"unknown drafter mode: {mode}")
+    if mode != "linear" and (size != 8 or drafter.path):
+        raise ValueError(f"{mode} requires size=8 and greedy proposals")
     old = mx.set_wired_limit(mx.device_info()["max_recommended_working_set_size"])
     proposal_head = drafter.proposal_head
     try:
         if proposal_head is not None and not proposal_head.covers_prompt(prompt):
             drafter.proposal_head = None
-        return _generate(model, block, drafter, prompt, max_tokens, size, eos)
+        if mode == "linear":
+            return _generate(model, block, drafter, prompt, max_tokens, size, eos)
+        if mode == "chat-fork":
+            if __package__:
+                from .strategies.tree_verifier_q35 import generate as generate_tree
+            else:
+                from strategies.tree_verifier_q35 import generate as generate_tree
+            return generate_tree(model, block, drafter, prompt, max_tokens, size, eos)
+
+        if __package__:
+            from .strategies.ngram_source_cursor import generate as generate_copy
+            from .strategies.wide_gate_up_q35 import GateUpGeometry
+        else:
+            from strategies.ngram_source_cursor import generate as generate_copy
+            from strategies.wide_gate_up_q35 import GateUpGeometry
+        if not hasattr(block, "_copy_gate_up"):
+            block._copy_gate_up = GateUpGeometry(block, (2, 16, 1))
+        with block._copy_gate_up.installed():
+            return generate_copy(model, block, drafter, prompt, max_tokens, size, eos, wide=True)
     finally:
         block.discard()  # generation owns its caches; no caller will resume them
         drafter.proposal_head = proposal_head
