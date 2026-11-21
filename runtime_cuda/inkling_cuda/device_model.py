@@ -256,11 +256,9 @@ class DeviceLayer:
         taps, width = weight.shape
         out = scratch.take(width)
         divisor = 2 * taps + 1 if row(dynamic, 0).value else taps + 1
-        count = x.count if isinstance(x, Batch) else 1
-        for i in range(count):
-            self.dev.vector("causal_conv", width, row(x, i), weight.ptr, row(dynamic, i), history, row(out, i),
-                            U32(width), U32(taps), U32(position + i), U32(self.cfg.head_dim),
-                            U32(taps + PREFILL_CHUNK - 1), F32(divisor ** -0.5))
+        self.dev.vector("causal_conv", width, x, weight.ptr, dynamic, history, out,
+                        U32(width), U32(taps), U32(position), U32(self.cfg.head_dim),
+                        U32(taps + PREFILL_CHUNK - 1), F32(divisor ** -0.5))
         return out
 
     def kv_conv(self, x, normalized, name, history, position, scratch):
@@ -308,14 +306,11 @@ class DeviceLayer:
         count = q.count if isinstance(q, Batch) else 1
         if self.sliding or position + count <= cfg.log_scaling_n_floor:
             self.clip_queries(q, rel, 1.0)
-        for i in range(count):
-            pos = position + i
-            q_row, rel_row = row(q, i), row(rel, i)
-            if not self.sliding and position + count > cfg.log_scaling_n_floor:
-                factor = 1 + cfg.log_scaling_alpha * math.log(max((pos + 1) / cfg.log_scaling_n_floor, 1))
-                self.clip_queries(q_row, rel_row, factor)
-            self.attend(q_row, row(k, i), row(v, i), rel_row, row(sink, i),
-                        row(attended, i), pos, cache, scores)
+        else:
+            for i in range(count):
+                factor = 1 + cfg.log_scaling_alpha * math.log(max((position + i + 1) / cfg.log_scaling_n_floor, 1))
+                self.clip_queries(row(q, i), row(rel, i), factor)
+        self.attend(q, k, v, rel, sink, attended, position, count, cache, scores)
         gate = self.linear["o_proj.gate_proj"](q_in, scratch)
         dev.vector("attention_gate", q_heads * dim, attended, gate, attended, U32(q_heads * dim))
         projected = self.linear["o_proj.linear"](attended, scratch)
@@ -329,19 +324,21 @@ class DeviceLayer:
         dev.normalize(rel, rel, cfg.d_rel, heads, w["self_attn.relative_position_bias.norm.scale"],
                       clip=cfg.rel_l2_clip_threshold, factor=factor)
 
-    def attend(self, q, k, v, rel, sink, out, position, cache, scores):
+    def attend(self, q, k, v, rel, sink, out, position, batch_count, cache, scores):
         cfg, dev = self.cfg, self.dev
         q_heads, kv_heads, dim = cfg.num_attention_heads, cfg.num_key_value_heads, cfg.head_dim
         kv_width = kv_heads * dim
+        # The ring holds the live window plus the rest of this chunk. Every
+        # position can read its causal window after the batched cache write.
         dev.vector("kv_store", kv_width, k, v, cache.k, cache.v, U32(kv_width), U32(dim),
-                   U32(cache.capacity), U32(position % cache.capacity))
-        count = min(position + 1, cache.window)
+                   U32(cache.capacity), U32(position))
+        max_count = min(position + batch_count, cache.window)
         repeat = q_heads // kv_heads
         dev.launch("attention_scores", (q, cache.k, rel, self.w["self_attn.relative_position_bias.proj"].ptr,
-                                       scores, U32(count), U32(dim), U32(repeat), U32(position),
+                                       scores, U32(cache.window), U32(dim), U32(repeat), U32(position),
                                        U32(cache.capacity), U32(cfg.d_rel), U32(cfg.rel_extent), F32(dim ** -0.5)),
-                   (tiles(count, 4), q_heads, 1))
-        dev.launch("attention_mix", (scores, cache.v, sink, out, U32(count), U32(dim),
+                   (tiles(max_count, 4), q_heads, 1))
+        dev.launch("attention_mix", (scores, cache.v, sink, out, U32(cache.window), U32(dim),
                                      U32(repeat), U32(position), U32(cache.capacity)),
                    (q_heads, 1, 1))
 
@@ -444,10 +441,11 @@ class DeviceSession:
         scratch_size = (biggest_bucket + model.head.size + 128 * (h + d + q_width + kv_width) +
                         4 * top * (h + d) + e)
         self.residual_size = (cfg.total_visits + 1) * h
+        self.score_size = cfg.num_attention_heads * context
         self.prefill_buffer = None
         try:
             self.scratch = Scratch(self.alloc(scratch_size), scratch_size)
-            self.scores = self.alloc(cfg.num_attention_heads * context)
+            self.scores = self.alloc(self.score_size)
             self.residuals = self.alloc(self.residual_size)
             self.logits = self.alloc(model.head.size)
             self.argmax_groups = min(128, tiles(model.head.size, 2048))
@@ -508,14 +506,17 @@ class DeviceSession:
         cfg, dev = model.cfg, model.dev
         width = cfg.hidden_size
         residuals = self.residuals
+        attention_scores = self.scores
         if count > 1:
-            # Set one common stride for the residual and scratch pointers of each token.
+            # All activation pointers in a batched launch use the same stride.
             residual_end = tiles(self.residual_size, 32) * 32
-            stride = tiles(residual_end + scratch.capacity, 32) * 32
+            score_start = residual_end + tiles(scratch.capacity, 32) * 32
+            stride = tiles(score_start + self.score_size, 32) * 32
             if self.prefill_buffer is None:
                 self.prefill_buffer = self.alloc(PREFILL_CHUNK * stride)
             residuals = Batch(self.prefill_buffer, 4 * stride, count)
             scratch = Scratch(offset(residuals, residual_end), scratch.capacity)
+            attention_scores = offset(residuals, score_start)
         scratch.mark = 0
         h = offset(residuals, cfg.total_visits * width)
         embedding = scratch.take(width)
@@ -534,7 +535,7 @@ class DeviceSession:
             logical_visit += 1
             layer = model.layers[index]
             out = offset(residuals, slot * width)
-            layer(hidden, blocks, self.position, self.cache(layer, slot), messages, self.scores, scratch, out)
+            layer(hidden, blocks, self.position, self.cache(layer, slot), messages, attention_scores, scratch, out)
             if layer.boundary:
                 blocks.append(hidden)
             scratch.mark = 0

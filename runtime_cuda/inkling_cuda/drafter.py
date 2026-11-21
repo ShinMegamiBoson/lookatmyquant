@@ -213,7 +213,7 @@ def speculative_greedy(path, session, ordinal, inputs, limit, eos, block_size):
         drafter = Drafter(Path(path), session, device)
         torch.cuda.current_stream().synchronize()
         load_seconds = time.perf_counter() - start
-        size = min(block_size or drafter.block_size, drafter.block_size)
+        size = min(block_size or 4, drafter.block_size)
         start = time.perf_counter()
         for i in range(0, len(inputs), PREFILL_CHUNK):
             prompt_chunk = inputs[i:i + PREFILL_CHUNK]

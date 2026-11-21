@@ -494,6 +494,8 @@ CONVOLUTION = entry("causal_conv", {
     mad.lo.u32 %r1, %r1, 128, %r2;
     setp.ge.u32 %p1, %r1, %n1;
     @%p1 ret;
+    mov.u32 %r11, %ctaid.z;
+    add.u32 %n3, %n3, %r11;
     mad.wide.u32 %rd1, %r1, 4, %d1;
     ld.global.f32 %f1, [%rd1];
     rem.u32 %r3, %n3, %n5;
@@ -501,13 +503,22 @@ CONVOLUTION = entry("causal_conv", {
     mad.wide.u32 %rd2, %r4, 4, %d4;
     st.global.f32 [%rd2], %f1;
     setp.ne.u64 %p2, %d3, 0;
+    @%p2 mad.wide.u32 %d3, %r11, %batch_stride, %d3;
     mov.u32 %r5, 0;
-    min.u32 %r6, %n2, %n3;
 loop:
+    // Read in-chunk lags directly from the input rows. Those CTAs may not have
+    // written their history slots yet.
+    setp.gt.u32 %p5, %r5, %r11;
+    @%p5 bra cached_lag;
+    mul.wide.u32 %rd5, %r5, %batch_stride;
+    sub.u64 %rd2, %rd1, %rd5;
+    bra load_lag;
+cached_lag:
     sub.u32 %r7, %n3, %r5;
     rem.u32 %r7, %r7, %n5;
     mad.lo.u32 %r4, %r7, %n1, %r1;
     mad.wide.u32 %rd2, %r4, 4, %d4;
+load_lag:
     ld.global.f32 %f2, [%rd2];
     sub.u32 %r8, %n2, 1;
     sub.u32 %r8, %r8, %r5;
@@ -532,17 +543,21 @@ accumulate:
     mad.wide.u32 %rd4, %r1, 4, %d5;
     st.global.f32 [%rd4], %f1;
     ret;
-""")
+""", batched="x out")
 
 
 ATTENTION_SCORES = entry("attention_scores", {
     "u64": "q k_cache relative relative_project scores",
-    "u32": "count head_dim groups_per_kv pos capacity rel_width rel_extent",
+    "u32": "window head_dim groups_per_kv pos capacity rel_width rel_extent",
     "f32": "scale",
 }, f"""
     mov.u32 %r1, %ctaid.x;
     mov.u32 %r2, %tid.x;
     mov.u32 %r3, %ctaid.y;
+    mov.u32 %r10, %ctaid.z;
+    add.u32 %n4, %n4, %r10;
+    add.u32 %r10, %n4, 1;
+    min.u32 %n1, %n1, %r10;
     shr.u32 %r4, %r2, 5;
     mad.lo.u32 %r4, %r1, 4, %r4;
     setp.ge.u32 %p1, %r4, %n1;
@@ -595,15 +610,19 @@ finish:
     mad.wide.u32 %rd3, %r6, 4, %d5;
     st.global.f32 [%rd3], %f1;
     ret;
-""")
+""", batched="q relative scores")
 
 
 ATTENTION_MIX = entry("attention_mix", {
     "u64": "scores v_cache sink out",
-    "u32": "count head_dim groups_per_kv pos capacity",
+    "u32": "window head_dim groups_per_kv pos capacity",
 }, f"""
     mov.u32 %r1, %tid.x;
     mov.u32 %r2, %ctaid.x;
+    mov.u32 %r9, %ctaid.z;
+    add.u32 %n4, %n4, %r9;
+    add.u32 %r9, %n4, 1;
+    min.u32 %n1, %n1, %r9;
     mul.lo.u32 %r3, %r2, %n1;
     mad.wide.u32 %rd1, %r3, 4, %d1;
     mad.wide.u32 %rd2, %r2, 4, %d3;
@@ -667,18 +686,21 @@ vals:
     st.global.f32 [%rd5], %f4;
     add.u32 %r6, %r6, 128;
     bra outputs;
-""", REDUCTION)
+""", REDUCTION, batched="scores sink out")
 
 
 KV_STORE = entry("kv_store", {
     "u64": "key value keys values",
-    "u32": "width head_dim capacity slot",
+    "u32": "width head_dim capacity pos",
 }, """
     mov.u32 %r1, %ctaid.x;
     mov.u32 %r2, %tid.x;
     mad.lo.u32 %r1, %r1, 128, %r2;
     setp.ge.u32 %p1, %r1, %n1;
     @%p1 ret;
+    mov.u32 %r5, %ctaid.z;
+    add.u32 %r5, %r5, %n4;
+    rem.u32 %n4, %r5, %n3;
     div.u32 %r3, %r1, %n2;
     rem.u32 %r4, %r1, %n2;
     mad.lo.u32 %r3, %r3, %n3, %n4;
@@ -692,7 +714,7 @@ KV_STORE = entry("kv_store", {
     st.global.f32 [%rd3], %f1;
     st.global.f32 [%rd4], %f2;
     ret;
-""")
+""", batched="key value")
 
 
 ROUTE = entry("select_experts", {

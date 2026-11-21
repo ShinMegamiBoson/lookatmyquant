@@ -2,7 +2,7 @@
 
 This runtime reads the original LookAtMyQuant Inkling 2 Mini text packs. The CUDA path keeps packed weights, activations, residuals and all 48 visit caches on the device. It includes packed embedding decode, Hadamard rotations, clustered residual reads, cross-pass message gates, causal convolution, grouped-query attention with relative bias and sinks, and top-k expert routing. Each routed projection dispatches all selected experts in one kernel regardless of which packed formats they use.
 
-The NVIDIA driver JIT-compiles the PTX. Python loads the checkpoint, handles tokenization and schedules kernels. Prefill processes up to 16 consecutive positions per layer. Each greedy decode step copies an eight-byte token and status pair to the host. The `hybrid` backend provides the NumPy decoder with CUDA projections for comparisons.
+The NVIDIA driver JIT-compiles the PTX. Python loads the checkpoint, handles tokenization and schedules kernels. Prefill processes up to 16 consecutive positions per layer, including packed projections, causal convolutions and attention. Each greedy decode step copies an eight-byte token and status pair to the host. The `hybrid` backend provides the NumPy decoder with CUDA projections for comparisons.
 
 ## Run
 
@@ -38,6 +38,27 @@ The tests cover all nine packed code formats, release-width Hadamard transforms,
 
 `synthetic-smoke.json` records the original serial decoder benchmark. In that fixture, small differences at BF16 message-gate boundaries changed the experts selected later in the loop.
 
-The implemented scope is single-sequence greedy text generation. Both published packs were loaded and run on an RTX 5080 Laptop GPU. End-to-end comparison with the Apple Silicon Metal runtime remains open.
+On an RTX 5080 Laptop GPU, the two published packs produced identical token IDs with CUDA greedy decoding and DSpark on “What is the capital of France? Reply with just the city name.” The test used a 48-token limit and a four-position draft block.
+
+| Pack | Matched output IDs | Greedy decode | DSpark decode |
+| --- | ---: | ---: | ---: |
+| 5.4 GB | 48 | 14.1 tokens/s | 17.6 tokens/s |
+| 8.9 GB | 47 (EOS) | 12.7 tokens/s | 1.7 tokens/s with another inference process active |
+
+For the 5.4 GB run, the hybrid decoder matched the same 48 IDs. The 28-token prompt took 0.56 s to prefill with CUDA and 2.97 s with the hybrid backend. On the separate arithmetic prompt “What is 17 times 23? Give just the answer.” the 5.4 GB pack repeated the expression in both generation modes.
+
+The implemented scope is single-sequence greedy text generation. End-to-end comparison with the Apple Silicon Metal runtime remains open. To replay the same prompt tokens on MLX, save a CUDA run with `--json cuda-run.json` and run this from the repository root on Apple Silicon with the same checkpoint revision.
+
+~~~python
+import json
+from pathlib import Path
+
+from runtime_mlx.inkling import Inkling2LoopPackedMLX, generate_serial
+
+run = json.loads(Path("cuda-run.json").read_text())
+model = Inkling2LoopPackedMLX("/path/to/same/packed/checkpoint")
+ids, _ = generate_serial(model, run["prompt_tokens"], max_tokens=len(run["generated_tokens"]))
+assert ids == run["generated_tokens"]
+~~~
 
 Decoder equations and test fixtures follow the existing MLX runtime under the upstream MIT license.
