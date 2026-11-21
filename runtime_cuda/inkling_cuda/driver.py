@@ -68,6 +68,9 @@ class Cuda:
         self.call("cuMemcpyDtoH_v2", PTR(array.ctypes.data), pointer, SIZE(array.nbytes))
         return array
 
+    def copy(self, destination, source, nbytes):
+        self.call("cuMemcpyDtoDAsync_v2", destination, source, SIZE(nbytes), PTR())
+
     def module_function(self, module, name):
         function = PTR()
         self.call("cuModuleGetFunction", ct.byref(function), module, ct.c_char_p(name.encode("ascii")))
@@ -91,21 +94,21 @@ class Cuda:
                   U32(threads), U32(1), U32(1), U32(shared),
                   stream if stream is not None else PTR(), params, PTR())
 
-    def packed_project(self, slab, x, experts, out, slots, x_div, stream=None):
+    def packed_project(self, slab, x, experts, out, slots, x_div, stream=None, *, batch=1, stride=0):
         self.launch(
-            self.kernel, ((slab.rows + 3) // 4, slots, 1), 128,
+            self.kernel, ((slab.rows + 3) // 4, slots, batch), 128,
             x, slab.codes, slab.scales, slab.table, experts, out,
             U32(slab.rows), U32(slab.width), U32(slab.words), U32(slab.bits),
             U32(slab.group), U32(slab.hash_shift), U32(slab.multiplier),
-            U32(x_div), U32(slab.lloyd), U64(), U64(), stream=stream,
+            U32(x_div), U32(slab.lloyd), U64(), U64(), U32(stride), stream=stream,
         )
 
-    def routed_project(self, x, experts, out, slots, x_div, rows, width, descriptors, mapping):
+    def routed_project(self, x, experts, out, slots, x_div, rows, width, descriptors, mapping, *, batch=1, stride=0):
         self.launch(
-            self.kernel, ((rows + 3) // 4, slots, 1), 128,
+            self.kernel, ((rows + 3) // 4, slots, batch), 128,
             x, U64(), U64(), U64(), experts, out,
             U32(rows), U32(width), U32(), U32(), U32(), U32(), U32(), U32(x_div),
-            U32(), descriptors, mapping,
+            U32(), descriptors, mapping, U32(stride),
         )
 
     def upload(self, array):

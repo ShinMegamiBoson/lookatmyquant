@@ -1,4 +1,4 @@
-"""Device-resident serial decoder for LookAtMyQuant's Inkling text checkpoints."""
+"""Device-resident decoder for LookAtMyQuant's Inkling text checkpoints."""
 import math
 from dataclasses import dataclass
 
@@ -12,14 +12,35 @@ from .packed import EXPERT_FORMATS, hadamard_factors
 
 NULL = U64()
 THREADS = 128
+PREFILL_CHUNK = 16
 
 
 def tiles(size, width=THREADS):
     return (size + width - 1) // width
 
 
+@dataclass(frozen=True)
+class Batch:
+    ptr: U64
+    stride: int
+    count: int
+
+    def row(self, index):
+        return U64(self.ptr.value + index * self.stride)
+
+
 def offset(pointer, floats):
+    if isinstance(pointer, Batch):
+        return Batch(offset(pointer.ptr, floats), pointer.stride, pointer.count)
     return U64(pointer.value + 4 * floats)
+
+
+def row(pointer, index):
+    return pointer.row(index) if isinstance(pointer, Batch) else pointer
+
+
+def batch_params(pointer):
+    return {"batch": pointer.count, "stride": pointer.stride} if isinstance(pointer, Batch) else {}
 
 
 @dataclass(frozen=True)
@@ -45,9 +66,15 @@ class Device:
         return Weight(self.cuda.upload(value), value.shape)
 
     def launch(self, name, args, grid, shared=0):
+        batch = args[0]
+        stride = 0
+        if isinstance(batch, Batch):
+            args = tuple(row(arg, 0) for arg in args)
+            grid = (*grid[:2], batch.count)
+            stride = batch.stride
         if name not in self.functions:
             self.functions[name] = self.cuda.module_function(self.module, name)
-        self.cuda.launch(self.functions[name], grid, THREADS, *args, shared=shared)
+        self.cuda.launch(self.functions[name], grid, THREADS, *args, U32(stride), shared=shared)
 
     def vector(self, name, size, *args):
         self.launch(name, args, (tiles(size), 1, 1))
@@ -60,9 +87,9 @@ class Device:
             (groups, 1, 1),
         )
 
-    def dense(self, x, weight, out):
+    def dense(self, x, weight, out, kernel="dense_matvec"):
         rows, width = weight.shape
-        self.launch("dense_matvec", (x, weight.ptr, out, U32(rows), U32(width)), (tiles(rows, 4), 1, 1))
+        self.launch(kernel, (x, weight.ptr, out, U32(rows), U32(width)), (tiles(rows, 4), 1, 1))
 
     def rotate(self, x, signs, out, inverse=False, rows=1):
         width, = signs.shape
@@ -88,7 +115,8 @@ class DeviceLinear:
         rotated = scratch.take(slab.width)
         projected = scratch.take(slab.rows) if self.out_signs is not None else out
         dev.rotate(x, self.signs, rotated)
-        dev.cuda.packed_project(slab, rotated, dev.zero_index, projected, 1, 1)
+        dev.cuda.packed_project(slab, row(rotated, 0), dev.zero_index, row(projected, 0), 1, 1,
+                                **batch_params(rotated))
         if self.out_signs is not None:
             dev.rotate(projected, self.out_signs, out, inverse=True)
         scratch.mark = mark
@@ -114,8 +142,9 @@ class DeviceExperts:
         mark = scratch.mark
         rotated = scratch.take(slots // x_div * self.width)
         self.device.rotate(x, self.signs, rotated, rows=slots // x_div)
-        self.device.cuda.routed_project(rotated, selected, out, slots, x_div, self.rows, self.width,
-                                        self.descriptors.ptr, self.mapping.ptr)
+        self.device.cuda.routed_project(row(rotated, 0), row(selected, 0), row(out, 0), slots, x_div,
+                                        self.rows, self.width, self.descriptors.ptr, self.mapping.ptr,
+                                        **batch_params(rotated))
         scratch.mark = mark
         return out
 
@@ -128,13 +157,14 @@ class DeviceVocabulary:
         self.inverse = vocab.inverse
         self.size = vocab.order.size
 
-    def embed(self, token, scratch):
+    def embed(self, token, scratch, out=None):
         if not 0 <= token < self.size:
             raise ValueError(f"Token {token} is outside the embedding vocabulary")
         position = int(self.inverse[token])
         for lo, hi, slab, signs in self.buckets:
             if lo <= position < hi:
-                out = scratch.take(slab.width)
+                if out is None:
+                    out = scratch.take(slab.width)
                 mark = scratch.mark
                 row = scratch.take(slab.width)
                 self.device.vector(
@@ -151,12 +181,19 @@ class DeviceVocabulary:
         dev = self.device
         mark = scratch.mark
         for lo, hi, slab, signs in self.buckets:
-            rotated = scratch.take(slab.width)
             projected = scratch.take(slab.rows)
-            dev.rotate(x, signs, rotated)
-            dev.cuda.packed_project(slab, rotated, dev.zero_index, projected, 1, 1)
+            self.project_bucket(x, slab, signs, projected, scratch)
             dev.vector("head_scatter", hi - lo, projected, offset(self.order.ptr, lo), out, U32(hi - lo), F32(cap))
             scratch.mark = mark
+
+    def project_bucket(self, x, slab, signs, out, scratch):
+        dev = self.device
+        mark = scratch.mark
+        rotated = scratch.take(slab.width)
+        dev.rotate(x, signs, rotated)
+        dev.cuda.packed_project(slab, row(rotated, 0), dev.zero_index, row(out, 0), 1, 1,
+                                **batch_params(rotated))
+        scratch.mark = mark
 
 
 class Scratch:
@@ -171,6 +208,11 @@ class Scratch:
         if self.mark > self.capacity:
             raise RuntimeError("Decoder scratch capacity exceeded")
         return offset(self.pointer, start)
+
+    def row(self, index):
+        scratch = Scratch(row(self.pointer, index), self.capacity)
+        scratch.mark = self.mark
+        return scratch
 
 
 def block_attention(dev, query, blocks, partial, width, scratch):
@@ -213,9 +255,12 @@ class DeviceLayer:
     def conv(self, x, weight, history, position, scratch, dynamic=NULL):
         taps, width = weight.shape
         out = scratch.take(width)
-        divisor = 2 * taps + 1 if dynamic.value else taps + 1
-        self.dev.vector("causal_conv", width, x, weight.ptr, dynamic, history, out,
-                        U32(width), U32(taps), U32(position), U32(self.cfg.head_dim), F32(divisor ** -0.5))
+        divisor = 2 * taps + 1 if row(dynamic, 0).value else taps + 1
+        count = x.count if isinstance(x, Batch) else 1
+        for i in range(count):
+            self.dev.vector("causal_conv", width, row(x, i), weight.ptr, row(dynamic, i), history, row(out, i),
+                            U32(width), U32(taps), U32(position + i), U32(self.cfg.head_dim),
+                            U32(taps + PREFILL_CHUNK - 1), F32(divisor ** -0.5))
         return out
 
     def kv_conv(self, x, normalized, name, history, position, scratch):
@@ -241,8 +286,7 @@ class DeviceLayer:
         dev.normalize(x, pair, h)
         dev.normalize(message, offset(pair, h), h)
         dev.vector("vec_bf16", 2 * h, pair, pair, U32(2 * h))
-        dev.dense(pair, down, rank)
-        dev.vector("vec_bf16", down.shape[0], rank, rank, U32(down.shape[0]))
+        dev.dense(pair, down, rank, kernel="message_down")
         dev.dense(rank, forget, f)
         dev.dense(rank, add, a)
         dev.vector("message_mix", h, x, message, f, a, out, U32(h))
@@ -255,35 +299,51 @@ class DeviceLayer:
         k = self.kv_conv(self.linear["k_proj.linear"](k_in, scratch), k_in, "k", cache.conv[0], position, scratch)
         v = self.kv_conv(self.linear["v_proj.linear"](v_in, scratch), v_in, "v", cache.conv[1], position, scratch)
         rel = self.linear["relative_position_bias.linear"](q_in, scratch)
-        factor = 1.0
-        if not self.sliding:
-            factor += cfg.log_scaling_alpha * math.log(max((position + 1) / cfg.log_scaling_n_floor, 1))
         q_heads, kv_heads, dim = cfg.num_attention_heads, cfg.num_key_value_heads, cfg.head_dim
-        dev.normalize(q, q, dim, q_heads, w["self_attn.q_proj.norm.scale"],
-                      clip=cfg.qk_l2_clip_threshold, factor=factor)
         dev.normalize(k, k, dim, kv_heads, clip=cfg.qk_l2_clip_threshold)
         dev.normalize(v, v, dim, kv_heads, eps=cfg.rms_norm_eps)
-        dev.normalize(rel, rel, cfg.d_rel, q_heads, w["self_attn.relative_position_bias.norm.scale"],
-                      clip=cfg.rel_l2_clip_threshold, factor=factor)
-        kv_width = kv_heads * dim
-        dev.vector("kv_store", kv_width, k, v, cache.k, cache.v, U32(kv_width), U32(dim), U32(cache.capacity),
-                   U32(position % cache.capacity))
-        count = min(position + 1, cache.capacity)
-        repeat = q_heads // kv_heads
-        dev.launch("attention_scores", (q, cache.k, rel, w["self_attn.relative_position_bias.proj"].ptr,
-                                       scores, U32(count), U32(dim), U32(repeat), U32(position),
-                                       U32(cache.capacity), U32(cfg.d_rel), U32(cfg.rel_extent), F32(dim ** -0.5)),
-                   (tiles(count, 4), q_heads, 1))
         sink = scratch.take(q_heads)
         dev.dense(q_in, w["self_attn.sink_proj.weight"], sink)
         attended = scratch.take(q_heads * dim)
-        dev.launch("attention_mix", (scores, cache.v, sink, attended, U32(count), U32(dim),
-                                     U32(repeat), U32(position), U32(cache.capacity)),
-                   (q_heads, 1, 1))
+        count = q.count if isinstance(q, Batch) else 1
+        if self.sliding or position + count <= cfg.log_scaling_n_floor:
+            self.clip_queries(q, rel, 1.0)
+        for i in range(count):
+            pos = position + i
+            q_row, rel_row = row(q, i), row(rel, i)
+            if not self.sliding and position + count > cfg.log_scaling_n_floor:
+                factor = 1 + cfg.log_scaling_alpha * math.log(max((pos + 1) / cfg.log_scaling_n_floor, 1))
+                self.clip_queries(q_row, rel_row, factor)
+            self.attend(q_row, row(k, i), row(v, i), rel_row, row(sink, i),
+                        row(attended, i), pos, cache, scores)
         gate = self.linear["o_proj.gate_proj"](q_in, scratch)
         dev.vector("attention_gate", q_heads * dim, attended, gate, attended, U32(q_heads * dim))
         projected = self.linear["o_proj.linear"](attended, scratch)
         return self.conv(projected, w["post_attention_convolution.conv1d.weight"], cache.conv[2], position, scratch)
+
+    def clip_queries(self, q, rel, factor):
+        cfg, dev, w = self.cfg, self.dev, self.w
+        heads = cfg.num_attention_heads
+        dev.normalize(q, q, cfg.head_dim, heads, w["self_attn.q_proj.norm.scale"],
+                      clip=cfg.qk_l2_clip_threshold, factor=factor)
+        dev.normalize(rel, rel, cfg.d_rel, heads, w["self_attn.relative_position_bias.norm.scale"],
+                      clip=cfg.rel_l2_clip_threshold, factor=factor)
+
+    def attend(self, q, k, v, rel, sink, out, position, cache, scores):
+        cfg, dev = self.cfg, self.dev
+        q_heads, kv_heads, dim = cfg.num_attention_heads, cfg.num_key_value_heads, cfg.head_dim
+        kv_width = kv_heads * dim
+        dev.vector("kv_store", kv_width, k, v, cache.k, cache.v, U32(kv_width), U32(dim),
+                   U32(cache.capacity), U32(position % cache.capacity))
+        count = min(position + 1, cache.window)
+        repeat = q_heads // kv_heads
+        dev.launch("attention_scores", (q, cache.k, rel, self.w["self_attn.relative_position_bias.proj"].ptr,
+                                       scores, U32(count), U32(dim), U32(repeat), U32(position),
+                                       U32(cache.capacity), U32(cfg.d_rel), U32(cfg.rel_extent), F32(dim ** -0.5)),
+                   (tiles(count, 4), q_heads, 1))
+        dev.launch("attention_mix", (scores, cache.v, sink, out, U32(count), U32(dim),
+                                     U32(repeat), U32(position), U32(cache.capacity)),
+                   (q_heads, 1, 1))
 
     def moe(self, x, scratch):
         dev, cfg = self.dev, self.cfg
@@ -362,6 +422,7 @@ class DeviceModel:
 @dataclass
 class DeviceCache:
     capacity: int
+    window: int
     k: U64
     v: U64
     conv: list
@@ -380,17 +441,19 @@ class DeviceSession:
         q_width = cfg.num_attention_heads * cfg.head_dim
         kv_width = cfg.num_key_value_heads * cfg.head_dim
         biggest_bucket = max(slab.rows for _, _, slab, _ in model.head.buckets)
-        scratch_size = (biggest_bucket + 128 * (h + d + q_width + kv_width) +
+        scratch_size = (biggest_bucket + model.head.size + 128 * (h + d + q_width + kv_width) +
                         4 * top * (h + d) + e)
+        self.residual_size = (cfg.total_visits + 1) * h
+        self.prefill_buffer = None
         try:
             self.scratch = Scratch(self.alloc(scratch_size), scratch_size)
             self.scores = self.alloc(cfg.num_attention_heads * context)
-            self.residuals = self.alloc((cfg.total_visits + 1) * h)
+            self.residuals = self.alloc(self.residual_size)
             self.logits = self.alloc(model.head.size)
             self.argmax_groups = min(128, tiles(model.head.size, 2048))
             self.argmax_values = self.alloc(self.argmax_groups + 1)
             self.argmax_ids = self.alloc(self.argmax_groups)
-            self.best = self.alloc(2)
+            self.best = self.alloc(2 * PREFILL_CHUNK)
         except Exception:
             self.close()
             raise
@@ -403,7 +466,10 @@ class DeviceSession:
     def cache(self, layer, slot):
         if slot not in self.caches:
             cfg = self.model.cfg
-            capacity = min(self.context, cfg.sliding_window_size) if layer.sliding else self.context
+            window = min(self.context, cfg.sliding_window_size) if layer.sliding else self.context
+            # A speculative block can overwrite at most this many expired ring slots
+            # before it commits a prefix. Keep those slots readable on rollback.
+            capacity = min(self.context, window + PREFILL_CHUNK - 1)
             suffix = "conv1d.weight" if layer.sliding else "static_weight"
             taps = [
                 layer.w[f"self_attn.{key}_proj.sconv.{suffix}"].shape
@@ -411,25 +477,63 @@ class DeviceSession:
             ]
             taps += [layer.w[f"post_{name}_convolution.conv1d.weight"].shape for name in ("attention", "mlp")]
             size = capacity * cfg.num_key_value_heads * cfg.head_dim
-            self.caches[slot] = DeviceCache(capacity, self.alloc(size), self.alloc(size),
-                                            [self.alloc(math.prod(shape)) for shape in taps])
+            self.caches[slot] = DeviceCache(capacity, window, self.alloc(size), self.alloc(size),
+                                            [self.alloc((count + PREFILL_CHUNK - 1) * width)
+                                             for count, width in taps])
         return self.caches[slot]
 
     def forward(self, token, logits):
-        if self.position >= self.context:
+        self.forward_block((token,), logits)
+
+    def prefill(self, tokens):
+        tokens = tuple(tokens)
+        self.validate_tokens(tokens)
+        for i in range(0, len(tokens), PREFILL_CHUNK):
+            self.forward_block(tokens[i:i + PREFILL_CHUNK], logits=False)
+
+    def validate_tokens(self, tokens):
+        if self.position + len(tokens) > self.context:
             raise ValueError("Context limit reached")
+        for token in tokens:
+            if not 0 <= token < self.model.embedding.size:
+                raise ValueError(f"Token {token} is outside the embedding vocabulary")
+
+    def forward_block(self, tokens, logits, *, all_logits=False, tap_visits=()):
+        """Process consecutive positions layer by layer and optionally score the last."""
+        self.validate_tokens(tokens)
+        count = len(tokens)
+        if not 1 <= count <= PREFILL_CHUNK:
+            raise ValueError(f"Expected 1 to {PREFILL_CHUNK} tokens")
         model, scratch = self.model, self.scratch
         cfg, dev = model.cfg, model.dev
         width = cfg.hidden_size
+        residuals = self.residuals
+        if count > 1:
+            # Set one common stride for the residual and scratch pointers of each token.
+            residual_end = tiles(self.residual_size, 32) * 32
+            stride = tiles(residual_end + scratch.capacity, 32) * 32
+            if self.prefill_buffer is None:
+                self.prefill_buffer = self.alloc(PREFILL_CHUNK * stride)
+            residuals = Batch(self.prefill_buffer, 4 * stride, count)
+            scratch = Scratch(offset(residuals, residual_end), scratch.capacity)
         scratch.mark = 0
-        h = offset(self.residuals, cfg.total_visits * width)
-        embedding = model.embedding.embed(token, scratch)
+        h = offset(residuals, cfg.total_visits * width)
+        embedding = scratch.take(width)
+        for i, token in enumerate(tokens):
+            model.embedding.embed(token, scratch.row(i), out=row(embedding, i))
         dev.normalize(embedding, h, width, weight=model.embed_norm, eps=cfg.rms_norm_eps)
         blocks = []
+        scratch.mark = 0
+        logical_visit = 0
+        taps = {}
 
         def visit(index, slot, hidden, messages=None):
+            nonlocal logical_visit
+            if logical_visit in tap_visits:
+                taps[logical_visit] = hidden
+            logical_visit += 1
             layer = model.layers[index]
-            out = offset(self.residuals, slot * width)
+            out = offset(residuals, slot * width)
             layer(hidden, blocks, self.position, self.cache(layer, slot), messages, self.scores, scratch, out)
             if layer.boundary:
                 blocks.append(hidden)
@@ -452,11 +556,26 @@ class DeviceSession:
                 h = visit(i, slot, h, messages)
         for i in range(cfg.loop_end, cfg.num_hidden_layers):
             h = visit(i, i, h)
-        if logits:
-            final, = block_attention(dev, model.final_query, blocks, h, width, scratch)
+        scores = self.logits
+        if logits or all_logits or logical_visit in tap_visits:
+            if all_logits or logical_visit in tap_visits:
+                final, = block_attention(dev, model.final_query, blocks, h, width, scratch)
+                if logical_visit in tap_visits:
+                    taps[logical_visit] = final
+            else:
+                last = count - 1
+                scratch = scratch.row(last)
+                final, = block_attention(dev, model.final_query, [row(block, last) for block in blocks],
+                                         row(h, last), width, scratch)
             dev.normalize(final, final, width, weight=model.final_norm, eps=cfg.rms_norm_eps)
-            model.head.logits(final, self.logits, cfg.final_logit_softcapping, scratch)
-        self.position += 1
+            if all_logits:
+                scores = scratch.take(model.head.size)
+                model.head.logits(final, scores, cfg.final_logit_softcapping, scratch)
+            elif logits:
+                last = count - 1 if isinstance(final, Batch) else 0
+                model.head.logits(row(final, last), scores, cfg.final_logit_softcapping, scratch.row(last))
+        self.position += count
+        return scores, taps
 
     def step(self, token, logits=True):
         """Diagnostic full-logit readback. Use predict for ordinary generation."""
@@ -465,17 +584,37 @@ class DeviceSession:
 
     def predict(self, token):
         self.forward(token, logits=True)
+        self.sample(self.logits, self.best)
+        return int(self.read_predictions(1)[0])
+
+    def predict_block(self, tokens, *, all_tokens=False, tap_visits=()):
+        scores, taps = self.forward_block(tokens, logits=True, all_logits=all_tokens, tap_visits=tap_visits)
+        count = len(tokens) if all_tokens else 1
+        for i in range(count):
+            self.sample(row(scores, i), offset(self.best, 2 * i))
+        return self.read_predictions(count), taps
+
+    def sample(self, logits, result):
         groups = self.argmax_groups
-        invalid = offset(self.best, 1)
+        invalid = offset(result, 1)
         self.cuda.call("cuMemsetD32Async", invalid, U32(0), SIZE(1), PTR())
-        self.dev.launch("argmax", (self.logits, NULL, self.argmax_values, self.argmax_ids, invalid,
+        self.dev.launch("argmax", (logits, NULL, self.argmax_values, self.argmax_ids, invalid,
                                    U32(self.model.head.size), U32(groups)), (groups, 1, 1))
         self.dev.launch("argmax", (self.argmax_values, self.argmax_ids, offset(self.argmax_values, groups),
-                                   self.best, invalid, U32(groups), U32(1)), (1, 1, 1))
-        next_token, invalid = self.cuda.read(self.best, np.empty(2, np.int32))
-        if invalid or next_token < 0:
+                                   result, invalid, U32(groups), U32(1)), (1, 1, 1))
+
+    def read_predictions(self, count):
+        predictions = self.cuda.read(self.best, np.empty((count, 2), np.int32))
+        tokens, invalid = predictions.T
+        if invalid.any() or (tokens < 0).any():
             raise FloatingPointError("Non-finite output logits")
-        return int(next_token)
+        return tokens
+
+    def commit_block_prefix(self, start, count):
+        """Discard a suffix of the most recently verified block."""
+        if not (0 <= start < self.position and 1 <= count <= self.position - start <= PREFILL_CHUNK):
+            raise ValueError("Invalid speculative block prefix")
+        self.position = start + count
 
     def close(self):
         for buffer in reversed(self.buffers):

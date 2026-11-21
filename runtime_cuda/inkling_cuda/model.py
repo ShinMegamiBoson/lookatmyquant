@@ -190,6 +190,9 @@ class Decoder:
         self.boundary = index % cfg.n_layers_per_attn_res_block == 0
         self.w = {name.removeprefix(f"model.layers.{index}."): value for name, value in steering.items()
                   if name.startswith(f"model.layers.{index}.")}
+        for name, weight in self.w.items():
+            if "_message_gate." in name:
+                self.w[name] = round_bf16(weight)
         prefix = folder / f"layer_{index:02d}"
         meta = read_json(prefix.with_name(prefix.name + "_meta.json"))
         with np.load(prefix.with_name(prefix.name + "_packed.npz"), allow_pickle=False) as archive:
@@ -204,7 +207,11 @@ class Decoder:
         down = self.w[prefix + "down_proj.weight"]
         forget = self.w[prefix + "forget_gate_proj.weight"]
         add = self.w[prefix + "message_gate_proj.weight"]
-        z = round_bf16(down @ round_bf16(np.concatenate((rms(x), rms(message)))))
+        # MLX computes and rounds the two low-rank projections separately.
+        h = x.size
+        hidden_rank = round_bf16(down[:, :h] @ round_bf16(rms(x)))
+        message_rank = round_bf16(down[:, h:] @ round_bf16(rms(message)))
+        z = round_bf16(hidden_rank + message_rank)
         forget = np.tanh(round_bf16(forget @ z))
         add = np.tanh(round_bf16(add @ z))
         return (1 - forget) * x + add * message

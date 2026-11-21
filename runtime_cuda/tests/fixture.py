@@ -186,7 +186,7 @@ def build_mini_packed_dir(out_dir: Path, full_size=False) -> None:
         st[p + "post_mlp_convolution.conv1d.weight"] = np.asarray(rng.standard_normal((H, 1, 4)).astype(np.float32) * 0.2)
         if is_loop:
             for gn in ("q_message_gate", "k_message_gate", "v_message_gate", "mlp_message_gate"):
-                st[p + f"{gn}.down_proj.weight"] = np.asarray(rng.standard_normal((rank, 2 * H)).astype(np.float32) * 0.05)
+                st[p + f"{gn}.down_proj.weight"] = np.asarray(rng.standard_normal((rank, 2 * H)).astype(np.float32) * 0.025)
                 st[p + f"{gn}.forget_gate_proj.weight"] = np.asarray(rng.standard_normal((H, rank)).astype(np.float32) * 0.05)
                 st[p + f"{gn}.message_gate_proj.weight"] = np.asarray(rng.standard_normal((H, rank)).astype(np.float32) * 0.05)
         st[p + "mlp.gate.weight"] = np.asarray(rng.standard_normal((n_exp, H)).astype(np.float32) * 0.1)

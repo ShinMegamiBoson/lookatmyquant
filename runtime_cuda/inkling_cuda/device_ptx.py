@@ -4,18 +4,24 @@ HEADER = (".version 7.8\n.target sm_80\n.address_size 64\n"
           ".extern .shared .align 4 .b8 dynamic_shared[];\n")
 
 
-def entry(name, args, body, declarations=""):
+def entry(name, args, body, declarations="", batched=""):
     params, loads = [], []
     for ty, declarations_for_type in args.items():
         for index, label in enumerate(declarations_for_type.split(), 1):
             tag = {"u64": "d", "u32": "n", "f32": "a"}[ty]
             params.append(f".param .{ty} {label}")
             loads.append(f"ld.param.{ty} %{tag}{index}, [{label}];")
+    if batched:
+        loads.extend(("mov.u32 %r59, %ctaid.z;", "mul.wide.u32 %rd29, %r59, %batch_stride;"))
+        for label in batched.split():
+            reg = args["u64"].split().index(label) + 1
+            loads.append(f"add.u64 %d{reg}, %d{reg}, %rd29;")
     return (
-        f".visible .entry {name}({', '.join(params)}) {{\n"
-        ".reg .pred %p<12>; .reg .b16 %half; .reg .b32 %r<64>, %n<24>;\n"
+        f".visible .entry {name}({', '.join(params)}, .param .u32 row_stride) {{\n"
+        ".reg .pred %p<12>; .reg .b16 %half; .reg .b32 %r<64>, %n<24>, %batch_stride;\n"
         ".reg .b64 %rd<32>, %d<40>; .reg .f32 %f<48>, %a<20>;\n"
-        + declarations + "\n" + "\n".join(loads) + "\n" + body + "\n}\n"
+        + declarations + "\nld.param.u32 %batch_stride, [row_stride];\n"
+        + "\n".join(loads) + "\n" + body + "\n}\n"
     )
 
 
@@ -63,7 +69,7 @@ def vector(name, pointers, floats, body):
     setp.ge.u32 %p1, %r1, %n1;
     @%p1 ret;
     mul.wide.u32 %rd1, %r1, 4;
-""" + body + "\n    ret;")
+""" + body + "\n    ret;", batched=" ".join(p for p in pointers.split() if p != "order"))
 
 
 def sigmoid(src, dest):
@@ -190,10 +196,31 @@ write_loop:
     st.global.f32 [%rd3], %f2;
     add.u32 %r1, %r1, 128;
     bra write_loop;
-""", REDUCTION)
+""", REDUCTION, batched="x out")
 
 
-DENSE = entry("dense_matvec", {"u64": "x matrix out", "u32": "rows width"}, f"""
+def dense(name, split_bf16=False):
+    initialize = """
+    shr.u32 %r6, %n2, 1;
+    mad.wide.u32 %rd4, %r6, 4, %rd1;
+    mad.wide.u32 %rd5, %r6, 4, %d1;
+    mov.b32 %f4, 0;
+""" if split_bf16 else "mov.u32 %r6, %n2;"
+    second_dot = """
+    mad.wide.u32 %rd2, %r5, 4, %rd4;
+    mad.wide.u32 %rd3, %r5, 4, %rd5;
+    ld.global.f32 %f2, [%rd2];
+    ld.global.f32 %f3, [%rd3];
+    fma.rn.f32 %f4, %f2, %f3, %f4;
+""" if split_bf16 else ""
+    merge = f"""
+    {warp_reduce('%f4', 'add')}
+    {bf16('%f1', '%f1')}
+    {bf16('%f4', '%f4')}
+    add.f32 %f1, %f1, %f4;
+    {bf16('%f1', '%f1')}
+""" if split_bf16 else ""
+    return entry(name, {"u64": "x matrix out", "u32": "rows width"}, f"""
     mov.u32 %r1, %ctaid.x;
     mov.u32 %r2, %tid.x;
     shr.u32 %r3, %r2, 5;
@@ -204,25 +231,28 @@ DENSE = entry("dense_matvec", {"u64": "x matrix out", "u32": "rows width"}, f"""
     mad.wide.u32 %rd1, %r4, 4, %d2;
     mov.u32 %r5, %laneid;
     mov.b32 %f1, 0;
+    {initialize}
 loop:
-    setp.ge.u32 %p2, %r5, %n2;
+    setp.ge.u32 %p2, %r5, %r6;
     @%p2 bra finish;
     mad.wide.u32 %rd2, %r5, 4, %rd1;
     mad.wide.u32 %rd3, %r5, 4, %d1;
     ld.global.f32 %f2, [%rd2];
     ld.global.f32 %f3, [%rd3];
     fma.rn.f32 %f1, %f2, %f3, %f1;
+    {second_dot}
     add.u32 %r5, %r5, 32;
     bra loop;
 finish:
     {warp_reduce('%f1', 'add')}
+    {merge}
     mov.u32 %r5, %laneid;
     setp.ne.u32 %p3, %r5, 0;
     @%p3 ret;
     mad.wide.u32 %rd2, %r3, 4, %d3;
     st.global.f32 [%rd2], %f1;
     ret;
-""")
+""", batched="x out")
 
 
 ROTATE = entry("hadamard", {"u64": "x signs paley out", "u32": "width base inverse", "f32": "scale"}, """
@@ -320,7 +350,7 @@ write:
     st.global.f32 [%rd4], %f1;
     add.u32 %r1, %r1, 128;
     bra write_loop;
-""")
+""", batched="x out")
 
 
 PACKED_ROW = entry("packed_row", {
@@ -409,7 +439,7 @@ finish:
     mad.wide.u32 %rd3, %r3, 4, %d3;
     st.global.f32 [%rd3], %f1;
     ret;
-""")
+""", batched="states scores")
 
 
 BLOCK_MIX = entry("block_mix", {"u64": "states scores out", "u32": "width count"}, """
@@ -452,12 +482,12 @@ mix_loop:
     mad.wide.u32 %rd3, %r6, 4, %d3;
     st.global.f32 [%rd3], %f4;
     ret;
-""")
+""", batched="states scores out")
 
 
 CONVOLUTION = entry("causal_conv", {
     "u64": "x static_weight dynamic_weight history out",
-    "u32": "width taps position head_dim", "f32": "scale",
+    "u32": "width taps position head_dim history_slots", "f32": "scale",
 }, """
     mov.u32 %r1, %ctaid.x;
     mov.u32 %r2, %tid.x;
@@ -466,7 +496,7 @@ CONVOLUTION = entry("causal_conv", {
     @%p1 ret;
     mad.wide.u32 %rd1, %r1, 4, %d1;
     ld.global.f32 %f1, [%rd1];
-    rem.u32 %r3, %n3, %n2;
+    rem.u32 %r3, %n3, %n5;
     mad.lo.u32 %r4, %r3, %n1, %r1;
     mad.wide.u32 %rd2, %r4, 4, %d4;
     st.global.f32 [%rd2], %f1;
@@ -475,7 +505,7 @@ CONVOLUTION = entry("causal_conv", {
     min.u32 %r6, %n2, %n3;
 loop:
     sub.u32 %r7, %n3, %r5;
-    rem.u32 %r7, %r7, %n2;
+    rem.u32 %r7, %r7, %n5;
     mad.lo.u32 %r4, %r7, %n1, %r1;
     mad.wide.u32 %rd2, %r4, 4, %d4;
     ld.global.f32 %f2, [%rd2];
@@ -732,7 +762,7 @@ normalize:
     setp.lt.u32 %p2, %r5, %n2;
     @%p2 bra normalize;
     ret;
-""")
+""", batched="router_logits probabilities expert_ids")
 
 
 SWIGLU = entry("softcapped_swiglu", {
@@ -764,7 +794,7 @@ SWIGLU = entry("softcapped_swiglu", {
     mul.f32 %f1, %f1, %f3;
     st.global.f32 [%rd3], %f1;
     ret;
-""")
+""", batched="gate_up out")
 
 
 MIX_EXPERTS = entry("mix_experts", {
@@ -790,7 +820,7 @@ loop:
     mad.wide.u32 %rd3, %r1, 4, %d3;
     st.global.f32 [%rd3], %f1;
     ret;
-""")
+""", batched="expert_values probabilities out")
 
 
 HEAD_SCATTER = vector("head_scatter", "bucket order out", "cap", """
@@ -889,6 +919,7 @@ sync:
 def source():
     return "".join((
         HEADER, ADD, CAST, ATTN_GATE, MESSAGE, normalize("rms_norm"), normalize("clip_norm", clip=True),
-        DENSE, ROTATE, PACKED_ROW, BLOCK_SCORES, BLOCK_MIX, CONVOLUTION,
+        dense("dense_matvec"), dense("message_down", split_bf16=True),
+        ROTATE, PACKED_ROW, BLOCK_SCORES, BLOCK_MIX, CONVOLUTION,
         ATTENTION_SCORES, ATTENTION_MIX, KV_STORE, ROUTE, SWIGLU, MIX_EXPERTS, HEAD_SCATTER, ARGMAX,
     ))

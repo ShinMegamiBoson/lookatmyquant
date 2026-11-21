@@ -16,16 +16,28 @@ PACKS = {
     "5.4GB": "shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-5.4GB",
     "8.9GB": "shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB",
 }
-DEFAULT_5GB_REVISION = "51a8664233ff1f59b16d5ae0492cc16ee7a37ae4"
+PACK_REVISIONS = {
+    "5.4GB": "51a8664233ff1f59b16d5ae0492cc16ee7a37ae4",
+    "8.9GB": "1318b804e687f3761ced445b7a2a13ab305f82e5",
+}
+DRAFTER_PACK = "shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-drafter"
+DRAFTER_REVISION = "61370dcd233fdfe3b7e5e0cafe652090ca343e00"
 
 
 def download(path, size, revision):
     from huggingface_hub import snapshot_download
 
-    revision = revision or (DEFAULT_5GB_REVISION if size == "5.4GB" else "main")
+    revision = revision or PACK_REVISIONS[size]
     snapshot_download(PACKS[size], revision=revision, local_dir=path, allow_patterns=[
         "*.json", "*.npz", "steering.safetensors", "*.jinja", "tokenizer*", "vocab.*", "merges.txt",
     ])
+
+
+def download_drafter(path, revision):
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(DRAFTER_PACK, revision=revision or DRAFTER_REVISION, local_dir=path,
+                      allow_patterns=["config.json", "manifest.json", "mtp_4bit.safetensors"])
 
 
 def greedy(session, inputs, limit, eos, on_device):
@@ -38,8 +50,11 @@ def greedy(session, inputs, limit, eos, on_device):
         return int(scores.argmax())
 
     started = time.perf_counter()
-    for token in inputs[:-1]:
-        session.step(token, logits=False)
+    if on_device:
+        session.prefill(inputs[:-1])
+    else:
+        for token in inputs[:-1]:
+            session.step(token, logits=False)
     output = [predict(inputs[-1])]
     prefill_seconds = time.perf_counter() - started
     started = time.perf_counter()
@@ -81,7 +96,15 @@ def generate(args):
         session = model.session(args.context)
         if on_device:
             stack.enter_context(session)
-        output, prefill_seconds, decode_rate = greedy(session, ids, args.max_new_tokens, eos, on_device)
+        draft_stats = {}
+        if args.drafter:
+            from .drafter import speculative_greedy
+
+            output, prefill_seconds, decode_rate, draft_stats = speculative_greedy(
+                args.drafter, session, args.device, ids, args.max_new_tokens, set(eos), args.draft_block_size,
+            )
+        else:
+            output, prefill_seconds, decode_rate = greedy(session, ids, args.max_new_tokens, eos, on_device)
         result = {
             "device": cuda.device_name(),
             "backend": args.backend,
@@ -93,6 +116,7 @@ def generate(args):
             "load_seconds": load_seconds,
             "prefill_seconds": prefill_seconds,
             "decode_tokens_per_second": decode_rate,
+            **draft_stats,
         }
     if args.json:
         args.json.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -106,6 +130,9 @@ def main():
     fetch.add_argument("model", type=Path)
     fetch.add_argument("--size", choices=PACKS, default="5.4GB")
     fetch.add_argument("--revision")
+    draft = sub.add_parser("download-drafter")
+    draft.add_argument("path", type=Path)
+    draft.add_argument("--revision")
     run = sub.add_parser("generate")
     run.add_argument("model", type=Path)
     prompt = run.add_mutually_exclusive_group(required=True)
@@ -115,13 +142,21 @@ def main():
     run.add_argument("--max-new-tokens", type=int, default=32)
     run.add_argument("--device", type=int, default=0)
     run.add_argument("--backend", choices=("cuda", "hybrid"), default="cuda")
+    run.add_argument("--drafter", type=Path)
+    run.add_argument("--draft-block-size", type=int, choices=range(2, 9))
     run.add_argument("--json", type=Path)
     args = parser.parse_args()
     if args.command == "download":
         download(args.model, args.size, args.revision)
+    elif args.command == "download-drafter":
+        download_drafter(args.path, args.revision)
     else:
         if args.max_new_tokens < 1:
             parser.error("--max-new-tokens must be positive")
+        if args.drafter and args.backend != "cuda":
+            parser.error("--drafter requires the cuda backend")
+        if args.draft_block_size and not args.drafter:
+            parser.error("--draft-block-size requires --drafter")
         generate(args)
 
 

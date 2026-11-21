@@ -9,7 +9,7 @@
     .param .u32 rows, .param .u32 width, .param .u32 words,
     .param .u32 bits, .param .u32 group, .param .u32 hash_shift,
     .param .u32 hash_multiplier, .param .u32 x_div, .param .u32 lloyd,
-    .param .u64 descriptors_ptr, .param .u64 expert_map_ptr
+    .param .u64 descriptors_ptr, .param .u64 expert_map_ptr, .param .u32 row_stride
 )
 {
     .reg .pred %p<9>;
@@ -35,6 +35,15 @@
     ld.param.u32 %r9, [lloyd];
     ld.param.u64 %rd15, [descriptors_ptr];
     ld.param.u64 %rd16, [expert_map_ptr];
+
+    // grid.z selects a token. Only routed projections have a per-token expert list.
+    mov.u32 %r10, %ctaid.z;
+    ld.param.u32 %r11, [row_stride];
+    mul.wide.u32 %rd17, %r10, %r11;
+    add.u64 %rd1, %rd1, %rd17;
+    add.u64 %rd6, %rd6, %rd17;
+    setp.ne.u64 %p8, %rd15, 0;
+    @%p8 add.u64 %rd5, %rd5, %rd17;
 
     // grid.y is the routed slot; grid.x tiles four matrix rows.
     mov.u32 %r10, %ctaid.y;

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 
 from fixture import build_mini_packed_dir
-from inkling_cuda.device_model import Device, DeviceModel
+from inkling_cuda.device_model import Device, DeviceModel, PREFILL_CHUNK
 from inkling_cuda.driver import Cuda
 from inkling_cuda.model import Model, VisitCache
 from inkling_cuda.packed import FORMATS, Slab, project, rotate
@@ -66,6 +66,17 @@ class PackedCudaTests(unittest.TestCase):
             x = rng.normal(size=(2, width)).astype(np.float32)
             signs = rng.choice([-1, 1], size=width).astype(np.float32)
             np.testing.assert_allclose(rotate(rotate(x, signs), signs, inverse=True), x, atol=1.5e-6)
+
+    def test_message_down_rounds_each_projection(self):
+        dev = Device(self.cuda)
+        try:
+            x = self.cuda.upload(np.ones(4, dtype=np.float32))
+            weight = dev.weight(np.array([[1, 1 / 256, -255 / 256, 0]], np.float32))
+            with self.cuda.temporary(4) as (out,):
+                dev.dense(x, weight, out, kernel="message_down")
+                self.assertEqual(self.cuda.read(out, np.empty(1, np.float32))[0], 1 / 256)
+        finally:
+            dev.close()
 
     def test_gpu_hadamard_matches_release_dimensions(self):
         rng = np.random.default_rng(77)
@@ -135,6 +146,48 @@ class PackedCudaTests(unittest.TestCase):
                                     np.testing.assert_allclose(got, want, rtol=0, atol=2e-3)
                     self.assertEqual(set(generation.caches), set(range(10)))
                     self.assertEqual(generation.position, 10)
+            finally:
+                model.close()
+
+    def test_batched_prefill_preserves_logits_and_decode_cache(self):
+        with tempfile.TemporaryDirectory() as folder:
+            build_mini_packed_dir(Path(folder))
+            model = DeviceModel(folder, self.cuda)
+            try:
+                # Cross a chunk boundary and wrap the local attention and convolution rings.
+                tokens = np.random.default_rng(73).integers(0, 500, PREFILL_CHUNK + 7)
+                with model.session(32) as serial, model.session(32) as batched:
+                    serial.step(tokens[0], logits=False)
+                    batched.step(tokens[0], logits=False)
+                    with patch.object(self.cuda, "read", side_effect=AssertionError("prefill readback")):
+                        batched.prefill(tokens[1:-2])
+                    for token in tokens[1:-2]:
+                        serial.step(token, logits=False)
+                    for token in tokens[-2:]:
+                        np.testing.assert_array_equal(batched.step(token), serial.step(token))
+                    self.assertEqual(batched.position, len(tokens))
+            finally:
+                model.close()
+
+    def test_speculative_suffix_can_be_discarded_after_cache_wrap(self):
+        with tempfile.TemporaryDirectory() as folder:
+            build_mini_packed_dir(Path(folder))
+            model = DeviceModel(folder, self.cuda)
+            try:
+                with model.session(64) as serial, model.session(64) as verify:
+                    prefix = tuple(range(32))
+                    serial.prefill(prefix)
+                    verify.prefill(prefix)
+                    proposals = (300, 77, 33, 81, 55, 7, 161, 19)
+                    predictions, taps = verify.predict_block(proposals, all_tokens=True, tap_visits=(2, 10))
+                    self.assertEqual(set(taps), {2, 10})
+                    with model.session(64) as full:
+                        full.prefill(prefix)
+                        np.testing.assert_array_equal(predictions, [full.predict(t) for t in proposals])
+                    verify.commit_block_prefix(len(prefix), 2)
+                    serial.prefill(proposals[:2])
+                    for token in (62, 32, 7):
+                        np.testing.assert_array_equal(verify.step(token), serial.step(token))
             finally:
                 model.close()
 
