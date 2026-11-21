@@ -1,0 +1,129 @@
+"""Download a published pack or run greedy text generation."""
+import argparse
+from contextlib import ExitStack
+import json
+from pathlib import Path
+import time
+
+import numpy as np
+
+from .device_model import DeviceModel
+from .driver import Cuda
+from .model import Model
+
+
+PACKS = {
+    "5.4GB": "shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-5.4GB",
+    "8.9GB": "shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB",
+}
+DEFAULT_5GB_REVISION = "51a8664233ff1f59b16d5ae0492cc16ee7a37ae4"
+
+
+def download(path, size, revision):
+    from huggingface_hub import snapshot_download
+
+    revision = revision or (DEFAULT_5GB_REVISION if size == "5.4GB" else "main")
+    snapshot_download(PACKS[size], revision=revision, local_dir=path, allow_patterns=[
+        "*.json", "*.npz", "steering.safetensors", "*.jinja", "tokenizer*", "vocab.*", "merges.txt",
+    ])
+
+
+def greedy(session, inputs, limit, eos, on_device):
+    def predict(token):
+        if on_device:
+            return session.predict(token)
+        scores = session.step(token)
+        if not np.isfinite(scores).all():
+            raise FloatingPointError("Non-finite output logits")
+        return int(scores.argmax())
+
+    started = time.perf_counter()
+    for token in inputs[:-1]:
+        session.step(token, logits=False)
+    output = [predict(inputs[-1])]
+    prefill_seconds = time.perf_counter() - started
+    started = time.perf_counter()
+    while len(output) < limit and output[-1] not in eos:
+        output.append(predict(output[-1]))
+    decode_seconds = time.perf_counter() - started
+    return output, prefill_seconds, (len(output) - 1) / decode_seconds if len(output) > 1 else None
+
+
+def generate(args):
+    tokenizer = None
+    if args.tokens is None:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(args.model, local_files_only=True)
+        ids = tokenizer.apply_chat_template(
+            [{"role": "user", "content": args.prompt}],
+            tokenize=False, add_generation_prompt=True, reasoning_effort="none",
+        )
+        ids = tokenizer.encode(ids, add_special_tokens=False)
+    else:
+        ids = args.tokens
+    if len(ids) + args.max_new_tokens - 1 > args.context:
+        raise ValueError("Prompt and generation exceed the context limit")
+    eos = []
+    generation_config = args.model / "generation_config.json"
+    if generation_config.exists():
+        eos = json.loads(generation_config.read_text(encoding="utf-8")).get("eos_token_id", [])
+        if isinstance(eos, int):
+            eos = [eos]
+    on_device = args.backend == "cuda"
+    with ExitStack() as stack:
+        cuda = stack.enter_context(Cuda(args.device))
+        started = time.perf_counter()
+        model = (DeviceModel if on_device else Model)(args.model, cuda)
+        if on_device:
+            stack.callback(model.close)
+        load_seconds = time.perf_counter() - started
+        session = model.session(args.context)
+        if on_device:
+            stack.enter_context(session)
+        output, prefill_seconds, decode_rate = greedy(session, ids, args.max_new_tokens, eos, on_device)
+        result = {
+            "device": cuda.device_name(),
+            "backend": args.backend,
+            "resident_weights_bytes": cuda.resident_bytes,
+            "logical_visits_per_token": model.cfg.total_visits,
+            "prompt_tokens": ids,
+            "generated_tokens": output,
+            "text": tokenizer.decode(output, skip_special_tokens=True) if tokenizer else None,
+            "load_seconds": load_seconds,
+            "prefill_seconds": prefill_seconds,
+            "decode_tokens_per_second": decode_rate,
+        }
+    if args.json:
+        args.json.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(result, indent=2, ensure_ascii=True))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(required=True, dest="command")
+    fetch = sub.add_parser("download")
+    fetch.add_argument("model", type=Path)
+    fetch.add_argument("--size", choices=PACKS, default="5.4GB")
+    fetch.add_argument("--revision")
+    run = sub.add_parser("generate")
+    run.add_argument("model", type=Path)
+    prompt = run.add_mutually_exclusive_group(required=True)
+    prompt.add_argument("--prompt")
+    prompt.add_argument("--tokens", nargs="+", type=int)
+    run.add_argument("--context", type=int, default=256)
+    run.add_argument("--max-new-tokens", type=int, default=32)
+    run.add_argument("--device", type=int, default=0)
+    run.add_argument("--backend", choices=("cuda", "hybrid"), default="cuda")
+    run.add_argument("--json", type=Path)
+    args = parser.parse_args()
+    if args.command == "download":
+        download(args.model, args.size, args.revision)
+    else:
+        if args.max_new_tokens < 1:
+            parser.error("--max-new-tokens must be positive")
+        generate(args)
+
+
+if __name__ == "__main__":
+    main()

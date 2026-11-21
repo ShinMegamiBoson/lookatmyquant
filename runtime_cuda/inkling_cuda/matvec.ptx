@@ -1,0 +1,142 @@
+// One warp per output row. Packed codes and scales stay on the device.
+.version 7.8
+.target sm_80
+.address_size 64
+
+.visible .entry packed_matvec(
+    .param .u64 x_ptr, .param .u64 codes_ptr, .param .u64 scales_ptr,
+    .param .u64 table_ptr, .param .u64 expert_ptr, .param .u64 y_ptr,
+    .param .u32 rows, .param .u32 width, .param .u32 words,
+    .param .u32 bits, .param .u32 group, .param .u32 hash_shift,
+    .param .u32 hash_multiplier, .param .u32 x_div, .param .u32 lloyd,
+    .param .u64 descriptors_ptr, .param .u64 expert_map_ptr
+)
+{
+    .reg .pred %p<9>;
+    .reg .b32 %r<48>;
+    .reg .b64 %rd<18>;
+    .reg .f32 %f<9>;
+    .reg .b16 %h;
+
+    ld.param.u64 %rd1, [x_ptr];
+    ld.param.u64 %rd2, [codes_ptr];
+    ld.param.u64 %rd3, [scales_ptr];
+    ld.param.u64 %rd4, [table_ptr];
+    ld.param.u64 %rd5, [expert_ptr];
+    ld.param.u64 %rd6, [y_ptr];
+    ld.param.u32 %r1, [rows];
+    ld.param.u32 %r2, [width];
+    ld.param.u32 %r3, [words];
+    ld.param.u32 %r4, [bits];
+    ld.param.u32 %r5, [group];
+    ld.param.u32 %r6, [hash_shift];
+    ld.param.u32 %r7, [hash_multiplier];
+    ld.param.u32 %r8, [x_div];
+    ld.param.u32 %r9, [lloyd];
+    ld.param.u64 %rd15, [descriptors_ptr];
+    ld.param.u64 %rd16, [expert_map_ptr];
+
+    // grid.y is the routed slot; grid.x tiles four matrix rows.
+    mov.u32 %r10, %ctaid.y;
+    mov.u32 %r11, %ctaid.x;
+    mov.u32 %r12, %tid.x;
+    mov.u32 %r13, %laneid;
+    shr.u32 %r14, %r12, 5;
+    mad.lo.u32 %r15, %r11, 4, %r14;
+    setp.ge.u32 %p1, %r15, %r1;
+    @%p1 bra DONE;
+    mad.wide.u32 %rd7, %r10, 4, %rd5;
+    ld.global.s32 %r16, [%rd7];
+    setp.lt.s32 %p2, %r16, 0;
+    @%p2 bra DONE;
+
+    // Each routed slot selects its own expert and packed format.
+    setp.eq.u64 %p8, %rd15, 0;
+    @%p8 bra PROJECT;
+    mad.wide.u32 %rd17, %r16, 8, %rd16;
+    ld.global.v2.u32 {%r41, %r16}, [%rd17];
+    mad.wide.u32 %rd17, %r41, 48, %rd15;
+    ld.global.u64 %rd2, [%rd17];
+    ld.global.u64 %rd3, [%rd17+8];
+    ld.global.u64 %rd4, [%rd17+16];
+    ld.global.u32 %r3, [%rd17+24];
+    ld.global.u32 %r4, [%rd17+28];
+    ld.global.u32 %r5, [%rd17+32];
+    ld.global.u32 %r6, [%rd17+36];
+    ld.global.u32 %r7, [%rd17+40];
+    ld.global.u32 %r9, [%rd17+44];
+PROJECT:
+    mad.lo.u32 %r17, %r16, %r1, %r15;
+    mul.lo.u32 %r18, %r17, %r3;
+    mad.wide.u32 %rd8, %r18, 4, %rd2;
+    div.u32 %r19, %r10, %r8;
+    mul.lo.u32 %r20, %r19, %r2;
+    mad.wide.u32 %rd9, %r20, 4, %rd1;
+    setp.ne.u32 %p3, %r9, 0;
+    setp.ne.u32 %p4, %r7, 0;
+    mov.b32 %f1, 0;
+    mov.u32 %r21, %r13;
+
+LOOP:
+    setp.ge.u32 %p5, %r21, %r2;
+    @%p5 bra REDUCE;
+    // Trellis states end at the group's last coefficient and run MSB first.
+    // Lloyd-Max indices run forwards from the least significant bit.
+    sub.u32 %r22, %r5, 1;
+    and.b32 %r22, %r21, %r22;
+    sub.u32 %r23, %r21, %r22;
+    add.u32 %r23, %r23, %r5;
+    sub.u32 %r24, %r2, %r23;
+    selp.u32 %r24, %r21, %r24, %p3;
+    mul.lo.u32 %r25, %r24, %r4;
+    shr.u32 %r26, %r25, 5;
+    and.b32 %r27, %r25, 31;
+    mad.wide.u32 %rd10, %r26, 4, %rd8;
+    ld.global.u32 %r28, [%rd10];
+    add.u32 %r29, %r26, 1;
+    setp.lt.u32 %p6, %r29, %r3;
+    mov.u32 %r30, 0;
+    @%p6 ld.global.u32 %r30, [%rd10+4];
+    shr.u32 %r31, %r28, %r27;
+    sub.u32 %r32, 32, %r27;
+    shl.b32 %r33, %r30, %r32;
+    or.b32 %r34, %r31, %r33;
+    mov.u32 %r35, 1;
+    shl.b32 %r36, %r35, %r4;
+    sub.u32 %r36, %r36, 1;
+    selp.u32 %r37, %r36, 4095, %p3;
+    and.b32 %r38, %r34, %r37;
+    @%p4 mul.lo.u32 %r38, %r38, %r7;
+    @%p4 shr.u32 %r38, %r38, %r6;
+    mad.lo.u32 %r39, %r38, %r5, %r22;
+    mad.wide.u32 %rd11, %r39, 4, %rd4;
+    mad.wide.u32 %rd12, %r21, 4, %rd9;
+    ld.global.f32 %f2, [%rd11];
+    ld.global.f32 %f3, [%rd12];
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+    add.u32 %r21, %r21, 32;
+    bra LOOP;
+
+REDUCE:
+    shfl.sync.bfly.b32 %f4, %f1, 16, 31, -1;
+    add.f32 %f1, %f1, %f4;
+    shfl.sync.bfly.b32 %f4, %f1, 8, 31, -1;
+    add.f32 %f1, %f1, %f4;
+    shfl.sync.bfly.b32 %f4, %f1, 4, 31, -1;
+    add.f32 %f1, %f1, %f4;
+    shfl.sync.bfly.b32 %f4, %f1, 2, 31, -1;
+    add.f32 %f1, %f1, %f4;
+    shfl.sync.bfly.b32 %f4, %f1, 1, 31, -1;
+    add.f32 %f1, %f1, %f4;
+    setp.ne.u32 %p7, %r13, 0;
+    @%p7 bra DONE;
+    mad.wide.u32 %rd13, %r17, 2, %rd3;
+    ld.global.b16 %h, [%rd13];
+    cvt.f32.f16 %f5, %h;
+    mul.f32 %f6, %f1, %f5;
+    mad.lo.u32 %r40, %r10, %r1, %r15;
+    mad.wide.u32 %rd14, %r40, 4, %rd6;
+    st.global.f32 [%rd14], %f6;
+DONE:
+    ret;
+}
