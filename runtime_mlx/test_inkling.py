@@ -574,6 +574,40 @@ def test_compressed_global_kv() -> None:
         assert buf.dtype == mx.float16 and not fp8 and scales is None
 
 
+def test_compressed_global_kv_snapshot_isolation() -> None:
+    """Restoring the same prefix twice gives each continuation independent compressed buffers."""
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config
+
+    rng = np.random.default_rng(915)
+    data = mx.array(rng.normal(0, 0.2, (2, 8, 262, 128)).astype(np.float16))
+    prefix = data[:, :, :250, :]
+    continuations = (data[:, :, 250:254, :], data[:, :, 254:262, :])
+    for mode in ("fp16", "fp8", "q4"):
+        cfg = Inkling2Config(num_hidden_layers=1, loop_passes=1, global_kv_mode=mode)
+        cache = Inkling2Cache(cfg)
+        cache.update_kv_f16(0, prefix, False)
+        cache.seq_len = 250
+        snapshot = cache.clone()
+        prefix_state = [np.array(buf) for buf in snapshot.state]
+
+        restored = [snapshot.clone(), snapshot.clone()]
+        assert all(item.offset == 250 for item in restored)
+        for actual, continuation in zip(restored, continuations):
+            actual.update_kv_f16(0, continuation, False)
+
+        assert cache.kv_len == snapshot.kv_len == [250]
+        assert [item.kv_cap[0] for item in restored] == [256, 512]
+        for actual, continuation in zip(restored, continuations):
+            reference = Inkling2Cache(cfg)
+            reference.update_kv_f16(0, mx.concatenate([prefix, continuation], axis=2), False)
+            assert actual.kv_len == reference.kv_len
+            for buf, expected in zip(actual.state, reference.state, strict=True):
+                np.testing.assert_array_equal(np.array(buf), np.array(expected))
+        for original in (cache, snapshot):
+            for buf, expected in zip(original.state, prefix_state, strict=True):
+                np.testing.assert_array_equal(np.array(buf), expected)
+
+
 def test_nvfp4_unified_moe_all_modes() -> None:
     """Verify `nvfp4` (`fid=7`) across `t1`, `grouped`, `prefill_mpp`, `prefill_v2`, `also_raw`, and `PackedMoE`."""
     from runtime_mlx.inkling.fast_kernels import (
@@ -823,6 +857,7 @@ def main() -> None:
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
     test_compressed_global_kv()
+    test_compressed_global_kv_snapshot_isolation()
     test_nvfp4_unified_moe_all_modes()
     test_row_group_moe_and_f16_signs_in()
     test_fast_kernels_suite()
