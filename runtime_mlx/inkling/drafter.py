@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 
 import mlx.core as mx
@@ -79,6 +80,11 @@ def _rnn_update_compiled(state: mx.array, proj: mx.array) -> tuple[mx.array, mx.
 
 
 TREE_TOPOLOGIES: dict[str, tuple[int, ...]] = {
+    "2-1": (-1, 0, 1, 0),                   # M4 micro-tree T=4: depth-2 A + depth-1 B (2 head calls)
+    "3-1": (-1, 0, 1, 2, 0),                # M4 micro-tree T=5: depth-3 A + depth-1 B (3 head calls)
+    "2-2": (-1, 0, 1, 0, 3),                # M4 micro-tree T=5: depth-2 A + depth-2 B (2 batched head calls)
+    "3-2": (-1, 0, 1, 2, 0, 4),             # M4 micro-tree T=6: depth-3 A + depth-2 B (3 batched head calls)
+    "3-1-1": (-1, 0, 1, 2, 0, 0),           # M4 micro-tree T=6: depth-3 A + top-2 & top-3 at depth 1 (3 head calls)
     "4-3": (-1, 0, 1, 2, 3, 0, 5, 6),       # depth-4 A + depth-3 B (4 head calls)
     "5-2": (-1, 0, 1, 2, 3, 4, 0, 6),       # depth-5 A + depth-2 B (5 head calls)
     "4-2-1": (-1, 0, 1, 2, 3, 0, 5, 0),     # depth-4 A + depth-2 B + depth-1 C (4 head calls)
@@ -239,6 +245,30 @@ class DSparkDrafterMLX:
         self.ctx_len: int = 0
         self.f_rnn: mx.array | None = None
 
+    def context_state(self) -> dict:
+        """Evaluated copy of the ingested target context (see `push_context`), for `restore_context`."""
+        cp = lambda a: None if a is None else mx.array(a)  # noqa: E731
+        st = {
+            "ctx_k": [cp(a) for a in self.ctx_k],
+            "ctx_v": [cp(a) for a in self.ctx_v],
+            "_ctx_cur": list(self._ctx_cur),
+            "_ctx_cap": list(self._ctx_cap),
+            "ctx_len": self.ctx_len,
+            "f_rnn": cp(self.f_rnn),
+        }
+        mx.eval(*[a for a in (*st["ctx_k"], *st["ctx_v"], st["f_rnn"]) if a is not None])
+        return st
+
+    def restore_context(self, state: dict) -> None:
+        """Restore a `context_state()` snapshot; the snapshot itself stays reusable."""
+        cp = lambda a: None if a is None else mx.array(a)  # noqa: E731
+        self.ctx_k = [cp(a) for a in state["ctx_k"]]
+        self.ctx_v = [cp(a) for a in state["ctx_v"]]
+        self._ctx_cur = list(state["_ctx_cur"])
+        self._ctx_cap = list(state["_ctx_cap"])
+        self.ctx_len = state["ctx_len"]
+        self.f_rnn = cp(state["f_rnn"])
+
     def _ensure_ctx_cap(self, i: int, need: int):
         if self.ctx_k[i] is None or need > self._ctx_cap[i]:
             new_cap = ((need + 255) // 256) * 256
@@ -284,8 +314,8 @@ class DSparkDrafterMLX:
         self.ctx_len = start_pos + T
         self.f_rnn = _mix_rmsnorm_compiled(target_taps[-1:], self.fuse_alpha[self.num_layers], self.head_dflare_norm)[0]
 
-    def _run_3layers(self, anc_emb: mx.array) -> mx.array:
-        B_len = self.block_size
+    def _run_3layers(self, anc_emb: mx.array, n_toks: int | None = None) -> mx.array:
+        B_len = self.block_size if n_toks is None else max(2, min(int(n_toks), self.block_size))
         masks = mx.broadcast_to(self.mask_embed[None, :], (B_len - 1, self.hidden_size))
         h = mx.concatenate([anc_emb.astype(mx.bfloat16)[None, :], masks], axis=0)
         q_dim = self._q_dim
@@ -336,7 +366,8 @@ class DSparkDrafterMLX:
         n_toks = self.block_size if draft_len is None else max(2, min(int(draft_len), self.block_size))
         anc_mx = anchor_tok.reshape(1).astype(mx.int32) if isinstance(anchor_tok, mx.array) else mx.array([int(anchor_tok)], dtype=mx.int32)
         anc_emb = embed_fn(anc_mx)[0, 0, :]
-        h = self._run_3layers(anc_emb)
+        trim = os.environ.get("LAMQ_DRAFTER_TRIM_BLEN") == "1"
+        h = self._run_3layers(anc_emb, n_toks=n_toks if trim else None)
 
         state = self._zero_state
         prev_tok = anc_mx
@@ -410,6 +441,47 @@ class DSparkDrafterMLX:
         anc_emb = embed_fn(anc_mx)[0, 0, :]
         h = self._run_3layers(anc_emb)
         z0 = self._zero_state[None, :]  # [1, 256]
+
+        if topology == "2-1":
+            st1, hp1 = self._markov_step(z0, anc_mx, h[1])
+            top2 = head_topk_fn(hp1, 2)[0]  # [a1, b1]
+            _, hp2 = self._markov_step(st1, top2[:1], h[2])
+            a2 = head_topk_fn(hp2, 1)[0, :1]
+            return mx.concatenate([anc_mx, top2[:1], a2, top2[1:2]], axis=0)
+
+        if topology == "3-1":
+            st1, hp1 = self._markov_step(z0, anc_mx, h[1])
+            top2 = head_topk_fn(hp1, 2)[0]  # [a1, b1]
+            st2, hp2 = self._markov_step(st1, top2[:1], h[2])
+            a2 = head_topk_fn(hp2, 1)[0, :1]
+            _, hp3 = self._markov_step(st2, a2, h[3])
+            a3 = head_topk_fn(hp3, 1)[0, :1]
+            return mx.concatenate([anc_mx, top2[:1], a2, a3, top2[1:2]], axis=0)
+
+        if topology == "2-2":
+            st1, hp1 = self._markov_step(z0, anc_mx, h[1])
+            top2 = head_topk_fn(hp1, 2)[0]  # [a1, b1]
+            _, hp2 = self._markov_step(mx.concatenate([st1, st1], axis=0), top2, h[2])
+            t2 = head_topk_fn(hp2, 1)[:, 0]  # [a2, b2]
+            return mx.concatenate([anc_mx, top2[:1], t2[:1], top2[1:2], t2[1:2]], axis=0)
+
+        if topology == "3-2":
+            st1, hp1 = self._markov_step(z0, anc_mx, h[1])
+            top2 = head_topk_fn(hp1, 2)[0]  # [a1, b1]
+            st2, hp2 = self._markov_step(mx.concatenate([st1, st1], axis=0), top2, h[2])
+            t2 = head_topk_fn(hp2, 1)[:, 0]  # [a2, b2]
+            _, hp3 = self._markov_step(st2[:1], t2[:1], h[3])
+            a3 = head_topk_fn(hp3, 1)[0, :1]
+            return mx.concatenate([anc_mx, top2[:1], t2[:1], a3, top2[1:2], t2[1:2]], axis=0)
+
+        if topology == "3-1-1":
+            st1, hp1 = self._markov_step(z0, anc_mx, h[1])
+            top3 = head_topk_fn(hp1, 3)[0]  # [a1, b1, c1]
+            st2, hp2 = self._markov_step(st1, top3[:1], h[2])
+            a2 = head_topk_fn(hp2, 1)[0, :1]
+            _, hp3 = self._markov_step(st2, a2, h[3])
+            a3 = head_topk_fn(hp3, 1)[0, :1]
+            return mx.concatenate([anc_mx, top3[:1], a2, a3, top3[1:2], top3[2:3]], axis=0)
 
         if topology == "4-3":
             st1, hp1 = self._markov_step(z0, anc_mx, h[1])

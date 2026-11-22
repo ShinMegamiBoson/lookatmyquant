@@ -324,6 +324,103 @@ def test_mini_model_and_runtime_integration() -> None:
         assert c_p == pdir / "config.json"
 
 
+def test_prefill_budget_keeps_one_pass_when_it_fits() -> None:
+    from unittest.mock import patch
+
+    from runtime_mlx.inkling.generate import _prefill_step
+
+    with patch.object(mx, "device_info", return_value={"max_recommended_working_set_size": 24_000_000_000}), \
+         patch.object(mx, "get_active_memory", return_value=5_400_000_000):
+        assert _prefill_step(4096, -1) == 4096
+        assert _prefill_step(32768, -1) == 2048
+        assert _prefill_step(32768, 0) == 32768
+        assert _prefill_step(32768, None) == 32768
+        assert _prefill_step(4096, 512) == 512
+
+
+def test_chunked_prefill_matches_single_pass() -> None:
+    """Chunked prefill (chunks smaller than the 8-token sliding window, prompt well past it) must reproduce one pass."""
+    from runtime_mlx.inkling.generate import _prefill, stream_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+        rng = np.random.default_rng(7)
+        toks = [int(x) for x in rng.integers(1, 500, size=29)]
+
+        ref, _ = model.forward_all_logits(toks)
+        mx.eval(ref)
+        ref = np.array(ref)[0]
+
+        # Model level: KV, sliding-window and conv state carried across 5-token chunks.
+        cache = model.make_cache()
+        parts = []
+        for s in range(0, len(toks), 5):
+            lg, cache = model.forward_all_logits(toks[s : s + 5], cache=cache)
+            mx.eval(lg)
+            parts.append(np.array(lg)[0])
+        chunked = np.concatenate(parts, axis=0)
+        assert float(np.max(np.abs(ref - chunked))) < 5e-3
+        assert (np.argmax(ref, axis=-1) == np.argmax(chunked, axis=-1)).all()
+
+        # _prefill: last-chunk output and taps bookkeeping.
+        out, _, taps, taps_start = _prefill(
+            model, toks, model.make_cache(), ordered=False, prefill_chunk=5, tap_visits=(1, 5, 7, 10)
+        )
+        mx.eval(out, taps)
+        assert int(np.array(out)[0, -1]) == int(np.argmax(ref[-1]))
+        assert taps_start == 25 and taps.shape == (4, 4, 256)
+        out1, _, taps1, start1 = _prefill(model, toks, model.make_cache(), ordered=False, prefill_chunk=None)
+        assert taps1 is None and start1 == 0 and int(np.array(out1)[0, -1]) == int(np.argmax(ref[-1]))
+
+        # End to end: greedy generation identical with and without chunking.
+        def gen(chunk):
+            return [t for c in stream_serial(model, toks, max_tokens=12, eos_ids=(), prefill_chunk=chunk) for t in c]
+
+        base = gen(None)
+        assert gen(5) == base and gen(3) == base and gen(4096) == base, f"chunked prefill changed greedy output: {base}"
+
+
+def test_prompt_cache_reuse_matches_fresh_prefill() -> None:
+    """PromptCache: extended, retried and unrelated prompts; reuse counts; eviction; snapshots never mutated."""
+    from runtime_mlx.inkling.generate import PromptCache, stream_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+        rng = np.random.default_rng(11)
+        p1 = [int(x) for x in rng.integers(1, 500, size=21)]
+        p2 = p1 + [int(x) for x in rng.integers(1, 500, size=9)]
+        p3 = p1[:5] + p2[10:]
+
+        def gen(p, pc=None):
+            st: dict = {}
+            g = stream_serial(model, p, max_tokens=10, eos_ids=(), stats_out=st, prefill_chunk=4, prompt_cache=pc)
+            return [t for c in g for t in c], st.get("prompt_cached_tokens")
+
+        fresh = {k: gen(p)[0] for k, p in (("p1", p1), ("p2", p2), ("p3", p3))}
+        pc = PromptCache(max_entries=2, min_tokens=0)
+        out, reused = gen(p1, pc)
+        assert out == fresh["p1"] and reused == 0 and len(pc) == 1
+        out, reused = gen(p2, pc)  # extends p1: reuses its snapshot (p1 minus its last token)
+        assert out == fresh["p2"] and reused == len(p1) - 1, reused
+        assert len(pc) == 1, "the p2 snapshot supersedes the p1 snapshot"
+        out, reused = gen(p2, pc)  # identical retry re-runs one token
+        assert out == fresh["p2"] and reused == len(p2) - 1, reused
+        out, reused = gen(p3, pc)  # shares only a short prefix: no reuse, second entry
+        assert out == fresh["p3"] and reused == 0 and len(pc) == 2
+        out, reused = gen(p2, pc)  # the earlier snapshot was not mutated by the generations that used it
+        assert out == fresh["p2"] and reused == len(p2) - 1
+
+        small = PromptCache(min_tokens=1000)
+        assert gen(p1, small)[0] == fresh["p1"] and len(small) == 0
+        disabled = PromptCache(max_entries=0, min_tokens=0)
+        assert gen(p1, disabled) == gen(p1, disabled) == (fresh["p1"], 0)
+        assert len(disabled) == 0
+
+
 def test_moe_grouped_large_expert_count_parity() -> None:
     """Stress-test deterministic compaction inside `trellis_moe_grouped` with E=96 (>32 experts) and sentinel slots."""
     rng = np.random.default_rng(123)
@@ -367,8 +464,8 @@ def test_tree_spec_and_kernels() -> None:
 
     for name, parents in TREE_TOPOLOGIES.items():
         spec = make_tree_spec(parents)
-        assert spec["T"] == 8 and spec["paths"][0] == [0], f"bad spec {name}"
-        assert len(spec["depth"]) == 8 and spec["depth"][0] == 0
+        assert spec["T"] == len(parents) and 1 <= spec["T"] <= 8 and spec["paths"][0] == [0], f"bad spec {name}"
+        assert len(spec["depth"]) == len(parents) and spec["depth"][0] == 0
 
     spec = make_tree_spec(TREE_TOPOLOGIES["4-3"])
     rng = np.random.default_rng(77)
@@ -408,6 +505,107 @@ def test_tree_spec_and_kernels() -> None:
     for j, ni in enumerate((0, 5, 6, 7)):
         err = float(np.max(np.abs(np.array(ao_t[ni]) - np.array(ao_b[j]))))
         assert err < 1e-4, f"tree SDPA mismatch on node {ni}: {err}"
+
+
+def test_compressed_global_kv() -> None:
+    """Check optional storage across append, growth, rollback and all SDPA dispatch sizes."""
+    from runtime_mlx.inkling.fast_kernels import gqa_relpos_sinks_sdpa_fast, make_tree_spec
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config
+
+    rng = np.random.default_rng(718)
+    data = mx.array(rng.normal(0, 0.2, (2, 8, 300, 128)).astype(np.float16))
+    q = mx.array(rng.normal(0, 1, (33, 24, 128)).astype(np.float32))
+    qin = mx.array(rng.normal(0, 0.1, (33, 2304)).astype(np.float32))
+    sw = mx.array(rng.normal(0, 0.05, (24, 2304)).astype(np.float16))
+    rel = mx.array(rng.normal(0, 0.2, (33, 24, 16)).astype(np.float32))
+    rp = mx.array(rng.normal(0, 0.2, (1024, 16)).astype(np.float16))
+
+    def attention(cache, T, positions, *, tree=None):
+        buf, length, start, cap, fp8, scales = cache.update_kv_f16(0, data[:, :, positions, :], False)
+        kwargs = {"tree_depth": tree["depth_mx"], "tree_mask": tree["mask_mx"]} if tree else {}
+        return gqa_relpos_sinks_sdpa_fast(
+            q[:T], buf, rel[:T], rp, qin[:T], sw, T, length, start, length - T, cap, False,
+            kv_fp8=fp8, kv_q4_scales=scales, **kwargs,
+        )
+
+    for mode in ("fp16", "fp8", "q4"):
+        cfg = Inkling2Config(global_kv_mode=mode)
+        for base in (12, 255):
+            for T in (1, 4, 5, 8, 9, 16, 31, 32, 33):
+                reference = Inkling2Cache(Inkling2Config())
+                candidate = Inkling2Cache(cfg)
+                for cache in (reference, candidate):
+                    cache.update_kv_f16(0, data[:, :, :base, :], False)
+                expected = np.array(attention(reference, T, slice(base, base + T)))
+                actual = np.array(attention(candidate, T, slice(base, base + T)))
+                assert np.all(np.isfinite(actual)), (mode, base, T)
+                err_by_token = np.linalg.norm(actual - expected, axis=1) / np.linalg.norm(expected, axis=1)
+                tolerance = {"fp16": 1e-6, "fp8": 0.08, "q4": 0.24}[mode]
+                assert max(err_by_token) < tolerance, (mode, base, T, err_by_token)
+
+            tree = make_tree_spec((-1, 0, 1, 2, 3, 0, 5, 6))
+            accepted = [0, 5, 6, 7]
+            candidate = Inkling2Cache(cfg)
+            control = Inkling2Cache(cfg)
+            for cache in (candidate, control):
+                cache.update_kv_f16(0, data[:, :, :base, :], False)
+            candidate.begin_spec_verify()
+            tree_out = attention(candidate, 8, slice(base, base + 8), tree=tree)
+            candidate.commit_tree_verify(accepted, 8)
+            control.update_kv_f16(0, data[:, :, [base + t for t in accepted], :], False)
+            assert candidate.kv_len[0] == control.kv_len[0]
+            assert len(candidate.state) == (2 if mode == "q4" else 1)
+            for actual, expected in zip(candidate.state, control.state):
+                np.testing.assert_array_equal(np.array(actual[:, :, :base + 4, :]), np.array(expected[:, :, :base + 4, :]))
+            next_out = attention(candidate, 1, slice(base + 8, base + 9))
+            next_control = attention(control, 1, slice(base + 8, base + 9))
+            np.testing.assert_allclose(np.array(next_out), np.array(next_control), atol=1e-6, rtol=1e-5)
+            assert bool(mx.all(mx.isfinite(tree_out)))
+            candidate.begin_spec_verify()
+            candidate.update_kv_f16(0, data[:, :, :8, :], False)
+            candidate.commit_spec_verify(3, 8)
+            control.update_kv_f16(0, data[:, :, :3, :], False)
+            assert candidate.kv_len[0] == control.kv_len[0]
+            for actual, expected in zip(candidate.state, control.state):
+                np.testing.assert_array_equal(np.array(actual[:, :, :base + 8, :]), np.array(expected[:, :, :base + 8, :]))
+
+        sliding = Inkling2Cache(cfg)
+        buf, _, _, _, fp8, scales = sliding.update_kv_f16(0, data, True)
+        assert buf.dtype == mx.float16 and not fp8 and scales is None
+
+
+def test_compressed_global_kv_snapshot_isolation() -> None:
+    """Restoring the same prefix twice gives each continuation independent compressed buffers."""
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config
+
+    rng = np.random.default_rng(915)
+    data = mx.array(rng.normal(0, 0.2, (2, 8, 262, 128)).astype(np.float16))
+    prefix = data[:, :, :250, :]
+    continuations = (data[:, :, 250:254, :], data[:, :, 254:262, :])
+    for mode in ("fp16", "fp8", "q4"):
+        cfg = Inkling2Config(num_hidden_layers=1, loop_passes=1, global_kv_mode=mode)
+        cache = Inkling2Cache(cfg)
+        cache.update_kv_f16(0, prefix, False)
+        cache.seq_len = 250
+        snapshot = cache.clone()
+        prefix_state = [np.array(buf) for buf in snapshot.state]
+
+        restored = [snapshot.clone(), snapshot.clone()]
+        assert all(item.offset == 250 for item in restored)
+        for actual, continuation in zip(restored, continuations):
+            actual.update_kv_f16(0, continuation, False)
+
+        assert cache.kv_len == snapshot.kv_len == [250]
+        assert [item.kv_cap[0] for item in restored] == [256, 512]
+        for actual, continuation in zip(restored, continuations):
+            reference = Inkling2Cache(cfg)
+            reference.update_kv_f16(0, mx.concatenate([prefix, continuation], axis=2), False)
+            assert actual.kv_len == reference.kv_len
+            for buf, expected in zip(actual.state, reference.state, strict=True):
+                np.testing.assert_array_equal(np.array(buf), np.array(expected))
+        for original in (cache, snapshot):
+            for buf, expected in zip(original.state, prefix_state, strict=True):
+                np.testing.assert_array_equal(np.array(buf), expected)
 
 
 def test_nvfp4_unified_moe_all_modes() -> None:
@@ -531,7 +729,7 @@ def test_nvfp4_unified_moe_all_modes() -> None:
                 y_v2 = kern_v2(
                     inputs=[
                         x_rot.reshape(-1), umoe.codes, umoe.scales, umoe.exp_fid, umoe.exp_code_off, umoe.exp_scale_off,
-                        *umoe._lut_args_sg8, units, ucnt, _u32(m_rows, x_div), order, x_raw.reshape(-1), *umoe._nv_args,
+                        *umoe._lut_args_prefill_v2, units, ucnt, _u32(m_rows, x_div), order, x_raw.reshape(-1), *umoe._nv_args,
                     ],
                     grid=(max_u * sg_p * 32, rblocks, 1),
                     threadgroup=(sg_p * 32, 1, 1),
@@ -653,8 +851,13 @@ def test_fast_kernels_suite() -> None:
 
 def main() -> None:
     test_mini_model_and_runtime_integration()
+    test_prefill_budget_keeps_one_pass_when_it_fits()
+    test_chunked_prefill_matches_single_pass()
+    test_prompt_cache_reuse_matches_fresh_prefill()
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
+    test_compressed_global_kv()
+    test_compressed_global_kv_snapshot_isolation()
     test_nvfp4_unified_moe_all_modes()
     test_row_group_moe_and_f16_signs_in()
     test_fast_kernels_suite()

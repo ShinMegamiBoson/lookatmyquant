@@ -423,6 +423,7 @@ class Runtime:
         block_size: int = 8,
         use_drafter: bool = True,
         adaptive: bool = True,
+        prefill_chunk: int | None = -1,
     ) -> Iterator[Chunk]:
         """Stream generated chunks for pre-encoded prompt token IDs."""
         ids = _unwrap_ids(prompt_ids)
@@ -451,6 +452,7 @@ class Runtime:
                     temp=temp,
                     top_p=top_p,
                     stats_out=stats,
+                    prefill_chunk=prefill_chunk,
                 )
             else:
                 gen = stream_serial(
@@ -461,6 +463,7 @@ class Runtime:
                     temp=temp,
                     top_p=top_p,
                     stats_out=stats,
+                    prefill_chunk=prefill_chunk,
                 )
             try:
                 for raw_chunk in gen:
@@ -607,6 +610,7 @@ class Runtime:
         block_size: int = 8,
         use_drafter: bool = True,
         adaptive: bool = True,
+        prefill_chunk: int | None = -1,
     ) -> Iterator[Chunk]:
         """Encode a prompt and stream output chunks."""
         ids = self.encode_prompt(
@@ -624,6 +628,7 @@ class Runtime:
             block_size=block_size,
             use_drafter=use_drafter,
             adaptive=adaptive,
+            prefill_chunk=prefill_chunk,
         )
 
     def stream_chat(
@@ -638,6 +643,7 @@ class Runtime:
         block_size: int = 8,
         use_drafter: bool = True,
         adaptive: bool = True,
+        prefill_chunk: int | None = -1,
     ) -> Iterator[Chunk]:
         """Encode a chat message list and stream output chunks."""
         ids = self.encode_messages(messages, thinking=thinking)
@@ -650,6 +656,7 @@ class Runtime:
             block_size=block_size,
             use_drafter=use_drafter,
             adaptive=adaptive,
+            prefill_chunk=prefill_chunk,
         )
 
     def _collect(self, chunks: Iterator[Chunk]) -> GenerationResult:
@@ -688,6 +695,7 @@ class Runtime:
         block_size: int = 8,
         use_drafter: bool = True,
         adaptive: bool = True,
+        prefill_chunk: int | None = -1,
     ) -> GenerationResult:
         """Generate a complete response for a prompt string or token IDs."""
         return self._collect(
@@ -703,6 +711,7 @@ class Runtime:
                 block_size=block_size,
                 use_drafter=use_drafter,
                 adaptive=adaptive,
+                prefill_chunk=prefill_chunk,
             )
         )
 
@@ -718,6 +727,7 @@ class Runtime:
         block_size: int = 8,
         use_drafter: bool = True,
         adaptive: bool = True,
+        prefill_chunk: int | None = -1,
     ) -> GenerationResult:
         """Generate a complete response for a list of chat messages."""
         return self._collect(
@@ -731,5 +741,6 @@ class Runtime:
                 block_size=block_size,
                 use_drafter=use_drafter,
                 adaptive=adaptive,
+                prefill_chunk=prefill_chunk,
             )
         )

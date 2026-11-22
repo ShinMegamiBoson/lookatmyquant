@@ -13,6 +13,7 @@ Zero extra weight formats and zero accuracy compromise:
 from __future__ import annotations
 
 import math
+import os
 from functools import lru_cache
 from typing import Sequence
 
@@ -45,6 +46,14 @@ def _f32_arr(*vals: float) -> mx.array:
     return mx.array(list(vals), dtype=mx.float32)
 
 
+@lru_cache(maxsize=1)
+def _is_m4() -> bool:
+    if os.environ.get("LAMQ_M4_TUNE") == "0":
+        return False
+    arch = str(mx.device_info().get("architecture", "")).lower()
+    return arch.startswith("applegpu_g16")
+
+
 # ----------------------------------------------------------------------------- L1 Multi-Table LUT Preparation
 
 def build_rtr_multitable(lut_f16: mx.array, k: int, g: int) -> mx.array:
@@ -68,6 +77,8 @@ def build_fast_luts(luts: dict[str, mx.array]) -> dict[str, mx.array]:
     dummy = mx.zeros((512,), dtype=mx.float16)
     e2m1_def, e4m3_def = nvfp4_luts_mx()
     fast = {
+        **{name: luts[name].reshape(-1).astype(mx.float16) if name in luts else dummy
+           for name in ("rtr1", "rtr2", "rtr3")},
         "ht1": luts["ht1"].reshape(-1).astype(mx.float16) if "ht1" in luts else dummy,
         "ht2": luts["ht2"].reshape(-1).astype(mx.float16) if "ht2" in luts else dummy,
         "ht3": luts["ht3"].reshape(-1).astype(mx.float16) if "ht3" in luts else dummy,
@@ -792,6 +803,55 @@ def rht_in_3072_gated_fast(attn_out: mx.array, gate_raw: mx.array, signs: mx.arr
 
 # ----------------------------------------------------------------------------- Shared Format Decode Helpers (ch = 16)
 
+_RTR_ARGS = "const threadgroup half* tv_rtr1, const threadgroup half* tv_rtr2, const threadgroup half* tv_rtr3, "
+
+
+def _rtr_value(fid: int, g: int, ex: str, staged: bool = True) -> str:
+    """The `g` weights that the `12 + (g - 1) * k` bits `ex` fix, read from the 4,096-entry table in threadgroup memory."""
+    k = fid - 2
+    if not staged:
+        return f"tv_rtr{k}[{ex}]"
+    vals = [f"tv_rtr{k}[(({ex}) >> {(g - 1 - t) * k}u) & 4095u]" for t in range(g)]
+    return f"half4({', '.join(vals)}, 0.0h)" if g == 3 else f"half2({', '.join(vals)})"
+
+
+def _emit_rtr_tables(a, fids, tid: str, n_threads: int):
+    """Copy each `rtr1..rtr3` base table the kernel uses (8 KB each) into threadgroup memory; the caller emits the barrier."""
+    for k in (1, 2, 3):
+        if k + 2 in fids:
+            a(f"threadgroup half tv_rtr{k}[4096]; for (uint idx = {tid}; idx < 4096u; idx += {n_threads}u) tv_rtr{k}[idx] = lut_rtr{k}[idx];")
+        else:
+            a(f"threadgroup half tv_rtr{k}[1];")
+
+
+def _can_stage_rtr(fids: tuple[int, ...], threadgroup_bytes: int) -> bool:
+    # Leave room for alignment and dummy tables under Metal's 32 KiB limit.
+    count = sum(fid in fids for fid in (3, 4, 5))
+    return bool(count and threadgroup_bytes + count * 8192 <= 31 * 1024 and not _has_mpp())
+
+
+def _rtr_params(staged: bool, rtr1_vec: int = 4) -> str:
+    if staged:
+        return _RTR_ARGS
+    return f"const device half{rtr1_vec}* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, "
+
+
+def _emit_rtr_bindings(a, fids, tid: str, n_threads: int, staged: bool, rtr1_vec: int = 4):
+    if staged:
+        _emit_rtr_tables(a, fids, tid, n_threads)
+    else:
+        for k in (1, 2, 3):
+            ty = f"half{rtr1_vec}" if k == 1 else "half2"
+            a(f"const device {ty}* tv_rtr{k} = (const device {ty}*)lut_rtr{k};")
+
+
+def _lut_inputs(fast_luts, *, staged: bool = False, sg8: bool = False):
+    trellis = ("rtr1", "rtr2", "rtr3") if staged else (
+        "rtr1_g2" if sg8 else "rtr1_g3", "rtr2_g2", "rtr3_g2"
+    )
+    return [fast_luts[name] for name in ("ht1", "ht2", "ht3", *trellis, "rtr4")]
+
+
 def _emit_decode_ch16(
     a,
     fid: int,
@@ -804,6 +864,7 @@ def _emit_decode_ch16(
     x_expr_fn,
     acc_expr_fn,
     dequant_out_expr: str = "",
+    stage_rtr: bool = False,
 ):
     """Emit ch=16 bit-unpack + LUT decode for ANY of the 9 formats (ht1..ht3, rtr1..rtr4, lm6, lm8).
 
@@ -866,7 +927,7 @@ def _emit_decode_ch16(
             for b in range(t_or_c):
                 a(f"            {acc_expr_fn(b)} += (float)hs{b};")
 
-    elif fid == 3:  # rtr1 (k=1, g=3, 14-bit multi-table in L1 tv_rtr1)
+    elif fid == 3:  # rtr1 (k=1, g=3: 14 bits fix 3 weights in tv_rtr1)
         wpr_c = n // 32
         a(f"            const uint B = ({n}u - 16u * (c + 1u)), w0 = B >> 5, o = B & 31u;")
         a(f"            const device uint* p = {ptr_expr} + w0;")
@@ -879,7 +940,7 @@ def _emit_decode_ch16(
                 nb = 12 + (gg - 1)
                 wi, off = bit >> 5, bit & 31
                 ex = f"extract_bits(w{wi}v, {off}u, {nb}u)" if off + nb <= 32 else f"insert_bits(extract_bits(w{wi}v, {off}u, {32-off}u), w{wi+1}v, {32-off}u, {nb-(32-off)}u)"
-                a(f"              const half4 v{ci} = tv_rtr1[{ex}];")
+                a(f"              const half4 v{ci} = {_rtr_value(3, 3, ex, stage_rtr)};")
             a(f"              *(device half4*)({dequant_out_expr} + 0u)  = half4(float4(v0[0], v0[1], v0[2], v1[0]) * sc);")
             a(f"              *(device half4*)({dequant_out_expr} + 4u)  = half4(float4(v1[1], v1[2], v2[0], v2[1]) * sc);")
             a(f"              *(device half4*)({dequant_out_expr} + 8u)  = half4(float4(v2[2], v3[0], v3[1], v3[2]) * sc);")
@@ -895,7 +956,7 @@ def _emit_decode_ch16(
                 nb = 12 + (gg - 1)
                 wi, off = bit >> 5, bit & 31
                 ex = f"extract_bits(w{wi}v, {off}u, {nb}u)" if off + nb <= 32 else f"insert_bits(extract_bits(w{wi}v, {off}u, {32-off}u), w{wi+1}v, {32-off}u, {nb-(32-off)}u)"
-                a(f"            {{ const half4 v = tv_rtr1[{ex}];")
+                a(f"            {{ const half4 v = {_rtr_value(3, 3, ex, stage_rtr)};")
                 for b in range(t_or_c):
                     terms = " + ".join(f"v[{3 - gg + t}] * ({x_expr_fn(b, (i + t) // 4)})[{(i + t) % 4}]" for t in range(gg))
                     a(f"              hs{b} += {terms};")
@@ -904,11 +965,10 @@ def _emit_decode_ch16(
             for b in range(t_or_c):
                 a(f"            {acc_expr_fn(b)} += (float)hs{b};")
 
-    elif fid in (4, 5):  # rtr2 (k=2, g=2, 14-bit L1 tv_rtr2) or rtr3 (k=3, g=2, 15-bit L1 tv_rtr3)
+    elif fid in (4, 5):  # rtr2 (k=2, g=2, 14 bits) or rtr3 (k=3, g=2, 15 bits)
         k = 2 if fid == 4 else 3
         nb = 12 + k
         wpr_c = (n * k) // 32
-        tvn = "tv_rtr2" if fid == 4 else "tv_rtr3"
         a(f"            const uint B = ({n}u - 16u * (c + 1u)) * {k}u, w0 = B >> 5;")
         if k == 3:
             a("            const uint o = B & 31u;")
@@ -925,7 +985,7 @@ def _emit_decode_ch16(
             bit = (15 - (i + 1)) * k
             wi, off = bit >> 5, bit & 31
             ex = f"extract_bits(w{wi}v, {off}u, {nb}u)" if off + nb <= 32 else f"insert_bits(extract_bits(w{wi}v, {off}u, {32-off}u), w{wi+1}v, {32-off}u, {nb-(32-off)}u)"
-            a(f"            {{ const half2 v = {tvn}[{ex}];")
+            a(f"            {{ const half2 v = {_rtr_value(fid, 2, ex, stage_rtr)};")
             if mode == "dequant":
                 a(f"              *(device half2*)({dequant_out_expr} + {i}u) = half2(float2(v) * sc); }}")
             else:
@@ -1011,7 +1071,7 @@ def _emit_decode_ch16(
 # ----------------------------------------------------------------------------- Fused Multi-Matrix DenseStage
 
 @lru_cache(maxsize=128)
-def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int, sg: int):
+def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int, sg: int, stage_rtr: bool = False):
     assert n % 256 == 0
     iters = n // 256
     has_ht1 = 0 in fids
@@ -1029,7 +1089,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
             f"inline void dstage_f{fid}("
             "const device half* xin, const device uint* mcodes, const device half* mscales, const device half* lv, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-            "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
             "device float* y, uint r0, uint m_rows, uint wpr, uint r_out_off, uint total_out, uint hl) {"
         )
         ha("    float acc[RPS][TBLK];")
@@ -1053,6 +1113,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
             n,
             ptr_expr="mcodes + (ulong)row * wpr",
             wpr_expr="wpr",
+            stage_rtr=stage_rtr,
             mode="dot",
             t_or_c=t_blk,
             x_expr_fn=lambda b, q: f"xr[{b}][{q}]",
@@ -1095,12 +1156,9 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
         a(f"for (uint idx = tid; idx < 1024u; idx += {sg * 32}u) tg_ht3[idx] = half2(lut_ht3[2u*idx], lut_ht3[2u*idx+1u]);")
     else:
         a("threadgroup half2 tg_ht3[1];")
-    if has_ht1 or has_ht2 or has_ht3:
+    _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
+    if has_ht1 or has_ht2 or has_ht3 or stage_rtr:
         a("threadgroup_barrier(mem_flags::mem_threadgroup);")
-
-    a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
 
     a("uint tot_blocks = 0u;")
     a("uint mat_blk_end[16];")
@@ -1125,7 +1183,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
     a("}")
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_dstage_n{n}_f{tag}_t{t_blk}_r{rps}_s{sg}",
+        name=f"ink_dstage_n{n}_f{tag}_t{t_blk}_r{rps}_s{sg}_rtr{int(stage_rtr)}",
         input_names=["x", "codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["y"],
         header="\n".join(H),
@@ -1134,7 +1192,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
 
 
 @lru_cache(maxsize=64)
-def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
+def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8, stage_rtr: bool = False):
     """Fast GPU dequantize of a DenseStage (or any subset of matrices) into float16[total_out, n] for T > 8 prefill GEMM!"""
     assert n % 256 == 0
     iters = n // 256
@@ -1149,7 +1207,7 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
             f"inline void ddeq_f{fid}("
             "const device uint* mcodes, const device half* mscales, const device half* lv, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-            "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
             "device half* W, uint row, uint wpr, uint out_row, uint hl) {"
         )
         ha("    const float sc = (float)mscales[row];")
@@ -1162,6 +1220,7 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
             n,
             ptr_expr="mcodes + (ulong)row * wpr",
             wpr_expr="wpr",
+            stage_rtr=stage_rtr,
             mode="dequant",
             t_or_c=0,
             x_expr_fn=None,
@@ -1193,11 +1252,9 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
         a(f"for (uint idx = tid; idx < 1024u; idx += {sg * 32}u) tg_ht3[idx] = half2(lut_ht3[2u*idx], lut_ht3[2u*idx+1u]);")
     else:
         a("threadgroup half2 tg_ht3[1];")
-    if has_ht1 or has_ht2 or has_ht3:
+    _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
+    if has_ht1 or has_ht2 or has_ht3 or stage_rtr:
         a("threadgroup_barrier(mem_flags::mem_threadgroup);")
-    a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
 
     a("uint mat_row_end[16];")
     a("uint acc_r = 0u;")
@@ -1218,7 +1275,7 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
     a("}")
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_ddeq_n{n}_f{tag}_s{sg}",
+        name=f"ink_ddeq_n{n}_f{tag}_s{sg}_rtr{int(stage_rtr)}",
         input_names=["codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["W"],
         header="\n".join(H),
@@ -1227,8 +1284,8 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
 
 
 @lru_cache(maxsize=64)
-def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg: int = 32):
-    """simdgroup_half8x8 DenseStage kernel for T=8 with L1 LUTs, 32 KB rtr1_g2, and sliding w_prev."""
+def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg: int = 32, stage_rtr: bool = False):
+    """DenseStage SIMD-group matrix multiply for T <= 8, with selectable RTR table layout."""
     assert n % 32 == 0
     steps = n // 32
     H = [
@@ -1243,7 +1300,7 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
             f"inline void sg8_f{fid}("
             "const device half* xin, const device uint* mcodes, const device half* mscales, const device half* lv, "
             "const device half4* t_ht1, const device half4* t_ht2, const device half2* t_ht3, "
-            "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr, rtr1_vec=2)}const device half* lut_rtr4, "
             "device float* y, uint rbase, uint m_rows, uint wpr, uint r_out_off, uint total_out, uint t_out, uint lane) {"
         )
         ha("    const uint qid = lane / 4u, fm = (qid & 4u) + ((lane / 2u) % 4u), fn = (qid & 2u) * 2u + (lane % 2u) * 2u;")
@@ -1295,21 +1352,20 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
         elif fid == 3:
             ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
             for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr1[extract_bits(lo, {sh}u, 13u)]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(3, 2, f'extract_bits(lo, {sh}u, 13u)', stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
         elif fid in (4, 5):
-            tvn = "tv_rtr2" if fid == 4 else "tv_rtr3"
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             if k == 2:
                 ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
                 for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-                    ha(f"            ELEMS_H2(Am.thread_elements()) = {tvn}[extract_bits(lo, {rb_b}u, 14u)]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, f'extract_bits(lo, {rb_b}u, 14u)', stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
             else:
                 ha(f"            const uint w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
                 ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
                 ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
                 for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
                     ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32-rb_b}u), hi, {32-rb_b}u, {15-(32-rb_b)}u)"
-                    ha(f"            ELEMS_H2(Am.thread_elements()) = {tvn}[{ex}]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, ex, stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
         elif fid == 6:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
@@ -1348,9 +1404,9 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
     a("const device half4* t_ht1 = (const device half4*)lut_ht1;")
     a("const device half4* t_ht2 = (const device half4*)lut_ht2;")
     a("const device half2* t_ht3 = (const device half2*)lut_ht3;")
-    a("const device half2* tv_rtr1 = (const device half2*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
+    _emit_rtr_bindings(a, fids, "simd * 32u + lane", sg * 32, stage_rtr, rtr1_vec=2)
+    if stage_rtr:
+        a("threadgroup_barrier(mem_flags::mem_threadgroup);")
     a("uint tot_blocks = 0u, mat_blk_end[16];")
     a("for (uint mi = 0; mi < n_mats; mi++) { tot_blocks += (dims[mi*8u+1u] + (8u*RB) - 1u) / (8u*RB); mat_blk_end[mi] = tot_blocks; }")
     a("for (uint rb = tg; rb * SG < tot_blocks; rb += ntg) {")
@@ -1369,7 +1425,7 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
     a("}")
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_sg8_dstage_v2_n{n}_f{tag}_rb{rb}_sg{sg}",
+        name=f"ink_sg8_dstage_v2_n{n}_f{tag}_rb{rb}_sg{sg}_rtr{int(stage_rtr)}",
         input_names=["x", "codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["y"],
         header="\n".join(H),
@@ -1428,21 +1484,20 @@ class DenseStage:
         self.total_out = r_off
         self.n_mats = len(items)
         self.fids = tuple(sorted(fids))
-        self._lut_args = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g3"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
-        self._lut_args_sg8 = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g2"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
+        ht_bytes = 4096 * sum(fid in self.fids for fid in (0, 1, 2))
+        self._stage_rtr = _can_stage_rtr(self.fids, ht_bytes)
+        self._stage_rtr_sg8 = _can_stage_rtr(self.fids, 0)
+        self._lut_args = _lut_inputs(fast_luts, staged=self._stage_rtr)
+        self._lut_args_sg8 = _lut_inputs(fast_luts, staged=self._stage_rtr_sg8, sg8=True)
         mx.eval(self.codes, self.scales, self.levels, self.dims)
         if self.signs_in is not None:
             mx.eval(self.signs_in)
 
-    def dequant_f16(self, ntg: int = 160) -> mx.array:
+    def dequant_f16(self, ntg: int | None = None) -> mx.array:
+        if ntg is None:
+            ntg = 10 if _is_m4() else 160
         sg = 8
-        kern = _make_dense_dequant_kernel(self.n, self.fids, sg=sg)
+        kern = _make_dense_dequant_kernel(self.n, self.fids, sg=sg, stage_rtr=self._stage_rtr)
         mt = _u32(self.total_out, self.n_mats, ntg)
         return kern(
             inputs=[self.codes, self.scales, self.levels, self.dims, *self._lut_args, mt],
@@ -1452,9 +1507,22 @@ class DenseStage:
             output_dtypes=[mx.float16],
         )[0]
 
-    def matmul_rotated_sg8_f16(self, x_rot_tr_f16: mx.array, T: int = 8, rb: int = 2, sg: int = 32, ntg: int = 80) -> mx.array:
+    def matmul_rotated_sg8_f16(
+        self,
+        x_rot_tr_f16: mx.array,
+        T: int = 8,
+        rb: int | None = None,
+        sg: int | None = None,
+        ntg: int | None = None,
+    ) -> mx.array:
         """Fast T=2..8 simdgroup_half8x8 path for QKV and 200K LM Head. Input layout: `[n_mats, n, 8]` half."""
-        kern = _make_sg8_dense_stage_kernel(self.n, self.fids, rb=rb, sg=sg)
+        m4 = _is_m4()
+        sg_limit = 32 if _has_mpp() else 8
+        rb = 2 if rb is None else rb
+        sg = min(sg_limit, (8 if m4 else sg_limit) if sg is None else sg)
+        if ntg is None:
+            ntg = (20 if self.total_out > 10000 else 30) if m4 else 80
+        kern = _make_sg8_dense_stage_kernel(self.n, self.fids, rb=rb, sg=sg, stage_rtr=self._stage_rtr_sg8)
         mt = _u32(self.total_out, self.n_mats, ntg, T)
         return kern(
             inputs=[x_rot_tr_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args_sg8, mt],
@@ -1467,8 +1535,16 @@ class DenseStage:
     def matmul_rotated_f16(self, x_rot_f16: mx.array, T: int, W_cached: mx.array | None = None) -> mx.array:
         """Execute `x_rot_f16` (shape `[n_mats, T, n]` or `[T, n]` for n_mats==1) -> `float32[T, total_out]`."""
         if T == 1:
-            rps, sg, ntg = (2, 4, 160) if self.total_out <= 3072 else (2, 8, 160)
-            kern = _make_dense_stage_kernel(self.n, self.fids, 1, rps=rps, sg=sg)
+            if _is_m4():
+                if self.total_out > 10000:
+                    rps, sg, ntg = 2, 4, 60
+                elif self.total_out <= 3072:
+                    rps, sg, ntg = 2, 4, 160
+                else:
+                    rps, sg, ntg = 1, 4, 160
+            else:
+                rps, sg, ntg = (2, 4, 160) if self.total_out <= 3072 else (2, 8, 160)
+            kern = _make_dense_stage_kernel(self.n, self.fids, 1, rps=rps, sg=sg, stage_rtr=self._stage_rtr)
             mt = _u32(self.total_out, self.n_mats, ntg)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args, mt],
@@ -1478,8 +1554,8 @@ class DenseStage:
                 output_dtypes=[mx.float32],
             )[0]
         if T <= 8:
-            rps, sg, ntg = 1, 8, 160
-            kern = _make_dense_stage_kernel(self.n, self.fids, T, rps=rps, sg=sg)
+            rps, sg, ntg = (2, 4, 40) if (_is_m4() and self.total_out <= 3072) else (1, 8, 160)
+            kern = _make_dense_stage_kernel(self.n, self.fids, T, rps=rps, sg=sg, stage_rtr=self._stage_rtr)
             mt = _u32(self.total_out, self.n_mats, ntg)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args, mt],
@@ -1521,67 +1597,16 @@ class DenseStage:
 
 # ----------------------------------------------------------------------------- Unified 1-Launch Multi-Format MoE
 
-def _emit_sg8_moe_mma(ha, fid: int, n: int, nb_tiles: int):
-    """DRY helper emitting the 4 simdgroup_half8x8 decode + MMA steps for any MoE format `fid` in {0..6}."""
-    k = {0: 1, 1: 2, 2: 3, 3: 1, 4: 2, 5: 3, 6: 4}[fid]
-    wpr_c = (n * k) // 32
-
-    def mma_line(j: int):
-        if nb_tiles == 1:
-            return f"simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);"
-        return (
-            f"\n            #pragma unroll\n"
-            f"            for (uint b = 0; b < {nb_tiles}u; b++) simdgroup_multiply_accumulate(Acc[i][b], Am, Xm[b][{j}], Acc[i][b]);"
-        )
-
-    if fid in (0, 1):
-        tgn = "t_ht1" if fid == 0 else "t_ht2"
-        if fid == 1:
-            ha(f"            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (((wi + 1u < {wpr_c}u) ? pw[1] : 0u) << 16u));")
-        else:
-            ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u; const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
-        ha(f"            const half4 v0 = {tgn}[((extract_bits(lo, {4 * k}u, 12u)) * {HASH_MULT_HEX}) >> 23u];")
-        ha(f"            const half4 v1 = {tgn}[((extract_bits(lo, 0u, 12u)) * {HASH_MULT_HEX}) >> 23u];")
-        for j, expr in [(0, "v0.xy"), (1, "v0.zw"), (2, "v1.xy"), (3, "v1.zw")]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = {expr}; {mma_line(j)}")
-    elif fid == 2:
-        ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
-        ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
-        for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = t_ht3[(extract_bits(lo, {rb_b}u, 12u) * {HASH_MULT_HEX}) >> 22u]; {mma_line(j)}")
-    elif fid == 3:
-        ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
-        for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr1[extract_bits(lo, {sh}u, 13u)]; {mma_line(j)}")
-    elif fid == 4:
-        ha(f"            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (((wi + 1u < {wpr_c}u) ? pw[1] : 0u) << 16u));")
-        for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr2[extract_bits(lo, {rb_b}u, 14u)]; {mma_line(j)}")
-    elif fid == 5:
-        ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u, w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
-        ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
-        ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
-        for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
-            ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32 - rb_b}u), hi, {32 - rb_b}u, {15 - (32 - rb_b)}u)"
-            ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr3[{ex}]; {mma_line(j)}")
-    elif fid == 6:
-        ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
-        for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
-            ex0 = f"extract_bits(w0, {b0}u, 12u)" if b0 + 12 <= 32 else f"insert_bits(extract_bits(w0, {b0}u, {32 - b0}u), w1, {32 - b0}u, {12 - (32 - b0)}u)"
-            ex1 = f"extract_bits(w0, {b1}u, 12u)" if b1 + 12 <= 32 else f"insert_bits(extract_bits(w0, {b1}u, {32 - b1}u), w1, {32 - b1}u, {12 - (32 - b1)}u)"
-            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lut_rtr4[{ex0}], lut_rtr4[{ex1}]); {mma_line(j)}")
-
-
 @lru_cache(maxsize=64)
-def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, rb: int = 2, nb: int = 2, n_rg: int = 1):
+def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, n_rg: int = 1, lpr: int | None = None, stage_rtr: bool = False):
     """Unified 1-launch MoE kernel supporting ALL formats {ht1,ht2,ht3,rtr1..rtr4,nvfp4} and optional row-group splitting (`n_rg`).
 
     Modes:
       - `t1`: T=1 (8 active slots, 1 token/expert, zero compaction, half-warp c1)
       - `grouped`: T=2..8 (up to 64 slots, pre-compacted plan, low-reg c3/c4, lpr=8 RPS=4 SG=8 -> 12.6ms!)
-      - `prefill`: T>8 (arbitrary N*8 slots via GPU-sorted balanced 16-token work units, NB=2 simdgroup_half8x8!)
     """
-    lpr = 8 if (t_mode == "grouped" or n == 1152) else 16
+    if lpr is None:
+        lpr = 8 if (t_mode == "grouped" or n == 1152) else 16
     assert n % (lpr * 16) == 0
     iters = n // (lpr * 16)
     groups_per_simd = 32 // lpr
@@ -1652,7 +1677,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                     f"inline void umoe_pp{fid}_c{c_val}("
                     "const device half* x, const device uint* ecodes, const device half* escales, "
                     "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-                    "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+                    f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
                     "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint packed, uint hl) {"
                 )
                 for b in range(c_val):
@@ -1680,6 +1705,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                     n,
                     ptr_expr=f"ecodes + (ulong)row * {wpr_c}u",
                     wpr_expr=f"{wpr_c}u",
+                    stage_rtr=stage_rtr,
                     mode="dot",
                     t_or_c=c_val,
                     x_expr_fn=lambda b, q: f"x{b}[{q}]",
@@ -1722,10 +1748,8 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             a("threadgroup half2 tg_ht3[1];")
         if has_nv:
             a(f"threadgroup half tg_e2m1[16]; threadgroup half tg_e4m3[256]; if (tid < 16u) tg_e2m1[tid] = lut_e2m1[tid]; for (uint idx = tid; idx < 256u; idx += {sg * 32}u) tg_e4m3[idx] = lut_e4m3[idx];")
-        a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-        a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-        a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
-        if has_ht1 or has_ht2 or has_ht3 or has_nv:
+        _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
+        if has_ht1 or has_ht2 or has_ht3 or has_nv or stage_rtr:
             a("threadgroup_barrier(mem_flags::mem_threadgroup);")
         a("const uint n_act = plan[0];")
         a("const uint blocks_per_u = (m_rows + RPS - 1u) / RPS;")
@@ -1770,115 +1794,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
         tag = "_".join(str(f) for f in fids)
         return mx.fast.metal_kernel(
-            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}",
-            input_names=in_names,
-            output_names=["y"],
-            header="\n".join(H),
-            source="\n".join(L),
-        )
-
-    if t_mode == "prefill":
-        steps = n // 32
-        H = [
-            "#include <metal_simdgroup_matrix>\n",
-            f"#define SG {sg}u\n#define RB {rb}u\n#define NB {nb}u\n",
-            "#define ELEMS_H2 reinterpret_cast<thread half2&>\n",
-            "#define ELEMS_F2 reinterpret_cast<thread float2&>\n",
-        ]
-        ha = H.append
-        for fid in fids:
-            k = {0: 1, 1: 2, 2: 3, 3: 1, 4: 2, 5: 3, 6: 4}[fid]
-            wpr_c = (n * k) // 32
-            ha(
-                f"inline void umoe_f{fid}_prefill_bal("
-                "const device half* x, const device uint* ecodes, const device half* escales, "
-                "const device half4* t_ht1, const device half4* t_ht2, const device half2* t_ht3, "
-                "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
-                "const device uint* slot_order, device float* y, uint rbase, uint m_rows, uint x_div, uint base, uint cnt, uint lane) {"
-            )
-            ha("    const uint qid = lane / 4u, fm = (qid & 4u) + ((lane / 2u) % 4u), fn = (qid & 2u) * 2u + (lane % 2u) * 2u;")
-            ha("    const uint q = fn / 2u, xcol = 8u * (fm / 2u) + (fm % 2u), r0 = rbase + fm;")
-            ha("    bool va[NB], vb[NB]; uint sa[NB], sb[NB]; const device half* xa[NB]; const device half* xb[NB];")
-            ha("    #pragma unroll")
-            ha("    for (uint b = 0; b < NB; b++) {")
-            ha("        va[b] = (8u * b + fn) < cnt; vb[b] = (8u * b + fn + 1u) < cnt;")
-            ha("        sa[b] = va[b] ? slot_order[base + 8u * b + fn] : 0u;")
-            ha("        sb[b] = vb[b] ? slot_order[base + 8u * b + fn + 1u] : 0u;")
-            ha(f"        xa[b] = x + (ulong)((x_div == 1u) ? sa[b] : (sa[b] >> 3)) * {n}u;")
-            ha(f"        xb[b] = x + (ulong)((x_div == 1u) ? sb[b] : (sb[b] >> 3)) * {n}u;")
-            ha("    }")
-            ha("    const device uint* p[RB];")
-            ha(f"    for (uint i = 0; i < RB; i++) p[i] = ecodes + (ulong)min(r0 + 8u * i, m_rows - 1u) * {wpr_c}u;")
-            ha(f"    const uint first = ({n}u - 8u - 8u * q) * {k}u, w_first = first >> 5, off = first & 31u;")
-            ha("    simdgroup_float8x8 Acc[RB][NB];")
-            ha("    for (uint i = 0; i < RB; i++) for (uint b = 0; b < NB; b++) Acc[i][b] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);")
-            if fid == 3:
-                ha("    uint w_prev[RB];")
-                ha(f"    for (uint i = 0; i < RB; i++) w_prev[i] = (w_first + 1u < {wpr_c}u) ? p[i][w_first + 1u] : 0u;")
-            ha(f"    for (uint s = 0; s < {steps}u; s++) {{")
-            ha("        simdgroup_half8x8 Xm[NB][4];")
-            ha("        const uint cbase = 32u * s + xcol;")
-            ha("        #pragma unroll")
-            ha("        for (uint b = 0; b < NB; b++) {")
-            ha("            #pragma unroll")
-            ha("            for (uint j = 0; j < 4u; j++) {")
-            ha("                const uint col = cbase + 2u * j;")
-            ha("                ELEMS_H2(Xm[b][j].thread_elements()) = half2(va[b] ? xa[b][col] : 0.0h, vb[b] ? xb[b][col] : 0.0h);")
-            ha("            }")
-            ha("        }")
-            ha(f"        const uint wi = w_first - s * {k}u;")
-            ha("        #pragma unroll")
-            ha("        for (uint i = 0; i < RB; i++) {")
-            ha("            const device uint* pw = p[i] + wi; simdgroup_half8x8 Am;")
-            _emit_sg8_moe_mma(ha, fid, n, nb_tiles=nb)
-            ha("        }")
-            ha("    }")
-            ha("    for (uint i = 0; i < RB; i++) {")
-            ha("        const uint row = r0 + 8u * i; if (row >= m_rows) continue;")
-            ha("        const float sc = (float)escales[row];")
-            ha("        #pragma unroll")
-            ha("        for (uint b = 0; b < NB; b++) {")
-            ha("            const float2 d = ELEMS_F2(Acc[i][b].thread_elements()) * sc;")
-            ha("            if (va[b]) y[(ulong)sa[b] * m_rows + row] = d.x;")
-            ha("            if (vb[b]) y[(ulong)sb[b] * m_rows + row] = d.y;")
-            ha("        }")
-            ha("    }")
-            ha("}")
-
-        L = []
-        a = L.append
-        a("const uint tg = threadgroup_position_in_grid.x, simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup, tid = simd * 32u + lane;")
-        a("const uint m_rows = meta[0], n_slots = meta[1], x_div = meta[2], ntg = meta[3];")
-        a("const device half4* t_ht1 = (const device half4*)lut_ht1; const device half4* t_ht2 = (const device half4*)lut_ht2; const device half2* t_ht3 = (const device half2*)lut_ht3;")
-        a("const device half2* tv_rtr1 = (const device half2*)lut_rtr1; const device half2* tv_rtr2 = (const device half2*)lut_rtr2; const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
-        a("threadgroup uint tg_e_order[128], tg_e_prefix[129], tg_n_units, tg_ne_tot;")
-        a("if (tid == 0u) {")
-        a("    uint ne = 0u, tot_u = 0u;")
-        for fid in fids:
-            a(f"    for (uint e = 0; e < 128u; e++) {{ if (exp_fid[e] == {fid}u) {{ uint c = expert_ids[e+1u] - expert_ids[e]; if (c > 0u) {{ tg_e_order[ne] = e; tg_e_prefix[ne] = tot_u; tot_u += (c + (8u * NB) - 1u) / (8u * NB); ne++; }} }} }}")
-        a("    tg_e_prefix[ne] = tot_u; tg_n_units = tot_u; tg_ne_tot = ne;")
-        a("}")
-        a("threadgroup_barrier(mem_flags::mem_threadgroup);")
-        a("const uint n_units = tg_n_units, ne_tot = tg_ne_tot;")
-        a("const uint blocks_per_u = (m_rows + (8u * RB) - 1u) / (8u * RB), total_blocks = n_units * blocks_per_u;")
-        a("for (uint rb_i = tg; rb_i * SG < total_blocks; rb_i += ntg) {")
-        a("    const uint gb = rb_i * SG + simd; if (gb >= total_blocks) continue;")
-        a("    const uint u = gb / blocks_per_u, rbase = (gb - u * blocks_per_u) * (8u * RB);")
-        a("    uint lo = 0u, hi = ne_tot;")
-        a("    while (lo + 1u < hi) { uint mid = (lo + hi) >> 1; if (tg_e_prefix[mid] <= u) lo = mid; else hi = mid; }")
-        a("    const uint eid = tg_e_order[lo], tile_i = u - tg_e_prefix[lo];")
-        a("    const uint off0 = expert_ids[eid], off1 = expert_ids[eid + 1u];")
-        a("    const uint base = off0 + tile_i * (8u * NB), cnt = min(8u * NB, off1 - base);")
-        a("    const uint fid = exp_fid[eid];")
-        a("    switch (fid) {")
-        for fid in fids:
-            a(f"        case {fid}u: umoe_f{fid}_prefill_bal(x, codes+exp_code_off[eid], scales+exp_scale_off[eid], t_ht1, t_ht2, t_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, slot_order, y, rbase, m_rows, x_div, base, cnt, lane); break;")
-        a("    }")
-        a("}")
-        in_names = ["x", "codes", "scales", "exp_fid", "exp_code_off", "exp_scale_off", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "expert_ids", "meta", "slot_order"]
-        tag = "_".join(str(f) for f in fids)
-        return mx.fast.metal_kernel(
-            name=f"ink_umoe_prefill_bal_n{n}_f{tag}_rb{rb}_nb{nb}_s{sg}",
+            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}_rtr{int(stage_rtr)}",
             input_names=in_names,
             output_names=["y"],
             header="\n".join(H),
@@ -1933,7 +1849,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             f"inline void umoe_f{fid}_c1("
             "const device half* x, const device uint* ecodes, const device half* escales, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-            "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
             "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint s0, uint hl) {"
         )
         ha(f"    const device half* xp0 = x + (ulong)((x_div == 1u) ? s0 : (s0 / x_div)) * {n}u;")
@@ -1955,6 +1871,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             n,
             ptr_expr=f"ecodes + (ulong)row * {wpr_c}u",
             wpr_expr=f"{wpr_c}u",
+            stage_rtr=stage_rtr,
             mode="dot",
             t_or_c=1,
             x_expr_fn=lambda b, q: f"x0[{q}]",
@@ -1997,9 +1914,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         a("threadgroup half2 tg_ht3[1];")
     if has_nv:
         a(f"threadgroup half tg_e2m1[16]; threadgroup half tg_e4m3[256]; if (tid < 16u) tg_e2m1[tid] = lut_e2m1[tid]; for (uint idx = tid; idx < 256u; idx += {sg * 32}u) tg_e4m3[idx] = lut_e4m3[idx];")
-    a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
+    _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
     a("threadgroup uint tg_valid[8], tg_nv;")
     a("if (tid == 0u) { uint nv = 0u; for (uint s = 0u; s < n_slots; s++) { if (expert_ids[s] != 0xFFFFFFFFu) tg_valid[nv++] = s; } tg_nv = nv; }")
     a("threadgroup_barrier(mem_flags::mem_threadgroup);")
@@ -2039,7 +1954,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_umoe_t1_n{n}_f{tag}_r{rps}_s{sg}_rg{n_rg}",
+        name=f"ink_umoe_t1_n{n}_f{tag}_r{rps}_s{sg}_rg{n_rg}_rtr{int(stage_rtr)}",
         input_names=in_names,
         output_names=["y"],
         header="\n".join(H),
@@ -2050,6 +1965,12 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
 @lru_cache(maxsize=1)
 def _has_mpp() -> bool:
     """Detect Apple M5+ MetalPerformancePrimitives (`mpp::tensor_ops::matmul2d`) Neural Accelerator support once."""
+    if os.environ.get("LAMQ_FORCE_MPP") == "0":
+        return False
+    info = mx.device_info()
+    arch = str(info.get("architecture", "")).lower()
+    if any(arch.startswith(p) for p in ("applegpu_g13", "applegpu_g14", "applegpu_g15", "applegpu_g16")):
+        return False
     try:
         k = mx.fast.metal_kernel(
             name="ink_mpp_probe",
@@ -2418,6 +2339,7 @@ def _make_unified_moe_prefill_v2_kernel(
     """Non-MPP fallback format-homogeneous prefill MoE kernel (`SG=8, RB=2, tile_t=32`, TG SRAM X_tile + LUT)."""
     steps = n // 32
     has_ht = any(f in fids for f in (0, 1, 2))
+    has_rtr = any(f in fids for f in (3, 4, 5))
     has_nv = 7 in fids
     H = [
         "#include <metal_simdgroup_matrix>\n",
@@ -2453,18 +2375,18 @@ def _make_unified_moe_prefill_v2_kernel(
         elif fid == 3:
             ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
             for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr1[extract_bits(lo, {sh}u, 13u)]; {mma_line(j)}")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(3, 2, f'extract_bits(lo, {sh}u, 13u)')}; {mma_line(j)}")
         elif fid == 4:
             ha(f"            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (((wi + 1u < {wpr_c}u) ? pw[1] : 0u) << 16u));")
             for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr2[extract_bits(lo, {rb_b}u, 14u)]; {mma_line(j)}")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(4, 2, f'extract_bits(lo, {rb_b}u, 14u)')}; {mma_line(j)}")
         elif fid == 5:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u, w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
             ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
             ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
             for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
                 ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32 - rb_b}u), hi, {32 - rb_b}u, {15 - (32 - rb_b)}u)"
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr3[{ex}]; {mma_line(j)}")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(5, 2, ex)}; {mma_line(j)}")
         elif fid == 6:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
@@ -2551,7 +2473,7 @@ def _make_unified_moe_prefill_v2_kernel(
                 f"inline void umoe_v2_f{fid}_nb{nb_val}("
                 "const device half* my_xp, const device uint* ecodes, const device half* escales, "
                 "threadgroup half* tg_x, const threadgroup half4* tg_ht4, const threadgroup half2* tg_ht2, "
-                "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+                f"{_RTR_ARGS}const device half* lut_rtr4, "
                 "const threadgroup uint* tg_out_slot, device float* y, "
                 "uint rbase, uint m_rows, uint y_stride, uint cnt, uint tid, uint lane) {"
             )
@@ -2633,7 +2555,6 @@ def _make_unified_moe_prefill_v2_kernel(
         ]
     L += [
         "const device half4* t_ht1 = (const device half4*)lut_ht1; const device half4* t_ht2 = (const device half4*)lut_ht2;",
-        "const device half2* tv_rtr1 = (const device half2*)lut_rtr1; const device half2* tv_rtr2 = (const device half2*)lut_rtr2; const device half2* tv_rtr3 = (const device half2*)lut_rtr3;",
         "threadgroup half tg_x[64 * XSTR];",
         "threadgroup half4 tg_ht4[512]; const threadgroup half2* tg_ht2 = (const threadgroup half2*)tg_ht4;" if has_ht else "threadgroup half4 tg_ht4[1]; const threadgroup half2* tg_ht2 = (const threadgroup half2*)tg_ht4;",
         "threadgroup uint tg_out_slot[32];",
@@ -2644,6 +2565,13 @@ def _make_unified_moe_prefill_v2_kernel(
             f"else if (fid == 1u) {{ for (uint idx = tid; idx < 512u; idx += {sg * 32}u) tg_ht4[idx] = t_ht2[idx]; }}",
             f"else if (fid == 2u) {{ for (uint idx = tid; idx < 512u; idx += {sg * 32}u) tg_ht4[idx] = ((const device half4*)lut_ht3)[idx]; }}",
         ]
+    if has_rtr:
+        L += [
+            "threadgroup half tg_rtr[4096]; const threadgroup half* tv_rtr1 = tg_rtr; const threadgroup half* tv_rtr2 = tg_rtr; const threadgroup half* tv_rtr3 = tg_rtr;",
+            f"if (fid >= 3u && fid <= 5u) {{ const device half* t = (fid == 3u) ? lut_rtr1 : (fid == 4u) ? lut_rtr2 : lut_rtr3; for (uint idx = tid; idx < 4096u; idx += {sg * 32}u) tg_rtr[idx] = t[idx]; }}",
+        ]
+    else:
+        L.append("threadgroup half tg_rtr[1]; const threadgroup half* tv_rtr1 = tg_rtr; const threadgroup half* tv_rtr2 = tg_rtr; const threadgroup half* tv_rtr3 = tg_rtr;")
     if has_nv:
         L += [
             "threadgroup half tg_e2m1[16]; threadgroup half tg_e4m3[256];",
@@ -2859,14 +2787,11 @@ class UnifiedMoESide:
         self.exp_code_off = mx.array(exp_code_off)
         self.exp_scale_off = mx.array(exp_scale_off)
         self.fids = tuple(sorted(slab_by_fid.keys()))
-        self._lut_args = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g3"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
-        self._lut_args_sg8 = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g2"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
+        ht_bytes = 4096 * sum(fid in self.fids for fid in (0, 1, 2))
+        self._stage_rtr = _can_stage_rtr(self.fids, ht_bytes + 1024)
+        self._lut_args_mpp = _lut_inputs(fast_luts)
+        self._lut_args_prefill_v2 = _lut_inputs(fast_luts, staged=True)
+        self._lut_args = self._lut_args_prefill_v2 if self._stage_rtr else self._lut_args_mpp
         if self.has_nvfp4:
             s_nv_flat = np.concatenate([np.array(nvfp4_slab[1], dtype=np.uint8).reshape(-1), np.zeros(64, dtype=np.uint8)])
             self.nv_scales = mx.array(s_nv_flat)
@@ -2896,8 +2821,8 @@ class UnifiedMoESide:
         n_slots = int(eids_flat.shape[0])
         nv_tail = [(x_raw_f16 if x_raw_f16 is not None else x_rot_f16).reshape(-1), *self._nv_args] if self.has_nvfp4 else []
         if n_slots <= 8 and not sorted_in and not sorted_out:
-            sg, ntg = 8, 160
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "t1", rps=4, sg=sg, n_rg=self.n_rg)
+            sg, ntg = (4, 60) if _is_m4() else (8, 160)
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "t1", rps=4, sg=sg, n_rg=self.n_rg, stage_rtr=self._stage_rtr)
             mt = _u32(self.m_rows, n_slots, x_div, ntg)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, eids_flat.astype(mx.uint32), mt, *nv_tail],
@@ -2916,8 +2841,13 @@ class UnifiedMoESide:
                     output_shapes=[(129,)],
                     output_dtypes=[mx.uint32],
                 )[0]
-            sg_g, ntg_g = 8, 160
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=4, sg=sg_g, n_rg=self.n_rg)
+            if _is_m4():
+                sg_g, rps_g = 8, 2
+                lpr_g = 16 if (self.n_cols == 2304 and n_slots > 32) else 8
+                ntg_g = 120 if (self.n_cols == 2304 and 40 < n_slots <= 56) else 160
+            else:
+                sg_g, rps_g, ntg_g, lpr_g = 8, 4, 160, 8
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, lpr=lpr_g, n_rg=self.n_rg, stage_rtr=self._stage_rtr)
             mt = _u32(self.m_rows, x_div, ntg_g)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, plan, mt, *nv_tail],
@@ -2937,7 +2867,7 @@ class UnifiedMoESide:
                 self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, m_tile=m_tile, tile_t=tile_t, k_tile=32, sg=sg_p, n_rg=self.n_rg,
             )
             return kern(
-                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
+                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_mpp, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
                 grid=(max_u * sg_p * 32, rblocks, 1),
                 threadgroup=(sg_p * 32, 1, 1),
                 output_shapes=[(n_slots, self.m_rows)],
@@ -2950,7 +2880,7 @@ class UnifiedMoESide:
             self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, sg=sg_p, rb=rb_p, n_rg=self.n_rg,
         )
         return kern(
-            inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_sg8, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
+            inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_prefill_v2, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
             grid=(max_u * sg_p * 32, rblocks, 1),
             threadgroup=(sg_p * 32, 1, 1),
             output_shapes=[(n_slots, self.m_rows)],
@@ -4246,8 +4176,184 @@ def kv_dyn_sconv4_norm_fused(
     )
 
 
-@lru_cache(maxsize=4)
-def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False):
+def _build_fp8_e4m3_lut_header() -> str:
+    vals = []
+    for c in range(256):
+        if (c & 0x7F) == 0x7F:
+            v = 0.0
+        else:
+            s = -1.0 if (c & 0x80) else 1.0
+            e = (c >> 3) & 0xF
+            m = c & 0x7
+            v = s * ((m / 8.0) * (2.0 ** -6) if e == 0 else (1.0 + m / 8.0) * (2.0 ** (e - 7)))
+        vals.append(f"half({v:.8e}f)")
+    return (
+        "constant half FP8_E4M3_LUT[256] = {"
+        + ",".join(vals)
+        + "};\n"
+        + """
+inline uchar float_to_fp8_e4m3(float x) {
+    uint u = as_type<uint>(x);
+    uint sign = (u >> 24) & 0x80u;
+    float ax = metal::fabs(x);
+    if (!(ax < 448.0f)) {
+        return (ax >= 448.0f) ? uchar(sign | 0x7Eu) : uchar(0u);
+    }
+    if (ax < 0.015625f) {
+        uint q = uint(metal::rint(ax * 512.0f));
+        return uchar(sign | q);
+    }
+    uint ua = as_type<uint>(ax);
+    uint lsb = (ua >> 20) & 1u;
+    uint rounded = ua + 0x7FFFFu + lsb;
+    uint e = (rounded >> 23) - 120u;
+    uint m = (rounded >> 20) & 0x7u;
+    uint code = (e << 3) | m;
+    if (code > 0x7Eu) code = 0x7Eu;
+    return uchar(sign | code);
+}
+"""
+    )
+
+
+_FP8_E4M3_HEADER = _build_fp8_e4m3_lut_header()
+
+
+@lru_cache(maxsize=1)
+def _make_fp8_quantize_f16_kernel():
+    src = """
+    const uint idx = thread_position_in_grid.x;
+    const uint n4 = meta[0];
+    if (idx >= n4) return;
+    const half4 v = *((const device half4*)(x) + idx);
+    uchar4 o;
+    o.x = float_to_fp8_e4m3(float(v.x));
+    o.y = float_to_fp8_e4m3(float(v.y));
+    o.z = float_to_fp8_e4m3(float(v.z));
+    o.w = float_to_fp8_e4m3(float(v.w));
+    *((device uchar4*)(out) + idx) = o;
+    """
+    return mx.fast.metal_kernel(
+        name="ink_fp8_e4m3_quantize_f16",
+        input_names=["x", "meta"],
+        output_names=["out"],
+        header=_FP8_E4M3_HEADER,
+        source=src,
+    )
+
+
+_H128_HEADER = """
+inline float4 h128_vec(float4 v, uint lane) {
+    const float a0 = v.x + v.y, b0 = v.x - v.y;
+    const float a1 = v.z + v.w, b1 = v.z - v.w;
+    v = float4(a0 + a1, b0 + b1, a0 - a1, b0 - b1);
+    float4 o;
+    o = float4(simd_shuffle_xor(v.x, 1u), simd_shuffle_xor(v.y, 1u), simd_shuffle_xor(v.z, 1u), simd_shuffle_xor(v.w, 1u));
+    v = (lane & 1u) ? (o - v) : (v + o);
+    o = float4(simd_shuffle_xor(v.x, 2u), simd_shuffle_xor(v.y, 2u), simd_shuffle_xor(v.z, 2u), simd_shuffle_xor(v.w, 2u));
+    v = (lane & 2u) ? (o - v) : (v + o);
+    o = float4(simd_shuffle_xor(v.x, 4u), simd_shuffle_xor(v.y, 4u), simd_shuffle_xor(v.z, 4u), simd_shuffle_xor(v.w, 4u));
+    v = (lane & 4u) ? (o - v) : (v + o);
+    o = float4(simd_shuffle_xor(v.x, 8u), simd_shuffle_xor(v.y, 8u), simd_shuffle_xor(v.z, 8u), simd_shuffle_xor(v.w, 8u));
+    v = (lane & 8u) ? (o - v) : (v + o);
+    o = float4(simd_shuffle_xor(v.x, 16u), simd_shuffle_xor(v.y, 16u), simd_shuffle_xor(v.z, 16u), simd_shuffle_xor(v.w, 16u));
+    v = (lane & 16u) ? (o - v) : (v + o);
+    return v * 0.08838834764831845f;
+}
+"""
+
+
+@lru_cache(maxsize=1)
+def _make_h128_rows_f32_kernel():
+    src = """
+    const uint row = threadgroup_position_in_grid.y;
+    const uint lane = thread_index_in_simdgroup;
+    const float4 v = *((const device float4*)(x + (ulong)row * 128u) + lane);
+    *((device float4*)(out + (ulong)row * 128u) + lane) = h128_vec(v, lane);
+    """
+    return mx.fast.metal_kernel(
+        name="ink_h128_rows_f32",
+        input_names=["x"],
+        output_names=["out"],
+        header=_H128_HEADER,
+        source=src,
+    )
+
+
+def h128_rows_f32(x: mx.array) -> mx.array:
+    xc = mx.contiguous(x.astype(mx.float32))
+    assert xc.shape[-1] == 128
+    n_rows = xc.size // 128
+    return _make_h128_rows_f32_kernel()(
+        inputs=[xc.reshape(-1)],
+        grid=(32, n_rows, 1),
+        threadgroup=(32, 1, 1),
+        output_shapes=[xc.shape],
+        output_dtypes=[mx.float32],
+    )[0]
+
+
+@lru_cache(maxsize=1)
+def _make_kv_h128_q4_quantize_kernel():
+    src = """
+    const uint row = threadgroup_position_in_grid.y;
+    const uint lane = thread_index_in_simdgroup;
+    const float4 v = float4(*((const device half4*)(x + (ulong)row * 128u) + lane));
+    const float4 hv = h128_vec(v, lane);
+    float am = max(max(fabs(hv.x), fabs(hv.y)), max(fabs(hv.z), fabs(hv.w)));
+    am = max(am, simd_shuffle_xor(am, 1u));
+    am = max(am, simd_shuffle_xor(am, 2u));
+    am = max(am, simd_shuffle_xor(am, 4u));
+    const half sc_h = half(max(am * (1.0f / 7.0f), 1e-6f));
+    const float inv_sc = 1.0f / float(sc_h);
+    const int q0 = clamp(int(metal::rint(hv.x * inv_sc)), -7, 7) + 8;
+    const int q1 = clamp(int(metal::rint(hv.y * inv_sc)), -7, 7) + 8;
+    const int q2 = clamp(int(metal::rint(hv.z * inv_sc)), -7, 7) + 8;
+    const int q3 = clamp(int(metal::rint(hv.w * inv_sc)), -7, 7) + 8;
+    *((device uchar2*)(q_out + (ulong)row * 64u) + lane) = uchar2(uchar(q0 | (q1 << 4)), uchar(q2 | (q3 << 4)));
+    if ((lane & 7u) == 0u) {
+        sc_out[(ulong)row * 4u + (lane >> 3)] = sc_h;
+    }
+    """
+    return mx.fast.metal_kernel(
+        name="ink_kv_h128_q4_quantize",
+        input_names=["x"],
+        output_names=["q_out", "sc_out"],
+        header=_H128_HEADER,
+        source=src,
+    )
+
+
+def kv_h128_q4_quantize(kv_f16: mx.array) -> tuple[mx.array, mx.array]:
+    xc = mx.contiguous(kv_f16.astype(mx.float16))
+    assert xc.shape[-1] == 128
+    n_rows = xc.size // 128
+    prefix = xc.shape[:-1]
+    return _make_kv_h128_q4_quantize_kernel()(
+        inputs=[xc.reshape(-1)],
+        grid=(32, n_rows, 1),
+        threadgroup=(32, 1, 1),
+        output_shapes=[(*prefix, 64), (*prefix, 4)],
+        output_dtypes=[mx.uint8, mx.float16],
+    )
+
+
+def fp8_e4m3_quantize_f16_to_u8(x: mx.array) -> mx.array:
+    xc = mx.contiguous(x.astype(mx.float16))
+    n = xc.size
+    assert n % 4 == 0, f"expected size divisible by 4, got {n}"
+    n4 = n // 4
+    return _make_fp8_quantize_f16_kernel()(
+        inputs=[xc.reshape(-1), _u32(n4)],
+        grid=(((n4 + 127) // 128) * 128, 1, 1),
+        threadgroup=(128, 1, 1),
+        output_shapes=[xc.shape],
+        output_dtypes=[mx.uint8],
+    )[0]
+
+
+@lru_cache(maxsize=8)
+def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False, kv_fp8: bool = False):
     # Fuses sink_proj directly inside SDPA threadgroup; reads unified KV[2, 8, kv_cap, 128] + optional tree mask/depth!
     in_names = ["q", "KV", "rel_st", "rel_proj_t", "q_in", "sink_w", "meta"] + (["tree_depth", "tree_mask"] if tree_mode else [])
     if tree_mode:
@@ -4268,6 +4374,19 @@ def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False):
         jhi_decl = "const uint j_hi = min(kv_len, (q_pos >= kv_start) ? (q_pos - kv_start + 1u) : 0u);"
         dist_block = "const uint dist = q_pos - (kv_start + j);"
 
+    kv_t = "uchar" if kv_fp8 else "half"
+    k_read = (
+        "const uchar4 ku = *((const device uchar4*)(Kp + (ulong)j * 128u) + lane); "
+        "const float4 kf = float4(half4(FP8_E4M3_LUT[ku.x], FP8_E4M3_LUT[ku.y], FP8_E4M3_LUT[ku.z], FP8_E4M3_LUT[ku.w]));"
+        if kv_fp8
+        else "const device half4* kp = (const device half4*)(Kp + (ulong)j * 128u); const float4 kf = float4(kp[lane]);"
+    )
+    v_read = (
+        "const uchar4 vu = *((const device uchar4*)(Vp + (ulong)j * 128u) + lane); "
+        "const float4 vf = float4(half4(FP8_E4M3_LUT[vu.x], FP8_E4M3_LUT[vu.y], FP8_E4M3_LUT[vu.z], FP8_E4M3_LUT[vu.w]));"
+        if kv_fp8
+        else "const device half4* vp = (const device half4*)(Vp + (ulong)j * 128u); const float4 vf = float4(vp[lane]);"
+    )
     src = f"""
     const uint ht = threadgroup_position_in_grid.y;
     const uint t = ht / 24u;
@@ -4301,8 +4420,8 @@ def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False):
     const device float4* rsp = (const device float4*)(rel_st + ((ulong)t * 24u + h) * 16u);
     const float4 rs0 = rsp[0], rs1 = rsp[1], rs2 = rsp[2], rs3 = rsp[3];
 
-    const device half* Kp = KV + (ulong)kvh * kv_cap * 128u;
-    const device half* Vp = KV + (ulong)(8u + kvh) * kv_cap * 128u;
+    const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * 128u;
+    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * 128u;
 
     const int min_pos = is_sliding ? ((int)q_pos - 1023) : 0;
     const uint j_lo = (min_pos > (int)kv_start) ? (uint)(min_pos - (int)kv_start) : 0u;
@@ -4314,8 +4433,8 @@ def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False):
 
     for (uint j = j_lo + simd; j < j_hi; j += 4u) {{
         {dist_block}
-        const device half4* kp = (const device half4*)(Kp + (ulong)j * 128u);
-        float score = simd_sum(dot(qv, float4(kp[lane])));
+        {k_read}
+        float score = simd_sum(dot(qv, kf));
         if (dist < 1024u) {{
             const device half4* rp = (const device half4*)(rel_proj_t + (ulong)dist * 16u);
             score += dot(rs0, float4(rp[0])) + dot(rs1, float4(rp[1])) + dot(rs2, float4(rp[2])) + dot(rs3, float4(rp[3]));
@@ -4324,8 +4443,8 @@ def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False):
         const float alpha = metal::precise::exp(m_loc - m_new);
         const float p = metal::precise::exp(score - m_new);
         l_loc = l_loc * alpha + p;
-        const device half4* vp = (const device half4*)(Vp + (ulong)j * 128u);
-        acc = acc * alpha + p * float4(vp[lane]);
+        {v_read}
+        acc = acc * alpha + p * vf;
         m_loc = m_new;
     }}
 
@@ -4351,22 +4470,35 @@ def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False):
     }}
     """
     return mx.fast.metal_kernel(
-        name=f"ink_gqa_relpos_sdpa_u2_tr{int(tree_mode)}",
+        name=f"ink_gqa_relpos_sdpa_u2_tr{int(tree_mode)}_fp8{int(kv_fp8)}",
         input_names=in_names,
         output_names=["out"],
+        header=_FP8_E4M3_HEADER if kv_fp8 else "",
         source=src,
     )
 
 
-@lru_cache(maxsize=2)
-def _make_gqa_relpos_flash_sdpa_kernel():
-    """Tiled `simdgroup_half8x8` FlashAttention-2 (`BQ=32, BK=64, SG=4`, `exp2`, O(1) memory) for prefill (`T >= 32`)."""
-    header = """
+@lru_cache(maxsize=6)
+def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False):
+    """Tiled `simdgroup_half8x8` FlashAttention-2 (`BQ=32, BK=64, SG=4`, `exp2`, O(1) memory) for prefill."""
+    assert not (kv_fp8 and kv_q4)
+    header = (
+        """
     #include <metal_simdgroup_matrix>
     #define ELEMS_H2 reinterpret_cast<thread half2&>
     #define ELEMS_F2 reinterpret_cast<thread float2&>
     """
-    src = """
+        + (_FP8_E4M3_HEADER if kv_fp8 else "")
+    )
+    in_names = ["q", "KV"] + (["KV_sc"] if kv_q4 else []) + ["rel_st", "rel_proj_t", "sinks", "meta"]
+    kv_stride = 64 if kv_q4 else 128
+    sc_decls = (
+        f"const device half* Ksp = KV_sc + (ulong)kvh * kv_cap * 4u;\n"
+        f"    const device half* Vsp = KV_sc + (ulong)(8u + kvh) * kv_cap * 4u;"
+        if kv_q4
+        else ""
+    )
+    src = f"""
     const uint bh = threadgroup_position_in_grid.y;
     const uint n_qblocks = meta[6];
     const uint h = bh / n_qblocks;
@@ -4378,8 +4510,14 @@ def _make_gqa_relpos_flash_sdpa_kernel():
     const uint lane = thread_index_in_simdgroup;      // 0..31
     const uint tid = simd * 32u + lane;               // 0..127
 
-    const uint T = meta[0], kv_len = meta[1], kv_start = meta[2], q_pos0 = meta[3], kv_cap = meta[4], is_sliding = meta[5];
-    const uint qid = lane / 4u;
+    const uint T = meta[0];
+    const uint kv_len = meta[1];
+    const uint kv_start = meta[2];
+    const uint q_pos0 = meta[3];
+    const uint kv_cap = meta[4];
+    const uint is_sliding = meta[5];
+
+    const uint qid = lane >> 2;
     const uint fm = (qid & 4u) + ((lane / 2u) % 4u);
     const uint fn = (qid & 2u) * 2u + (lane % 2u) * 2u;
     const uint q_t = q0 + simd * 8u + fm;
@@ -4392,40 +4530,43 @@ def _make_gqa_relpos_flash_sdpa_kernel():
     constexpr float LOG2E = 1.4426950408889634f;
     constexpr float Q_SCALE = LOG2E / 11.313708498984761f;
     #pragma unroll
-    for (uint i = 0; i < 8u; i++) {
+    for (uint i = 0; i < 8u; i++) {{
         const uint idx = tid + i * 128u;
         const uint qt_l = idx >> 5, d4 = idx & 31u;
         half4 qh = half4(0.0h);
-        if (q0 + qt_l < T) {
+        if (q0 + qt_l < T) {{
             const float4 qf = *(const device float4*)(q + ((ulong)(q0 + qt_l) * 24u + h) * 128u + d4 * 4u);
             qh = half4(qf * Q_SCALE);
-        }
+        }}
         *(threadgroup half4*)(tg_kv + qt_l * 136u + d4 * 4u) = qh;
-    }
+    }}
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     simdgroup_half8x8 Qm[16];
     #pragma unroll
-    for (uint d8 = 0; d8 < 16u; d8++) {
+    for (uint d8 = 0; d8 < 16u; d8++) {{
         simdgroup_load(Qm[d8], tg_kv + (simd * 8u) * 136u + d8 * 8u, 136u, ulong2(0, 0), false);
-    }
+    }}
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     float4 rs0 = float4(0.0f), rs1 = float4(0.0f), rs2 = float4(0.0f), rs3 = float4(0.0f);
-    if (q_t < T) {
+    float m_row = -1e20f;
+    float l_row = 0.0f;
+    if (q_t < T) {{
         const device float4* rsp = (const device float4*)(rel_st + ((ulong)q_t * 24u + h) * 16u);
         rs0 = rsp[0] * LOG2E; rs1 = rsp[1] * LOG2E; rs2 = rsp[2] * LOG2E; rs3 = rsp[3] * LOG2E;
-    }
+        const float sk = sinks[(ulong)q_t * 24u + h] * LOG2E;
+        m_row = sk;
+        l_row = 1.0f;
+    }}
 
-    // Initialize online softmax directly from hoisted per-token sink logit (sink value = 0!)
-    float m_row = (q_t < T) ? (sinks[(ulong)q_t * 24u + h] * LOG2E) : 0.0f;
-    float l_row = 1.0f;
     simdgroup_float8x8 O[16];
     #pragma unroll
     for (uint d8 = 0; d8 < 16u; d8++) O[d8] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
 
-    const device half* Kp = KV + (ulong)kvh * kv_cap * 128u;
-    const device half* Vp = KV + (ulong)(8u + kvh) * kv_cap * 128u;
+    const device __KV_T__* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;
+    const device __KV_T__* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;
+    {sc_decls}
 
     const uint q_pos_min = q_pos0 + q0;
     const uint q_pos_max = q_pos0 + min(q0 + 31u, T - 1u);
@@ -4433,53 +4574,49 @@ def _make_gqa_relpos_flash_sdpa_kernel():
     const uint k_lo = (min_pos > (int)kv_start) ? (uint)(min_pos - (int)kv_start) : 0u;
     const uint k_hi = min(kv_len, (q_pos_max >= kv_start) ? (q_pos_max - kv_start + 1u) : 0u);
 
-    for (uint k0 = k_lo; k0 < k_hi; k0 += 64u) {
-        // 1. Stage K[k0..k0+63, 0..127] into tg_kv (16 half4/thread = 100% coalesced)
+    for (uint k0 = k_lo; k0 < k_hi; k0 += 64u) {{
         #pragma unroll
-        for (uint i = 0; i < 16u; i++) {
+        for (uint i = 0; i < 16u; i++) {{
             const uint idx = tid + i * 128u;
             const uint kt_l = idx >> 5, d4 = idx & 31u;
             const uint kj = k0 + kt_l;
-            *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? *(const device half4*)(Kp + (ulong)kj * 128u + d4 * 4u) : half4(0.0h);
-        }
+            __LOAD_K4__
+        }}
 
-        // Stage rel_proj_t window [d_min .. d_min + 95] into 3 KB tg_rp
         const int d_min = (int)q_pos_min - (int)(kv_start + k0 + 63u);
         const bool need_rel = (d_min < 1024) && ((d_min + 95) >= 0);
-        if (need_rel) {
+        if (need_rel) {{
             #pragma unroll
-            for (uint i = 0; i < 3u; i++) {
-                const uint idx = tid + i * 128u; // 0..383 = 96 * 4 half4
+            for (uint i = 0; i < 3u; i++) {{
+                const uint idx = tid + i * 128u;
                 const uint row = idx >> 2, c4 = idx & 3u;
                 const int d = d_min + (int)row;
                 *(threadgroup half4*)(tg_rp + row * 16u + c4 * 4u) = (d >= 0 && d < 1024) ? *(const device half4*)(rel_proj_t + (ulong)d * 16u + c4 * 4u) : half4(0.0h);
-            }
-        }
+            }}
+        }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        // 2. S[0..7] = Qm @ K_tile^T
         simdgroup_float8x8 S[8];
         #pragma unroll
         for (uint kb = 0; kb < 8u; kb++) S[kb] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
         #pragma unroll
-        for (uint d8 = 0; d8 < 16u; d8++) {
+        for (uint d8 = 0; d8 < 16u; d8++) {{
             #pragma unroll
-            for (uint kb = 0; kb < 8u; kb++) {
+            for (uint kb = 0; kb < 8u; kb++) {{
                 simdgroup_half8x8 Km;
                 simdgroup_load(Km, tg_kv + (kb * 8u) * 136u + d8 * 8u, 136u, ulong2(0, 0), true);
                 simdgroup_multiply_accumulate(S[kb], Qm[d8], Km, S[kb]);
-            }
-        }
+            }}
+        }}
 
-        // 3. RelPos bias + causal/sliding mask + in-register online softmax
         const bool full_valid = (q0 + 32u <= T) && (k0 + 64u <= k_hi) && (d_min >= 0) && (!is_sliding || ((int)q_pos_max - (int)(kv_start + k0) < 1024));
         const bool all_rel = full_valid && ((int)q_pos_max - (int)(kv_start + k0) < 1024);
 
         float m_tile = -1e30f;
         float2 sv[8];
-        if (all_rel) {
+        if (all_rel) {{
             #pragma unroll
-            for (uint kb = 0; kb < 8u; kb++) {
+            for (uint kb = 0; kb < 8u; kb++) {{
                 float2 s2 = ELEMS_F2(S[kb].thread_elements());
                 const uint da = (uint)((int)q_pos - (int)(kv_start + k0 + kb * 8u + fn) - d_min);
                 const threadgroup half4* rpa = (const threadgroup half4*)(tg_rp + da * 16u);
@@ -4488,29 +4625,29 @@ def _make_gqa_relpos_flash_sdpa_kernel():
                 s2.y += dot(rs0, float4(rpb[0])) + dot(rs1, float4(rpb[1])) + dot(rs2, float4(rpb[2])) + dot(rs3, float4(rpb[3]));
                 sv[kb] = s2;
                 m_tile = max(m_tile, max(s2.x, s2.y));
-            }
-        } else {
+            }}
+        }} else {{
             #pragma unroll
-            for (uint kb = 0; kb < 8u; kb++) {
+            for (uint kb = 0; kb < 8u; kb++) {{
                 float2 s2 = ELEMS_F2(S[kb].thread_elements());
                 const uint k_a = k0 + kb * 8u + fn, k_b = k_a + 1u;
                 const int da = (int)q_pos - (int)(kv_start + k_a), db = da - 1;
-                if ((q_t < T) && (k_a < k_hi) && (da >= 0) && (!is_sliding || da < 1024)) {
-                    if (need_rel && da < 1024) {
+                if ((q_t < T) && (k_a < k_hi) && (da >= 0) && (!is_sliding || da < 1024)) {{
+                    if (need_rel && da < 1024) {{
                         const threadgroup half4* rp = (const threadgroup half4*)(tg_rp + (uint)(da - d_min) * 16u);
                         s2.x += dot(rs0, float4(rp[0])) + dot(rs1, float4(rp[1])) + dot(rs2, float4(rp[2])) + dot(rs3, float4(rp[3]));
-                    }
-                } else s2.x = -1e30f;
-                if ((q_t < T) && (k_b < k_hi) && (db >= 0) && (!is_sliding || db < 1024)) {
-                    if (need_rel && db < 1024) {
+                    }}
+                }} else s2.x = -1e30f;
+                if ((q_t < T) && (k_b < k_hi) && (db >= 0) && (!is_sliding || db < 1024)) {{
+                    if (need_rel && db < 1024) {{
                         const threadgroup half4* rp = (const threadgroup half4*)(tg_rp + (uint)(db - d_min) * 16u);
                         s2.y += dot(rs0, float4(rp[0])) + dot(rs1, float4(rp[1])) + dot(rs2, float4(rp[2])) + dot(rs3, float4(rp[3]));
-                    }
-                } else s2.y = -1e30f;
+                    }}
+                }} else s2.y = -1e30f;
                 sv[kb] = s2;
                 m_tile = max(m_tile, max(s2.x, s2.y));
-            }
-        }
+            }}
+        }}
         m_tile = max(m_tile, simd_shuffle_xor(m_tile, 1u));
         m_tile = max(m_tile, simd_shuffle_xor(m_tile, 8u));
 
@@ -4523,54 +4660,551 @@ def _make_gqa_relpos_flash_sdpa_kernel():
         float l_tile = 0.0f;
         simdgroup_half8x8 Pm[8];
         #pragma unroll
-        for (uint kb = 0; kb < 8u; kb++) {
+        for (uint kb = 0; kb < 8u; kb++) {{
             const float px = (sv[kb].x > -1e20f) ? exp2(sv[kb].x - m_new) : 0.0f;
             const float py = (sv[kb].y > -1e20f) ? exp2(sv[kb].y - m_new) : 0.0f;
             l_tile += px + py;
             ELEMS_H2(Pm[kb].thread_elements()) = half2((half)px, (half)py);
-        }
+        }}
         l_tile += simd_shuffle_xor(l_tile, 1u);
         l_tile += simd_shuffle_xor(l_tile, 8u);
         l_row += l_tile;
         m_row = m_new;
 
-        // 4. Stage V[k0..k0+63, 0..127] into tg_kv and accumulate O += P @ V
         threadgroup_barrier(mem_flags::mem_threadgroup);
         #pragma unroll
-        for (uint i = 0; i < 16u; i++) {
+        for (uint i = 0; i < 16u; i++) {{
             const uint idx = tid + i * 128u;
             const uint kt_l = idx >> 5, d4 = idx & 31u;
             const uint kj = k0 + kt_l;
-            *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? *(const device half4*)(Vp + (ulong)kj * 128u + d4 * 4u) : half4(0.0h);
-        }
+            __LOAD_V4__
+        }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         #pragma unroll
-        for (uint kb = 0; kb < 8u; kb++) {
+        for (uint kb = 0; kb < 8u; kb++) {{
             #pragma unroll
-            for (uint d8 = 0; d8 < 16u; d8++) {
+            for (uint d8 = 0; d8 < 16u; d8++) {{
                 simdgroup_half8x8 Vm;
                 simdgroup_load(Vm, tg_kv + (kb * 8u) * 136u + d8 * 8u, 136u, ulong2(0, 0), false);
                 simdgroup_multiply_accumulate(O[d8], Pm[kb], Vm, O[d8]);
-            }
-        }
+            }}
+        }}
         threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
+    }}
 
-    if (q_t < T) {
+    if (q_t < T) {{
         const float inv_l = 1.0f / l_row;
         device float* op = out + ((ulong)q_t * 24u + h) * 128u;
         #pragma unroll
-        for (uint d8 = 0; d8 < 16u; d8++) {
+        for (uint d8 = 0; d8 < 16u; d8++) {{
             const float2 ov = ELEMS_F2(O[d8].thread_elements()) * inv_l;
             op[d8 * 8u + fn] = ov.x;
             op[d8 * 8u + fn + 1u] = ov.y;
+        }}
+    }}
+    """
+    kv_t = "uchar" if (kv_fp8 or kv_q4) else "half"
+    if kv_q4:
+        load_k4 = "{ half4 hk = half4(0.0h); if (kj < k_hi) { const uchar2 p = *(const device uchar2*)(Kp + (ulong)kj * 64u + d4 * 2u); const half sc = Ksp[(ulong)kj * 4u + (d4 >> 3)]; hk = half4(half(int(p.x & 0xFu) - 8) * sc, half(int(p.x >> 4) - 8) * sc, half(int(p.y & 0xFu) - 8) * sc, half(int(p.y >> 4) - 8) * sc); } *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = hk; }"
+        load_v4 = "{ half4 hv = half4(0.0h); if (kj < k_hi) { const uchar2 p = *(const device uchar2*)(Vp + (ulong)kj * 64u + d4 * 2u); const half sc = Vsp[(ulong)kj * 4u + (d4 >> 3)]; hv = half4(half(int(p.x & 0xFu) - 8) * sc, half(int(p.x >> 4) - 8) * sc, half(int(p.y & 0xFu) - 8) * sc, half(int(p.y >> 4) - 8) * sc); } *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = hv; }"
+    elif kv_fp8:
+        load_k4 = "{ half4 hk = half4(0.0h); if (kj < k_hi) { const uchar4 u = *(const device uchar4*)(Kp + (ulong)kj * 128u + d4 * 4u); hk = half4(FP8_E4M3_LUT[u.x], FP8_E4M3_LUT[u.y], FP8_E4M3_LUT[u.z], FP8_E4M3_LUT[u.w]); } *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = hk; }"
+        load_v4 = "{ half4 hv = half4(0.0h); if (kj < k_hi) { const uchar4 u = *(const device uchar4*)(Vp + (ulong)kj * 128u + d4 * 4u); hv = half4(FP8_E4M3_LUT[u.x], FP8_E4M3_LUT[u.y], FP8_E4M3_LUT[u.z], FP8_E4M3_LUT[u.w]); } *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = hv; }"
+    else:
+        load_k4 = "*(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? *(const device half4*)(Kp + (ulong)kj * 128u + d4 * 4u) : half4(0.0h);"
+        load_v4 = "*(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? *(const device half4*)(Vp + (ulong)kj * 128u + d4 * 4u) : half4(0.0h);"
+    src = src.replace("__KV_T__", kv_t).replace("__LOAD_K4__", load_k4).replace("__LOAD_V4__", load_v4)
+    return mx.fast.metal_kernel(
+        name=f"ink_gqa_relpos_flash_sdpa_bk64_fp8{int(kv_fp8)}_q4{int(kv_q4)}",
+        input_names=in_names,
+        output_names=["out"],
+        header=header,
+        source=src,
+    )
+
+
+@lru_cache(maxsize=48)
+def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", t_cap: int = 4, split_k: bool = False):
+    """GQA+T fused Flash-Decoding kernel supporting fp16, fp8, and Hadamard-rotated 4-bit (q4)."""
+    assert kv_mode in ("fp16", "fp8", "q4")
+    assert t_cap in (1, 4, 8)
+    in_names = ["q", "KV"] + (["KV_sc"] if kv_mode == "q4" else []) + ["rel_st", "rel_proj_t"]
+    if not split_k:
+        in_names.extend(["q_in", "sink_w"])
+    in_names.append("meta")
+    if tree_mode:
+        in_names.extend(["tree_depth", "tree_mask"])
+
+    kv_t = "uchar" if kv_mode in ("fp8", "q4") else "half"
+    kv_stride = 64 if kv_mode == "q4" else 128
+    sc_decls = (
+        "const device half* Ksp = KV_sc + (ulong)kvh * kv_cap * 4u;\n"
+        "    const device half* Vsp = KV_sc + (ulong)(8u + kvh) * kv_cap * 4u;"
+        if kv_mode == "q4"
+        else ""
+    )
+    if kv_mode == "q4":
+        def load_kv_expr(j_expr: str) -> str:
+            return (
+                f"const uchar2 kp2 = *((const device uchar2*)(Kp + (ulong)({j_expr}) * 64u) + lane); "
+                f"const half ksc = Ksp[(ulong)({j_expr}) * 4u + (lane >> 3)]; "
+                f"const uchar2 vp2 = *((const device uchar2*)(Vp + (ulong)({j_expr}) * 64u) + lane); "
+                f"const half vsc = Vsp[(ulong)({j_expr}) * 4u + (lane >> 3)]; "
+                "tg_k[r * 32u + lane] = half4(half(int(kp2.x & 0xFu) - 8) * ksc, half(int(kp2.x >> 4) - 8) * ksc, half(int(kp2.y & 0xFu) - 8) * ksc, half(int(kp2.y >> 4) - 8) * ksc); "
+                "tg_v[r * 32u + lane] = half4(half(int(vp2.x & 0xFu) - 8) * vsc, half(int(vp2.x >> 4) - 8) * vsc, half(int(vp2.y & 0xFu) - 8) * vsc, half(int(vp2.y >> 4) - 8) * vsc);"
+            )
+    elif kv_mode == "fp8":
+        def load_kv_expr(j_expr: str) -> str:
+            return (
+                f"const uchar4 ku = *((const device uchar4*)(Kp + (ulong)({j_expr}) * 128u) + lane); "
+                f"const uchar4 vu = *((const device uchar4*)(Vp + (ulong)({j_expr}) * 128u) + lane); "
+                "tg_k[r * 32u + lane] = half4(FP8_E4M3_LUT[ku.x], FP8_E4M3_LUT[ku.y], FP8_E4M3_LUT[ku.z], FP8_E4M3_LUT[ku.w]); "
+                "tg_v[r * 32u + lane] = half4(FP8_E4M3_LUT[vu.x], FP8_E4M3_LUT[vu.y], FP8_E4M3_LUT[vu.z], FP8_E4M3_LUT[vu.w]);"
+            )
+    else:
+        def load_kv_expr(j_expr: str) -> str:
+            return (
+                f"tg_k[r * 32u + lane] = *((const device half4*)(Kp + (ulong)({j_expr}) * 128u) + lane); "
+                f"tg_v[r * 32u + lane] = *((const device half4*)(Vp + (ulong)({j_expr}) * 128u) + lane);"
+            )
+
+    header = "#define LOG2E 1.4426950408889634f\n"
+    if kv_mode == "fp8":
+        header += _FP8_E4M3_HEADER
+    elif kv_mode == "q4":
+        header += _H128_HEADER
+    out_names = ["part_m", "part_l", "part_o"] if split_k else ["out"]
+    q_rot = "qv[g] = h128_vec(qv[g], lane);" if kv_mode == "q4" else ""
+    q_rot_k = "qv[k_t][g] = h128_vec(qv[k_t][g], lane);" if kv_mode == "q4" else ""
+    unrot_expr = "h128_vec(a_out, lane)" if kv_mode == "q4" else "a_out"
+
+    if t_cap == 1:
+        if split_k:
+            sink_merge = """
+    if (simd == 0u) {
+        for (uint g = 0u; g < 3u; g++) {
+            float m_all = -1e30f;
+            for (uint s = 0u; s < 4u; s++) m_all = max(m_all, tg_m[s][g]);
+            float l_all = 0.0f;
+            float4 a_all = float4(0.0f);
+            if (m_all > -1e20f) {
+                for (uint s = 0u; s < 4u; s++) {
+                    if (tg_l[s][g] > 0.0f) {
+                        const float sc = exp2(tg_m[s][g] - m_all);
+                        l_all += tg_l[s][g] * sc;
+                        a_all += tg_a[s][g][lane] * sc;
+                    }
+                }
+            }
+            const uint h = kvh * 3u + g;
+            if (lane == 0u) {
+                part_m[(ulong)split_id * 24u + h] = m_all;
+                part_l[(ulong)split_id * 24u + h] = l_all;
+            }
+            *((device float4*)(part_o + ((ulong)split_id * 24u + h) * 128u) + lane) = a_all;
         }
     }
+"""
+        else:
+            sink_merge = f"""
+    float sk_arr[3];
+    for (uint g = 0u; g < 3u; g++) {{
+        const uint h = kvh * 3u + g;
+        const device float2* qin2 = (const device float2*)q_in;
+        const device half2* sw2 = (const device half2*)(sink_w + (ulong)h * 2304u);
+        float skp = 0.0f;
+        #pragma unroll
+        for (uint i = 0u; i < 9u; i++) {{
+            const uint idx = tid + i * 128u;
+            skp += dot(qin2[idx], float2(sw2[idx]));
+        }}
+        sk_arr[g] = simd_sum(skp) * LOG2E;
+    }}
+    threadgroup float tg_sk[4][3];
+    if (lane == 0u) {{
+        for (uint g = 0u; g < 3u; g++) tg_sk[simd][g] = sk_arr[g];
+    }}
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (simd == 0u) {{
+        for (uint g = 0u; g < 3u; g++) {{
+            const uint h = kvh * 3u + g;
+            const float sk = tg_sk[0][g] + tg_sk[1][g] + tg_sk[2][g] + tg_sk[3][g];
+            float m_all = sk;
+            for (uint s = 0u; s < 4u; s++) m_all = max(m_all, tg_m[s][g]);
+            float l_all = exp2(sk - m_all);
+            float4 a_all = float4(0.0f);
+            for (uint s = 0u; s < 4u; s++) {{
+                if (tg_l[s][g] > 0.0f) {{
+                    const float sc = exp2(tg_m[s][g] - m_all);
+                    l_all += tg_l[s][g] * sc;
+                    a_all += tg_a[s][g][lane] * sc;
+                }}
+            }}
+            const float4 a_out = a_all * (1.0f / l_all);
+            *((device float4*)(out + (ulong)h * 128u) + lane) = {unrot_expr};
+        }}
+    }}
+"""
+        src = f"""
+    const uint kvh_sp = threadgroup_position_in_grid.y;
+    const uint n_splits = {"meta[6]" if split_k else "1u"};
+    const uint kvh = kvh_sp / n_splits;
+    const uint split_id = kvh_sp - kvh * n_splits;
+    const uint simd = simdgroup_index_in_threadgroup;
+    const uint lane = thread_index_in_simdgroup;
+    const uint tid = simd * 32u + lane;
+
+    const uint kv_len = meta[1];
+    const uint kv_start = meta[2];
+    const uint q_pos = meta[3];
+    const uint kv_cap = meta[4];
+    const uint is_sliding = meta[5];
+
+    const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;
+    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;
+    {sc_decls}
+
+    float4 qv[3], rs0[3], rs1[3], rs2[3], rs3[3];
+    for (uint g = 0u; g < 3u; g++) {{
+        const uint h = kvh * 3u + g;
+        qv[g] = *((const device float4*)(q + (ulong)h * 128u) + lane) * (LOG2E / 11.313708498984761f);
+        {q_rot}
+        const device float4* rsp = (const device float4*)(rel_st + (ulong)h * 16u);
+        rs0[g] = rsp[0] * LOG2E; rs1[g] = rsp[1] * LOG2E;
+        rs2[g] = rsp[2] * LOG2E; rs3[g] = rsp[3] * LOG2E;
+    }}
+
+    const int min_pos = is_sliding ? ((int)q_pos - 1023) : 0;
+    const uint j_lo = (min_pos > (int)kv_start) ? (uint)(min_pos - (int)kv_start) : 0u;
+    const uint j_hi = min(kv_len, (q_pos >= kv_start) ? (q_pos - kv_start + 1u) : 0u);
+    const uint span = (j_hi > j_lo) ? (j_hi - j_lo) : 0u;
+    const uint chunk = (span + n_splits - 1u) / n_splits;
+    const uint sbeg = min(j_hi, j_lo + split_id * chunk);
+    const uint send = min(j_hi, sbeg + chunk);
+
+    float m_loc[3] = {{-1e30f, -1e30f, -1e30f}};
+    float l_loc[3] = {{0.0f, 0.0f, 0.0f}};
+    float4 acc[3] = {{float4(0.0f), float4(0.0f), float4(0.0f)}};
+
+    threadgroup half4 tg_k[16u * 32u];
+    threadgroup half4 tg_v[16u * 32u];
+
+    for (uint tile0 = sbeg; tile0 < send; tile0 += 16u) {{
+        const uint r_hi = min(16u, send - tile0);
+        #pragma unroll
+        for (uint p = 0u; p < 4u; p++) {{
+            const uint r = simd + p * 4u;
+            if (r < r_hi) {{
+                {load_kv_expr("tile0 + r")}
+            }}
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint r = simd; r < r_hi; r += 4u) {{
+            const uint j = tile0 + r;
+            const uint dist = q_pos - (kv_start + j);
+            const float4 kv = float4(tg_k[r * 32u + lane]);
+            const float4 vv = float4(tg_v[r * 32u + lane]);
+            half4 rp0 = half4(0.0h), rp1 = half4(0.0h), rp2 = half4(0.0h), rp3 = half4(0.0h);
+            const bool has_rel = dist < 1024u;
+            if (has_rel) {{
+                const device half4* rp = (const device half4*)(rel_proj_t + (ulong)dist * 16u);
+                rp0 = rp[0]; rp1 = rp[1]; rp2 = rp[2]; rp3 = rp[3];
+            }}
+            #pragma unroll
+            for (uint g = 0u; g < 3u; g++) {{
+                float score = simd_sum(dot(qv[g], kv));
+                if (has_rel) {{
+                    score += dot(rs0[g], float4(rp0)) + dot(rs1[g], float4(rp1)) + dot(rs2[g], float4(rp2)) + dot(rs3[g], float4(rp3));
+                }}
+                const float m_new = max(m_loc[g], score);
+                const float alpha = exp2(m_loc[g] - m_new);
+                const float p_w = exp2(score - m_new);
+                l_loc[g] = l_loc[g] * alpha + p_w;
+                acc[g] = acc[g] * alpha + p_w * vv;
+                m_loc[g] = m_new;
+            }}
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }}
+
+    threadgroup float tg_m[4][3], tg_l[4][3];
+    threadgroup float4 tg_a[4][3][32];
+    if (lane == 0u) {{
+        for (uint g = 0u; g < 3u; g++) {{ tg_m[simd][g] = m_loc[g]; tg_l[simd][g] = l_loc[g]; }}
+    }}
+    for (uint g = 0u; g < 3u; g++) tg_a[simd][g][lane] = acc[g];
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    {sink_merge}
+"""
+    else:
+        nt_s = 1 if t_cap == 4 else 2
+        if tree_mode:
+            tok_setup = """
+        const uint q_pos_k = meta[3] + tree_depth[t];
+        const uint my_mask_k = tree_mask[t];
+        const int min_pos_k = is_sliding ? ((int)q_pos_k - 1023) : 0;
+        const uint j_lo_k = (min_pos_k > (int)kv_start) ? (uint)(min_pos_k - (int)kv_start) : 0u;
+        const uint j_hi_k = kv_len;
+"""
+            valid_dist = """
+                bool valid = (j >= j_lo_k) && (j < j_hi_k);
+                uint dist = 0u;
+                if (valid) {
+                    if (j >= kv_base) {
+                        const uint u = j - kv_base;
+                        if (((my_mask_k >> u) & 1u) == 0u) valid = false;
+                        else dist = tree_depth[t] - tree_depth[u];
+                    } else {
+                        dist = q_pos_k - (kv_start + j);
+                    }
+                }
+"""
+        else:
+            tok_setup = """
+        const uint q_pos_k = meta[3] + t;
+        const int min_pos_k = is_sliding ? ((int)q_pos_k - 1023) : 0;
+        const uint j_lo_k = (min_pos_k > (int)kv_start) ? (uint)(min_pos_k - (int)kv_start) : 0u;
+        const uint j_hi_k = min(kv_len, (q_pos_k >= kv_start) ? (q_pos_k - kv_start + 1u) : 0u);
+"""
+            valid_dist = """
+                const bool valid = (j >= j_lo_k) && (j < j_hi_k);
+                const uint dist = valid ? (q_pos_k - (kv_start + j)) : 0u;
+"""
+
+        if split_k:
+            write_out = f"""
+    for (uint k_t = 0u; k_t < {nt_s}u; k_t++) {{
+        const uint t = simd + k_t * 4u;
+        if (t < T) {{
+            for (uint g = 0u; g < 3u; g++) {{
+                const uint h = kvh * 3u + g;
+                const uint idx_h = ((ulong)split_id * T + t) * 24u + h;
+                if (lane == 0u) {{
+                    part_m[idx_h] = m_loc[k_t][g];
+                    part_l[idx_h] = l_loc[k_t][g];
+                }}
+                *((device float4*)(part_o + idx_h * 128u) + lane) = acc[k_t][g];
+            }}
+        }}
+    }}
+"""
+        else:
+            write_out = f"""
+    for (uint k_t = 0u; k_t < {nt_s}u; k_t++) {{
+        const uint t = simd + k_t * 4u;
+        if (t < T) {{
+            const device float4* qin4 = (const device float4*)(q_in + (ulong)t * 2304u);
+            const device half4* sw0 = (const device half4*)(sink_w + (ulong)(kvh * 3u + 0u) * 2304u);
+            const device half4* sw1 = (const device half4*)(sink_w + (ulong)(kvh * 3u + 1u) * 2304u);
+            const device half4* sw2 = (const device half4*)(sink_w + (ulong)(kvh * 3u + 2u) * 2304u);
+            float sk0 = 0.0f, sk1 = 0.0f, sk2 = 0.0f;
+            #pragma unroll
+            for (uint i = 0u; i < 18u; i++) {{
+                const uint idx = lane + i * 32u;
+                const float4 qv4 = qin4[idx];
+                sk0 += dot(qv4, float4(sw0[idx]));
+                sk1 += dot(qv4, float4(sw1[idx]));
+                sk2 += dot(qv4, float4(sw2[idx]));
+            }}
+            float skv[3] = {{simd_sum(sk0) * LOG2E, simd_sum(sk1) * LOG2E, simd_sum(sk2) * LOG2E}};
+            for (uint g = 0u; g < 3u; g++) {{
+                const uint h = kvh * 3u + g;
+                const float m_all = max(skv[g], m_loc[k_t][g]);
+                const float sc_o = (l_loc[k_t][g] > 0.0f) ? exp2(m_loc[k_t][g] - m_all) : 0.0f;
+                const float l_all = exp2(skv[g] - m_all) + l_loc[k_t][g] * sc_o;
+                const float4 a_out = acc[k_t][g] * (sc_o / l_all);
+                *((device float4*)(out + ((ulong)t * 24u + h) * 128u) + lane) = {unrot_expr};
+            }}
+        }}
+    }}
+"""
+
+        src = f"""
+    const uint kvh_sp = threadgroup_position_in_grid.y;
+    const uint n_splits = {"meta[6]" if split_k else "1u"};
+    const uint kvh = kvh_sp / n_splits;
+    const uint split_id = kvh_sp - kvh * n_splits;
+    const uint simd = simdgroup_index_in_threadgroup;
+    const uint lane = thread_index_in_simdgroup;
+
+    const uint T = meta[0];
+    const uint kv_len = meta[1];
+    const uint kv_start = meta[2];
+    const uint kv_cap = meta[4];
+    const uint is_sliding = meta[5];
+    const uint kv_base = kv_len - T;
+
+    const uint q_pos_min = meta[3];
+    const int min_pos_all = is_sliding ? ((int)q_pos_min - 1023) : 0;
+    const uint tg_lo = (min_pos_all > (int)kv_start) ? (uint)(min_pos_all - (int)kv_start) : 0u;
+    const uint tg_hi = {"kv_len" if tree_mode else "min(kv_len, (meta[3] + T - 1u >= kv_start) ? (meta[3] + T - kv_start) : 0u)"};
+    const uint tg_span = (tg_hi > tg_lo) ? (tg_hi - tg_lo) : 0u;
+    const uint chunk = (tg_span + n_splits - 1u) / n_splits;
+    const uint sbeg = min(tg_hi, tg_lo + split_id * chunk);
+    const uint send = min(tg_hi, sbeg + chunk);
+
+    const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;
+    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;
+    {sc_decls}
+
+    float4 qv[{nt_s}][3], rs0[{nt_s}][3], rs1[{nt_s}][3], rs2[{nt_s}][3], rs3[{nt_s}][3];
+    float m_loc[{nt_s}][3], l_loc[{nt_s}][3];
+    float4 acc[{nt_s}][3];
+    uint q_pos_arr[{nt_s}], j_lo_arr[{nt_s}], j_hi_arr[{nt_s}], mask_arr[{nt_s}];
+    for (uint k_t = 0u; k_t < {nt_s}u; k_t++) {{
+        const uint t = simd + k_t * 4u;
+        j_lo_arr[k_t] = 0u; j_hi_arr[k_t] = 0u; q_pos_arr[k_t] = 0u; mask_arr[k_t] = 0u;
+        for (uint g = 0u; g < 3u; g++) {{
+            m_loc[k_t][g] = -1e30f; l_loc[k_t][g] = 0.0f; acc[k_t][g] = float4(0.0f);
+            qv[k_t][g] = float4(0.0f); rs0[k_t][g] = float4(0.0f); rs1[k_t][g] = float4(0.0f); rs2[k_t][g] = float4(0.0f); rs3[k_t][g] = float4(0.0f);
+        }}
+        if (t < T) {{
+            for (uint g = 0u; g < 3u; g++) {{
+                const uint h = kvh * 3u + g;
+                qv[k_t][g] = *((const device float4*)(q + ((ulong)t * 24u + h) * 128u) + lane) * (LOG2E / 11.313708498984761f);
+                {q_rot_k}
+                const device float4* rsp = (const device float4*)(rel_st + ((ulong)t * 24u + h) * 16u);
+                rs0[k_t][g] = rsp[0] * LOG2E; rs1[k_t][g] = rsp[1] * LOG2E;
+                rs2[k_t][g] = rsp[2] * LOG2E; rs3[k_t][g] = rsp[3] * LOG2E;
+            }}
+            {tok_setup}
+            q_pos_arr[k_t] = q_pos_k; j_lo_arr[k_t] = j_lo_k; j_hi_arr[k_t] = j_hi_k;
+            {"mask_arr[k_t] = my_mask_k;" if tree_mode else ""}
+        }}
+    }}
+
+    threadgroup half4 tg_k[16u * 32u];
+    threadgroup half4 tg_v[16u * 32u];
+
+    for (uint tile0 = sbeg; tile0 < send; tile0 += 16u) {{
+        const uint r_hi = min(16u, send - tile0);
+        #pragma unroll
+        for (uint p = 0u; p < 4u; p++) {{
+            const uint r = simd + p * 4u;
+            if (r < r_hi) {{
+                {load_kv_expr("tile0 + r")}
+            }}
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        for (uint r = 0u; r < r_hi; r++) {{
+            const uint j = tile0 + r;
+            const float4 kv = float4(tg_k[r * 32u + lane]);
+            const float4 vv = float4(tg_v[r * 32u + lane]);
+            #pragma unroll
+            for (uint k_t = 0u; k_t < {nt_s}u; k_t++) {{
+                const uint t = simd + k_t * 4u;
+                if (t < T) {{
+                    const uint q_pos_k = q_pos_arr[k_t], j_lo_k = j_lo_arr[k_t], j_hi_k = j_hi_arr[k_t];
+                    {"const uint my_mask_k = mask_arr[k_t];" if tree_mode else ""}
+                    {valid_dist}
+                    if (valid) {{
+                        half4 rp0 = half4(0.0h), rp1 = half4(0.0h), rp2 = half4(0.0h), rp3 = half4(0.0h);
+                        const bool has_rel = dist < 1024u;
+                        if (has_rel) {{
+                            const device half4* rp = (const device half4*)(rel_proj_t + (ulong)dist * 16u);
+                            rp0 = rp[0]; rp1 = rp[1]; rp2 = rp[2]; rp3 = rp[3];
+                        }}
+                        #pragma unroll
+                        for (uint g = 0u; g < 3u; g++) {{
+                            float score = simd_sum(dot(qv[k_t][g], kv));
+                            if (has_rel) {{
+                                score += dot(rs0[k_t][g], float4(rp0)) + dot(rs1[k_t][g], float4(rp1)) + dot(rs2[k_t][g], float4(rp2)) + dot(rs3[k_t][g], float4(rp3));
+                            }}
+                            const float m_new = max(m_loc[k_t][g], score);
+                            const float alpha = exp2(m_loc[k_t][g] - m_new);
+                            const float p_w = exp2(score - m_new);
+                            l_loc[k_t][g] = l_loc[k_t][g] * alpha + p_w;
+                            acc[k_t][g] = acc[k_t][g] * alpha + p_w * vv;
+                            m_loc[k_t][g] = m_new;
+                        }}
+                    }}
+                }}
+            }}
+        }}
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }}
+    {write_out}
+"""
+
+    return mx.fast.metal_kernel(
+        name=f"ink_gqa_fused_sdpa_{kv_mode}_tc{t_cap}_tr{int(tree_mode)}_sp{int(split_k)}",
+        input_names=in_names,
+        output_names=out_names,
+        header=header,
+        source=src,
+    )
+
+
+@lru_cache(maxsize=2)
+def _make_gqa_splitk_reduce_kernel(apply_h128: bool = False):
+    """Pass-2 Split-K merge + inline sink logit (+ optional H128 inverse) for fused GQA Flash-Decoding."""
+    header = "#define LOG2E 1.4426950408889634f\n" + (_H128_HEADER if apply_h128 else "")
+    unrot = "h128_vec(a_out, lane)" if apply_h128 else "a_out"
+    src = f"""
+    const uint ht = threadgroup_position_in_grid.y;
+    const uint T = meta[0];
+    const uint n_splits = meta[1];
+    const uint t = ht / 24u;
+    const uint h = ht - t * 24u;
+    const uint simd = simdgroup_index_in_threadgroup;
+    const uint lane = thread_index_in_simdgroup;
+    const uint tid = simd * 32u + lane;
+
+    const device float2* qin2 = (const device float2*)(q_in + (ulong)t * 2304u);
+    const device half2* sw2 = (const device half2*)(sink_w + (ulong)h * 2304u);
+    float sk_part = 0.0f;
+    #pragma unroll
+    for (uint i = 0u; i < 9u; i++) {{
+        const uint idx = tid + i * 128u;
+        sk_part += dot(qin2[idx], float2(sw2[idx]));
+    }}
+    sk_part = simd_sum(sk_part) * LOG2E;
+
+    float m_s = -1e30f;
+    float l_s = 0.0f;
+    float4 a_s = float4(0.0f);
+    for (uint s = simd; s < n_splits; s += 4u) {{
+        const uint idx_h = ((ulong)s * T + t) * 24u + h;
+        const float ms = part_m[idx_h];
+        const float ls = part_l[idx_h];
+        if (ls > 0.0f) {{
+            const float4 as = *((const device float4*)(part_o + idx_h * 128u) + lane);
+            const float m_new = max(m_s, ms);
+            const float al = (l_s > 0.0f) ? exp2(m_s - m_new) : 0.0f;
+            const float be = exp2(ms - m_new);
+            l_s = l_s * al + ls * be;
+            a_s = a_s * al + as * be;
+            m_s = m_new;
+        }}
+    }}
+
+    threadgroup float tg_m[4], tg_l[4], tg_sk[4];
+    threadgroup float4 tg_a[4][32];
+    if (lane == 0u) {{ tg_m[simd] = m_s; tg_l[simd] = l_s; tg_sk[simd] = sk_part; }}
+    tg_a[simd][lane] = a_s;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    if (simd == 0u) {{
+        const float sk = tg_sk[0] + tg_sk[1] + tg_sk[2] + tg_sk[3];
+        float m_all = sk;
+        for (uint s = 0u; s < 4u; s++) m_all = max(m_all, tg_m[s]);
+        float l_all = exp2(sk - m_all);
+        float4 a_all = float4(0.0f);
+        for (uint s = 0u; s < 4u; s++) {{
+            if (tg_l[s] > 0.0f) {{
+                const float sc = exp2(tg_m[s] - m_all);
+                l_all += tg_l[s] * sc;
+                a_all += tg_a[s][lane] * sc;
+            }}
+        }}
+        const float4 a_out = a_all * (1.0f / l_all);
+        *((device float4*)(out + ((ulong)t * 24u + h) * 128u) + lane) = {unrot};
+    }}
     """
     return mx.fast.metal_kernel(
-        name="ink_gqa_relpos_flash_sdpa_bk64",
-        input_names=["q", "KV", "rel_st", "rel_proj_t", "sinks", "meta"],
+        name=f"ink_gqa_splitk_reduce_h{int(apply_h128)}",
+        input_names=["part_m", "part_l", "part_o", "q_in", "sink_w", "meta"],
         output_names=["out"],
         header=header,
         source=src,
@@ -4592,19 +5226,86 @@ def gqa_relpos_sinks_sdpa_fast(
     is_sliding: bool,
     tree_depth: mx.array | None = None,
     tree_mask: mx.array | None = None,
+    kv_fp8: bool = False,
+    kv_q4_scales: mx.array | None = None,
 ) -> mx.array:
     tree_mode = tree_depth is not None and tree_mask is not None
-    if T >= 32 and not tree_mode:
+    kv_q4 = kv_q4_scales is not None
+    if kv_q4 and tree_mode and T > 8:
+        raise ValueError("Q4 attention trees support at most eight tokens")
+    if not tree_mode and (T >= 32 or (kv_q4 and T > 8)):
         sinks = (q_in.reshape(T, 2304).astype(mx.float16) @ sink_w_f16.reshape(24, 2304).T).astype(mx.float32)
         nqb = (T + 31) // 32
-        return _make_gqa_relpos_flash_sdpa_kernel()(
-            inputs=[
-                q.reshape(-1), KV_buf.reshape(-1),
-                rel_st.reshape(-1), rel_proj_t_f16.reshape(-1),
-                sinks.reshape(-1),
-                _u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding), nqb),
-            ],
+        q_in_kern = h128_rows_f32(q) if kv_q4 else q
+        ins = [q_in_kern.reshape(-1), KV_buf.reshape(-1)]
+        if kv_q4:
+            ins.append(kv_q4_scales.reshape(-1))
+        ins.extend([rel_st.reshape(-1), rel_proj_t_f16.reshape(-1), sinks.reshape(-1), _u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding), nqb)])
+        out = _make_gqa_relpos_flash_sdpa_kernel(kv_fp8=(kv_fp8 and not kv_q4), kv_q4=kv_q4)(
+            inputs=ins,
             grid=(128, 24 * nqb, 1),
+            threadgroup=(128, 1, 1),
+            output_shapes=[(T, 3072)],
+            output_dtypes=[mx.float32],
+        )[0]
+        return h128_rows_f32(out.reshape(T, 24, 128)).reshape(T, 3072) if kv_q4 else out
+    span = min(kv_len, 1024 + T) if is_sliding else kv_len
+    env_fused_raw = os.environ.get("LAMQ_FUSED_SDPA", "1" if _is_m4() else "0").strip().lower()
+    force_fused = env_fused_raw in ("force", "2")
+    env_fused = env_fused_raw != "0"
+    use_fused = (
+        kv_q4
+        or (force_fused and 1 <= T <= 8)
+        or (
+            env_fused
+            and (
+                (T == 1 and span >= 256)
+                or (2 <= T <= 4 and span >= 1024)
+                or (5 <= T <= 8 and not is_sliding and span >= 2048)
+            )
+        )
+    )
+    if use_fused:
+        kv_mode = "q4" if kv_q4 else ("fp8" if kv_fp8 else "fp16")
+        t_cap = 1 if T == 1 else (4 if T <= 4 else 8)
+        if span < 256:
+            n_splits = 1
+        elif span < 2048:
+            n_splits = 4
+        elif span < 8192:
+            n_splits = 8
+        else:
+            n_splits = 16
+        split_k = n_splits > 1
+        kern = _make_gqa_fused_sdpa_kernel(tree_mode=tree_mode, kv_mode=kv_mode, t_cap=t_cap, split_k=split_k)
+        ins = [q.reshape(-1), KV_buf.reshape(-1)]
+        if kv_q4:
+            ins.append(kv_q4_scales.reshape(-1))
+        ins.extend([rel_st.reshape(-1), rel_proj_t_f16.reshape(-1)])
+        if not split_k:
+            ins.extend([q_in.reshape(-1), sink_w_f16.reshape(-1), _u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding))])
+            if tree_mode:
+                ins.extend([tree_depth, tree_mask])
+            return kern(
+                inputs=ins,
+                grid=(128, 8, 1),
+                threadgroup=(128, 1, 1),
+                output_shapes=[(T, 3072)],
+                output_dtypes=[mx.float32],
+            )[0]
+        ins.append(_u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding), n_splits))
+        if tree_mode:
+            ins.extend([tree_depth, tree_mask])
+        pm, pl, po = kern(
+            inputs=ins,
+            grid=(128, 8 * n_splits, 1),
+            threadgroup=(128, 1, 1),
+            output_shapes=[(n_splits, T, 24), (n_splits, T, 24), (n_splits, T, 24, 128)],
+            output_dtypes=[mx.float32, mx.float32, mx.float32],
+        )
+        return _make_gqa_splitk_reduce_kernel(apply_h128=kv_q4)(
+            inputs=[pm.reshape(-1), pl.reshape(-1), po.reshape(-1), q_in.reshape(-1), sink_w_f16.reshape(-1), _u32(T, n_splits)],
+            grid=(128, 24 * T, 1),
             threadgroup=(128, 1, 1),
             output_shapes=[(T, 3072)],
             output_dtypes=[mx.float32],
@@ -4617,7 +5318,7 @@ def gqa_relpos_sinks_sdpa_fast(
     ]
     if tree_mode:
         ins.extend([tree_depth, tree_mask])
-    return _make_gqa_relpos_sdpa_kernel(tree_mode)(
+    return _make_gqa_relpos_sdpa_kernel(tree_mode, kv_fp8=kv_fp8)(
         inputs=ins,
         grid=(128, 24 * T, 1),
         threadgroup=(128, 1, 1),
@@ -5027,6 +5728,16 @@ def _selftest():
             assert err_sg8 < 2e-3, f"DenseStage sg8 T={T} fail: {err_sg8}"
             print(f"  PASS DenseStage sg8 ALL 8 formats (T={T:2d}): rel_err={err_sg8:.2e}")
 
+    if not _has_mpp():
+        # All three RTR formats fit with one HT table, but not with both HT tables above.
+        narrow = DenseStage(items[1:], 2304, fluts)
+        assert narrow._stage_rtr and not st._stage_rtr and st._stage_rtr_sg8
+        for T in (1, 6, 16):
+            subset = st.matmul_rotated_f16(xt[:, :T].astype(mx.float16), T)[:, 64:]
+            staged = narrow.matmul_rotated_f16(xt[1:, :T].astype(mx.float16), T)
+            err = float(mx.linalg.norm(staged - subset) / mx.linalg.norm(subset))
+            assert err < 1e-5, f"Threadgroup RTR dense T={T} fail: {err}"
+
     # Test transpose_for_sg8 on rht_in_2304_fast for T=8 and T=5 (zero-padded to 8)
     y_tr = rht_in_2304_fast(x, s5, n_signs=5, T=8, out_dtype=mx.float16, transpose_for_sg8=True)
     y_exp = y_fast.reshape(5, 8, 2304).transpose(0, 2, 1).astype(mx.float16)
@@ -5074,7 +5785,7 @@ def _selftest():
     # 3b. UnifiedMoESide with within-expert row-group bit splitting (`n_rg=4`, `rg_rows=128`, `m_rows=512`)
     rg_slabs = []
     rg_map = np.zeros((128, 4, 2), dtype=np.int32)
-    rg_fmts = [(1, "ht2", 2, 4, 512, 0x9E3779B1), (2, "ht3", 3, 2, 1024, 0x9E3779B1), (3, "rtr1", 1, 1, 4096, 0), (6, "rtr4", 4, 1, 4096, 0)]
+    rg_fmts = [(1, "ht2", 2, 4, 512, 0x9E3779B1), (3, "rtr1", 1, 1, 4096, 0), (4, "rtr2", 2, 1, 4096, 0), (5, "rtr3", 3, 1, 4096, 0)]
     fmt_locs = {fid: [] for fid, *_ in rg_fmts}
     for e in range(128):
         for rg in range(4):
@@ -5116,7 +5827,7 @@ def _selftest():
             units, ucnt, max_u = plan_moe_prefill_units(offsets, umoe_rg.exp_fid, umoe_rg.fids, int(ev.shape[0]), tile_t=32)
             kv2 = _make_unified_moe_prefill_v2_kernel(2304, umoe_rg.fids, sg=8, rb=2, n_rg=4)
             y_v2 = kv2(
-                inputs=[xt.astype(mx.float16).reshape(-1), umoe_rg.codes, umoe_rg.scales, umoe_rg._kern_fid, umoe_rg.exp_code_off, umoe_rg.exp_scale_off, *umoe_rg._lut_args_sg8, units, ucnt, _u32(512, 8), order],
+                inputs=[xt.astype(mx.float16).reshape(-1), umoe_rg.codes, umoe_rg.scales, umoe_rg._kern_fid, umoe_rg.exp_code_off, umoe_rg.exp_scale_off, *umoe_rg._lut_args_prefill_v2, units, ucnt, _u32(512, 8), order],
                 grid=(max_u * 256, 4, 1),
                 threadgroup=(256, 1, 1),
                 output_shapes=[(T * 8, 512)],
