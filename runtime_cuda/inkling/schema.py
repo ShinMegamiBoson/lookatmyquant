@@ -40,7 +40,7 @@ def _layer_key_ok(key: str) -> bool:
     m = re.fullmatch(r"lin_(\w+?)_(codes|scales|signs_in|signs_out|levels)", key)
     if m:
         return True
-    if key in ("gu_signs_in", "dn_signs_in", "gu_map", "dn_map"):
+    if key in ("gu_signs_in", "dn_signs_in", "gu_map", "dn_map", "gu_rg_map", "dn_rg_map"):
         return True
     m = re.fullmatch(r"(gu|dn)_(\w+)_(codes|scales|outer)", key)
     if m:
@@ -70,17 +70,30 @@ def check_layer(path: Path, meta: dict, arrays=None) -> None:
         if bad:
             raise UnsupportedPackedFile(f"{name}: experts ({side}) use unknown formats {sorted(bad)}")
         if arrays is not None:
-            emap = np.asarray(arrays[f"{side}_map"])
-            for fid in np.unique(emap[:, 0]).tolist():
+            legacy, grouped = f"{side}_map", f"{side}_rg_map"
+            if (legacy in keys) == (grouped in keys):
+                raise UnsupportedPackedFile(f"{name}: expected exactly one {side} expert map")
+            key = grouped if grouped in keys else legacy
+            emap = np.asarray(arrays[key])
+            if emap.ndim != (3 if key == grouped else 2) or emap.shape[-1] != 2 or not emap.size:
+                raise UnsupportedPackedFile(f"{name}: invalid shape for {key}: {emap.shape}")
+            pairs = emap.reshape(-1, 2)
+            for fid in np.unique(pairs[:, 0]).tolist():
                 if fid not in EXPERT_FIDS:
                     raise UnsupportedPackedFile(f"{name}: {side} experts use unknown format id {fid}")
+                if key == grouped and fid == NVFP4_FID:
+                    raise UnsupportedPackedFile(f"{name}: row-group NVFP4 experts are unsupported")
                 fmt = EXPERT_FIDS[fid]
-                if f"{side}_{fmt}_codes" not in keys:
-                    raise UnsupportedPackedFile(f"{name}: {side} map names format {fmt} (id {fid}) but has no {side}_{fmt}_codes")
-                n_slab = arrays[f"{side}_{fmt}_codes"].shape[0]
-                locs = emap[emap[:, 0] == fid, 1]
-                if locs.max() >= n_slab or locs.min() < 0:
-                    raise UnsupportedPackedFile(f"{name}: {side} {fmt} expert index out of range ({locs.max()} >= {n_slab})")
+                codes = f"{side}_{fmt}_codes"
+                if codes not in keys:
+                    raise UnsupportedPackedFile(f"{name}: {key} references missing {codes}")
+                with zipfile.ZipFile(path) as archive, archive.open(f"{codes}.npy") as handle:
+                    version = np.lib.format.read_magic(handle)
+                    shape, _, _ = np.lib.format._read_array_header(handle, version)
+                locs = pairs[pairs[:, 0] == fid, 1]
+                if locs.max() >= shape[0] or locs.min() < 0:
+                    raise UnsupportedPackedFile(f"{name}: {side} {fmt} index outside the slab")
+
 
 
 def check_buckets(path: Path, meta: list[dict]) -> None:
@@ -148,8 +161,15 @@ def validate_packed_dir(packed_dir: str | Path, deep: bool = True) -> dict:
     n_layers = json.loads((d / "config.json").read_text()).get("text_config", {}).get("num_hidden_layers")
     for p in sorted(d.glob("layer_*_packed.npz")):
         meta = json.loads(p.with_name(p.name.replace("_packed.npz", "_meta.json")).read_text())
-        arrays = np.load(p) if deep else None
-        check_layer(p, meta, arrays)
+        if deep:
+            with np.load(p) as arrays:
+                check_layer(p, meta, arrays)
+        else:
+            check_layer(p, meta)
+        keys = _npz_keys(p)
+        for side in ("gu", "dn"):
+            if f"{side}_nvfp4_codes" in keys:
+                used.setdefault("experts:nvfp4", 0)
         for lm in meta["linears"].values():
             used[lm["fmt"]] = used.get(lm["fmt"], 0) + 1
         for side in ("gu", "dn"):

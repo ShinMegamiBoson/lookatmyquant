@@ -9,7 +9,8 @@
     .param .u32 rows, .param .u32 width, .param .u32 words,
     .param .u32 bits, .param .u32 group, .param .u32 hash_shift,
     .param .u32 hash_multiplier, .param .u32 x_div, .param .u32 lloyd,
-    .param .u64 descriptors_ptr, .param .u64 expert_map_ptr, .param .u32 row_stride
+    .param .u64 descriptors_ptr, .param .u64 expert_map_ptr, .param .u32 row_stride,
+    .param .u32 groups, .param .u32 group_rows
 )
 {
     .reg .pred %p<9>;
@@ -46,12 +47,14 @@
     @%p8 add.u64 %rd5, %rd5, %rd17;
 
     // grid.y is the routed slot; grid.x tiles four matrix rows.
+    ld.param.u32 %r42, [group_rows];
     mov.u32 %r10, %ctaid.y;
     mov.u32 %r11, %ctaid.x;
     mov.u32 %r12, %tid.x;
     mov.u32 %r13, %laneid;
     shr.u32 %r14, %r12, 5;
     mad.lo.u32 %r15, %r11, 4, %r14;
+    mov.u32 %r43, %r15;
     setp.ge.u32 %p1, %r15, %r1;
     @%p1 bra DONE;
     mad.wide.u32 %rd7, %r10, 4, %rd5;
@@ -62,6 +65,11 @@
     // Each routed slot selects its own expert and packed format.
     setp.eq.u64 %p8, %rd15, 0;
     @%p8 bra PROJECT;
+    // Pick the slab for the row group containing this output row.
+    ld.param.u32 %r44, [groups];
+    div.u32 %r45, %r15, %r42;
+    rem.u32 %r43, %r15, %r42;
+    mad.lo.u32 %r16, %r16, %r44, %r45;
     mad.wide.u32 %rd17, %r16, 8, %rd16;
     ld.global.v2.u32 {%r41, %r16}, [%rd17];
     mad.wide.u32 %rd17, %r41, 48, %rd15;
@@ -75,7 +83,7 @@
     ld.global.u32 %r7, [%rd17+40];
     ld.global.u32 %r9, [%rd17+44];
 PROJECT:
-    mad.lo.u32 %r17, %r16, %r1, %r15;
+    mad.lo.u32 %r17, %r16, %r42, %r43;
     mul.lo.u32 %r18, %r17, %r3;
     mad.wide.u32 %rd8, %r18, 4, %rd2;
     div.u32 %r19, %r10, %r8;

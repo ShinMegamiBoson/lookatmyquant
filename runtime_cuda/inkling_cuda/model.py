@@ -133,23 +133,36 @@ def round_bf16(x):
 class ExpertSide:
     def __init__(self, archive, weights, side, width, rows, count):
         self.signs = archive[f"{side}_signs_in"].astype(np.float32)
-        self.mapping = archive[f"{side}_map"].astype(np.int32)
+        grouped = f"{side}_rg_map" in archive
+        key = f"{side}_rg_map" if grouped else f"{side}_map"
+        raw = archive[key]
+        if raw.ndim != (3 if grouped else 2) or raw.shape[0] != count or raw.shape[-1] != 2:
+            raise ValueError(f"Invalid {side} expert map shape")
+        self.mapping = np.ascontiguousarray(raw, dtype=np.int32).reshape(count, -1, 2)
+        self.groups = self.mapping.shape[1]
+        if not self.groups or rows % self.groups:
+            raise ValueError(f"Invalid {side} row groups")
+        self.rows = rows
+        self.group_rows = rows // self.groups
         self.slabs = {}
         self.width = width
         for key, fmt in enumerate(EXPERT_FORMATS):
             prefix = f"{side}_{fmt}"
             if f"{prefix}_codes" in archive:
-                self.slabs[key] = weights.slab(archive, prefix, fmt, width, rows)
-        if self.mapping.shape != (count, 2):
-            raise ValueError(f"Invalid {side} expert map shape")
-        for fmt, loc in self.mapping:
+                self.slabs[key] = weights.slab(archive, prefix, fmt, width, self.group_rows)
+        for fmt, loc in self.mapping.reshape(-1, 2):
             if fmt not in self.slabs or not 0 <= loc < self.slabs[fmt].experts:
-                raise ValueError(f"Invalid {side} expert map location")
+                raise ValueError(f"Invalid or unsupported {side} expert format/location ({fmt}, {loc})")
 
     def __call__(self, x, ids, x_div):
-        formats, locations = self.mapping[ids].T
-        routes = [np.where(formats == key, locations, -1).astype(np.int32) for key in self.slabs]
-        return project(rotate(x, self.signs), list(self.slabs.values()), routes, x_div)
+        x_rot = rotate(x, self.signs)
+        parts = []
+        for group in range(self.groups):
+            formats, locations = self.mapping[ids, group].T
+            routes = [np.where(formats == key, locations, -1).astype(np.int32) for key in self.slabs]
+            parts.append(project(x_rot, list(self.slabs.values()), routes, x_div))
+        return parts[0] if self.groups == 1 else np.concatenate(parts, axis=-1)
+
 
 
 class VisitCache:

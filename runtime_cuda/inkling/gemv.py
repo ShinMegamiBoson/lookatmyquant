@@ -179,14 +179,21 @@ def _moe_gemv_kernel(
     K1: tl.constexpr, G1: tl.constexpr, L1: tl.constexpr, H1: tl.constexpr, CH1: tl.constexpr, NW1: tl.constexpr, SW1: tl.constexpr,
     K2: tl.constexpr, G2: tl.constexpr, L2: tl.constexpr, H2: tl.constexpr, CH2: tl.constexpr, NW2: tl.constexpr, SW2: tl.constexpr,
     K3: tl.constexpr, G3: tl.constexpr, L3: tl.constexpr, H3: tl.constexpr, CH3: tl.constexpr, NW3: tl.constexpr, SW3: tl.constexpr,
-    NSLAB: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_C: tl.constexpr, HAS_NV: tl.constexpr,
+    GROUPS: tl.constexpr, NSLAB: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_C: tl.constexpr, HAS_NV: tl.constexpr,
 ):
     """All experts of one MoE side in one launch, whatever their code formats (runtime_mlx's UnifiedMoESide): each
     (row block, token-expert pair) program looks up its expert's format slab and local index and runs that decoder.
     Slab index 4 is NVFP4, which reads the unrotated activation XR."""
     pid_m = tl.program_id(0)
     slot = tl.program_id(1)
-    eid = tl.load(EIDS + slot)
+    if GROUPS > 1:
+        blocks_per_group = tl.cdiv(M, BLOCK_M)
+        group = pid_m // blocks_per_group
+        pid_m = pid_m % blocks_per_group
+        Y += group * M
+    else:
+        group = 0
+    eid = tl.load(EIDS + slot) * GROUPS + group
     j = tl.load(SLAB_OF + eid)
     e = tl.load(LOC_OF + eid).to(tl.int64)
     rows = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
@@ -303,10 +310,13 @@ class MoESideGEMV:
     NV_SLAB = 4
 
     def __init__(self, slabs, slab_of: torch.Tensor, loc_of: torch.Tensor, m: int, n: int, BLOCK_M: int | None = None,
-                 BLOCK_C: int | None = None, nvfp4=None, num_warps: int | None = None, num_stages: int | None = None):
+                 BLOCK_C: int | None = None, nvfp4=None, num_warps: int | None = None, num_stages: int | None = None,
+                 groups: int = 1):
         assert len(slabs) <= 4 and (slabs or nvfp4 is not None)
         bm, bc, nwarp, nst = tuning_for(slab_of.device).gemv_cfg("moe")
         self.m, self.n, self.BLOCK_M, self.BLOCK_C = m, n, BLOCK_M or bm, BLOCK_C or bc
+        self.groups = groups
+        self.group_rows = m // groups
         self.num_warps, self.num_stages = num_warps or nwarp, num_stages or nst
         self.slab_of, self.loc_of = slab_of.to(torch.int32).contiguous(), loc_of.to(torch.int32).contiguous()
         self.ptrs, self.consts = [], {}
@@ -341,10 +351,10 @@ class MoESideGEMV:
             assert x_raw is not None, "this side has NVFP4 experts: pass x_raw (the unrotated activation)"
         xr = x_raw if x_raw is not None else x
         with torch.cuda.device(x.device):
-            _moe_gemv_kernel[(triton.cdiv(self.m, self.BLOCK_M), S)](
+            _moe_gemv_kernel[(self.groups * triton.cdiv(self.group_rows, self.BLOCK_M), S)](
                 x, eids, self.slab_of, self.loc_of, y, *self.ptrs, xr, *self.nv, xr.stride(0),
-                self.m, self.n, x_div, x.stride(0), y.stride(0),
-                NSLAB=self.nslab, BLOCK_M=self.BLOCK_M, BLOCK_C=self.BLOCK_C, HAS_NV=self.has_nv,
+                self.group_rows, self.n, x_div, x.stride(0), y.stride(0),
+                GROUPS=self.groups, NSLAB=self.nslab, BLOCK_M=self.BLOCK_M, BLOCK_C=self.BLOCK_C, HAS_NV=self.has_nv,
                 num_warps=self.num_warps, num_stages=self.num_stages, **self.consts,
             )
         return y

@@ -128,8 +128,8 @@ class DeviceExperts:
         self.device = device
         self.signs = device.weight(experts.signs)
         self.mapping = device.weight(experts.mapping)
-        first = next(iter(experts.slabs.values()))
-        self.rows, self.width = first.rows, first.width
+        self.rows, self.width = experts.rows, experts.width
+        self.groups, self.group_rows = experts.groups, experts.group_rows
         descriptors = np.zeros((len(EXPERT_FORMATS), 6), dtype=np.uint64)
         fields = descriptors.view(np.uint32).reshape(len(EXPERT_FORMATS), 12)
         for i, slab in experts.slabs.items():
@@ -144,7 +144,7 @@ class DeviceExperts:
         self.device.rotate(x, self.signs, rotated, rows=slots // x_div)
         self.device.cuda.routed_project(row(rotated, 0), row(selected, 0), row(out, 0), slots, x_div,
                                         self.rows, self.width, self.descriptors.ptr, self.mapping.ptr,
-                                        **batch_params(rotated))
+                                        groups=self.groups, group_rows=self.group_rows, **batch_params(rotated))
         scratch.mark = mark
         return out
 

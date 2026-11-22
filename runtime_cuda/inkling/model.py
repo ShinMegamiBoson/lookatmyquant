@@ -320,21 +320,29 @@ class PackedMoE:
         self.dn_signs = _signs(arrays["dn_signs_in"], device)
         E = cfg.n_routed_experts
         self.sides = {}
+        self.row_groups = {}
         self.nvfp4 = {}  # side -> (codes [E_nv, m, n/2] u8, block scales [E_nv, m, n/16] u8, outer [E_nv] f32, local [E] i32)
         for side, (m, n) in (("gu", (2 * cfg.intermediate_size, cfg.hidden_size)), ("dn", (cfg.hidden_size, cfg.intermediate_size))):
-            emap = np.asarray(arrays[f"{side}_map"], dtype=np.int64)
+            grouped_key = f"{side}_rg_map"
+            emap = np.asarray(arrays[grouped_key if grouped_key in arrays else f"{side}_map"], dtype=np.int64)
+            groups = emap.shape[1] if emap.ndim == 3 else 1
+            if emap.shape[0] != E or not groups or m % groups:
+                raise ValueError(f"Invalid {side} expert row-group layout")
+            self.row_groups[side] = groups
+            rows = m // groups
+            emap = emap.reshape(-1, 2)
             mats = []
             for fmt in FMT_PARAMS:
                 if f"{side}_{fmt}_codes" not in arrays:
                     continue
-                local = np.full(E, -1, dtype=np.int64)
+                local = np.full(E * groups, -1, dtype=np.int64)
                 sel = emap[:, 0] == FMT_ID[fmt]
                 local[sel] = emap[sel, 1]
                 codes = _t(arrays[f"{side}_{fmt}_codes"], device)
-                mats.append((_Mat(fmt, m, n, codes, _t(arrays[f"{side}_{fmt}_scales"], device), lut=luts[fmt]),
+                mats.append((_Mat(fmt, rows, n, codes, _t(arrays[f"{side}_{fmt}_scales"], device), lut=luts[fmt]),
                              torch.from_numpy(local).to(device=device, dtype=torch.int32), codes.shape[0]))
             if f"{side}_nvfp4_codes" in arrays:
-                local = np.full(E, -1, dtype=np.int64)
+                local = np.full(E * groups, -1, dtype=np.int64)
                 sel = emap[:, 0] == NVFP4_FID
                 local[sel] = emap[sel, 1]
                 self.nvfp4[side] = (_t(arrays[f"{side}_nvfp4_codes"], device), _t(arrays[f"{side}_nvfp4_scales"], device),
@@ -344,8 +352,11 @@ class PackedMoE:
         # decode: all experts of a side in one launch (trellis slabs 0-3, NVFP4 slab 4)
         self.unified = {}
         for side, (m, n, mats) in self.sides.items():
-            slab_of = torch.full((E,), 0, dtype=torch.int32, device=device)
-            loc_of = torch.full((E,), 0, dtype=torch.int32, device=device)
+            groups = self.row_groups[side]
+            if len(mats) > 4:
+                raise ValueError(f"Triton supports up to four trellis formats per {side} projection")
+            slab_of = torch.zeros(E * groups, dtype=torch.int32, device=device)
+            loc_of = torch.zeros_like(slab_of)
             for j, (mat, local, _) in enumerate(mats):
                 sel = local >= 0
                 slab_of[sel] = j
@@ -356,7 +367,7 @@ class PackedMoE:
                 slab_of[sel] = MoESideGEMV.NV_SLAB
                 loc_of[sel] = nv[3][sel]
             self.unified[side] = MoESideGEMV([(mat.fmt, mat.codes, mat.scales, mat.lut) for mat, _, _ in mats], slab_of, loc_of, m, n,
-                                             nvfp4=nv[:3] if nv is not None else None)
+                                             nvfp4=nv[:3] if nv is not None else None, groups=groups)
         self._pair_blocks: dict[int, torch.Tensor] = {}
 
     def route(self, h: torch.Tensor):
@@ -374,7 +385,7 @@ class PackedMoE:
         m, n, mats = self.sides[side]
         nv = self.nvfp4.get(side)
         P = eids.numel()
-        if not grouped:  # decode: one GEMV slot a pair, all formats in one launch
+        if not grouped or self.row_groups[side] > 1:
             return self.unified[side](x if x is not None else x_raw, eids, x_div, x_raw=x_raw if nv is not None else None)
         y = torch.zeros(P, m, dtype=torch.float32, device=x_raw.device)
         groups = [(mat, local, n_local, x) for mat, local, n_local in mats]

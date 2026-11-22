@@ -70,7 +70,12 @@ class PackedExperts(nn.Module):
         super().__init__()
         self.hidden, self.inter = hidden, inter
         self.act_fn = act_fn
-        self.num_experts = int(arrays["gu_map"].shape[0])
+        self.maps = {}
+        for side in ("gu", "dn"):
+            key = f"{side}_rg_map" if f"{side}_rg_map" in arrays else f"{side}_map"
+            raw = np.asarray(arrays[key], dtype=np.int64)
+            self.maps[side] = raw.reshape(raw.shape[0], -1, 2)
+        self.num_experts = self.maps["gu"].shape[0]
         self.slabs: dict[str, dict[str, tuple[torch.Tensor, torch.Tensor]]] = {"gu": {}, "dn": {}}
         for side in ("gu", "dn"):
             for fmt in FMT_PARAMS:
@@ -81,21 +86,22 @@ class PackedExperts(nn.Module):
                     )
             if f"{side}_nvfp4_codes" in arrays:  # NVFP4 experts read the unrotated activation
                 self.slabs[side]["nvfp4"] = tuple(_t(arrays[f"{side}_nvfp4_{p}"], device) for p in ("codes", "scales", "outer"))
-        self.maps = {side: np.asarray(arrays[f"{side}_map"], dtype=np.int64) for side in ("gu", "dn")}
         self.luts = {k: _t(v, device) for k, v in luts.items()}
         self.gu_signs = _signs(arrays["gu_signs_in"], device)
         self.dn_signs = _signs(arrays["dn_signs_in"], device)
 
     def decode(self, side: str, e: int) -> tuple[torch.Tensor, bool]:
         """(dense weight, whether it reads the rotated input)."""
-        fid, loc = self.maps[side][e]
-        if int(fid) == NVFP4_FID:
-            codes, scales, outer = self.slabs[side]["nvfp4"]
-            return decode_nvfp4(codes[loc], scales[loc], outer[loc]), False
-        fmt = ID_TO_FMT[int(fid)]
-        codes, scales = self.slabs[side][fmt]
-        n = self.hidden if side == "gu" else self.inter
-        return decode_trellis(codes[loc], scales[loc], self.luts[fmt], n, fmt), True
+        parts = []
+        for fid, loc in self.maps[side][e]:
+            if int(fid) == NVFP4_FID:
+                codes, scales, outer = self.slabs[side]["nvfp4"]
+                return decode_nvfp4(codes[loc], scales[loc], outer[loc]), False
+            fmt = ID_TO_FMT[int(fid)]
+            codes, scales = self.slabs[side][fmt]
+            n = self.hidden if side == "gu" else self.inter
+            parts.append(decode_trellis(codes[loc], scales[loc], self.luts[fmt], n, fmt))
+        return (parts[0] if len(parts) == 1 else torch.cat(parts)), True
 
     def forward(self, hidden_states: torch.Tensor, top_k_index: torch.Tensor, top_k_weights: torch.Tensor) -> torch.Tensor:
         out = torch.zeros(hidden_states.shape[0], self.hidden, dtype=torch.float32, device=hidden_states.device)

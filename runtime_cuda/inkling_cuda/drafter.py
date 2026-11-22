@@ -56,19 +56,24 @@ class TemperatureSampler:
         width = logits.shape[1]
         for index, pointer in enumerate(pointers):
             self.cuda.copy(offset(U64(logits.data_ptr()), index * width), pointer, 4 * width)
-        valid = logits.isfinite().all(dim=1)
-        if blocked_token is not None:
-            logits[:, blocked_token] = -torch.inf
-        # Center prior to scaling to keep very low temperatures finite at the maximum.
-        weights = logits.sub_(logits.amax(dim=1, keepdim=True)).div_(self.temperature).exp_().cumsum(dim=1)
-        total = weights[:, -1]
-        threshold = torch.minimum(self.draws[position:position + count] * total,
-                                  torch.nextafter(total, torch.zeros_like(total)))
-        picks = torch.searchsorted(weights, threshold[:, None], right=True).flatten()
-        indices, finite = torch.stack((picks, valid.long())).tolist()
-        if not all(finite) or any(index >= width for index in indices):
-            raise FloatingPointError("Invalid logits for temperature sampling")
-        return indices
+        return sample_logits(logits, self.draws[position:position + count], self.temperature, blocked_token)
+
+
+def sample_logits(logits, draws, temperature, blocked_token=None):
+    """Draw from target logits using a uniform value for each absolute position."""
+    valid = logits.isfinite().all(dim=1)
+    if blocked_token is not None:
+        logits[:, blocked_token] = -torch.inf
+    # Center prior to scaling to keep very low temperatures finite at the maximum.
+    weights = logits.sub_(logits.amax(dim=1, keepdim=True)).div_(temperature).exp_().cumsum(dim=1)
+    total = weights[:, -1]
+    threshold = torch.minimum(draws * total, torch.nextafter(total, torch.zeros_like(total)))
+    picks = torch.searchsorted(weights, threshold[:, None], right=True).flatten()
+    indices, finite = torch.stack((picks, valid.long())).tolist()
+    if not all(finite) or any(index >= logits.shape[1] for index in indices):
+        raise FloatingPointError("Invalid logits for temperature sampling")
+    return indices
+
 
 
 class Drafter:

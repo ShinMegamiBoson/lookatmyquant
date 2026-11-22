@@ -46,6 +46,16 @@ class Cuda:
             label = error.value.decode() if error.value else str(status)
             raise RuntimeError(f"{name} failed with {label}")
 
+    @contextmanager
+    def activate(self):
+        """Bind the primary CUDA context to the current request thread."""
+        self.call("cuCtxPushCurrent_v2", self.context)
+        active = PTR()
+        try:
+            yield
+        finally:
+            self.call("cuCtxPopCurrent_v2", ct.byref(active))
+
     def device_name(self):
         name = ct.create_string_buffer(256)
         self.call("cuDeviceGetName", name, I32(len(name)), self.device)
@@ -105,15 +115,15 @@ class Cuda:
             x, slab.codes, slab.scales, slab.table, experts, out,
             U32(slab.rows), U32(slab.width), U32(slab.words), U32(slab.bits),
             U32(slab.group), U32(slab.hash_shift), U32(slab.multiplier),
-            U32(x_div), U32(slab.lloyd), U64(), U64(), U32(stride), stream=stream,
+            U32(x_div), U32(slab.lloyd), U64(), U64(), U32(stride), U32(1), U32(slab.rows), stream=stream,
         )
 
-    def routed_project(self, x, experts, out, slots, x_div, rows, width, descriptors, mapping, *, batch=1, stride=0):
+    def routed_project(self, x, experts, out, slots, x_div, rows, width, descriptors, mapping, *, batch=1, stride=0, groups=1, group_rows=None):
         self.launch(
             self.kernel, ((rows + 3) // 4, slots, batch), 128,
             x, U64(), U64(), U64(), experts, out,
             U32(rows), U32(width), U32(), U32(), U32(), U32(), U32(), U32(x_div),
-            U32(), descriptors, mapping, U32(stride),
+            U32(), descriptors, mapping, U32(stride), U32(groups), U32(group_rows or rows),
         )
 
     def upload(self, array):
