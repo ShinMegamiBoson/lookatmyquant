@@ -126,6 +126,7 @@ class PromptCache:
 
     def clear(self) -> None:
         self._entries.clear()
+        self._owner = None
 
     def _match(self, ids: list[int], drafting: bool) -> dict | None:
         best = None
