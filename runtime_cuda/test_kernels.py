@@ -8,12 +8,14 @@ import numpy as np
 import pytest
 import torch
 
+if not torch.cuda.is_available():
+    pytest.skip("CUDA device required", allow_module_level=True)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from runtime_cuda.inkling.formats import FMT_PARAMS, decode_lm, decode_trellis  # noqa: E402
 from runtime_cuda.inkling.triton_kernels import group_by_expert, packed_matmul  # noqa: E402
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 DEV = torch.device("cuda")
 
 

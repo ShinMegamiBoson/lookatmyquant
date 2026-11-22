@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 import torch
 
+if not torch.cuda.is_available():
+    pytest.skip("CUDA device required", allow_module_level=True)
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from runtime_cuda.inkling.attention import decode_attention, prefill_attention  # noqa: E402
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 
 
 @pytest.mark.parametrize("L", [1, 5, 63, 300, 1100, 3000])
