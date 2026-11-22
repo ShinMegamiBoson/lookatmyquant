@@ -5,7 +5,7 @@ import struct
 
 import numpy as np
 
-from inkling_cuda.packed import EXPERT_FORMATS, FORMATS
+from runtime_cuda.inkling_cuda.packed import EXPERT_FORMATS, FORMATS
 
 FMT_PARAMS = FORMATS
 ID_TO_FMT = dict(enumerate(EXPERT_FORMATS))
@@ -239,3 +239,34 @@ def build_mini_packed_dir(out_dir: Path, full_size=False) -> None:
         "luts": {k: list(v.shape) for k, v in luts.items()},
     }
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
+def convert_row_groups(folder, *, mixed=False):
+    """Rewrite expert rows into 128-row groups, optionally crossing formats."""
+    for path in folder.glob("layer_*_packed.npz"):
+        with np.load(path) as source:
+            arrays = dict(source)
+        for side in ("gu", "dn"):
+            emap = arrays.pop(f"{side}_map")
+            raw_signs = arrays[f"{side}_signs_in"]
+            if mixed:
+                arrays[f"{side}_signs_in"] = (
+                    raw_signs * np.linspace(0.85, 1.2, raw_signs.size)
+                ).astype(np.float16)
+            groups = None
+            for fid, fmt in enumerate(EXPERT_FORMATS):
+                key = f"{side}_{fmt}_codes"
+                if key not in arrays:
+                    continue
+                codes = arrays[key]
+                count, rows, width = codes.shape
+                groups = rows // 128
+                arrays[key] = codes.reshape(count * groups, 128, width)
+                key = f"{side}_{fmt}_scales"
+                arrays[key] = arrays[key].reshape(count * groups, 128)
+            rg_map = np.broadcast_to(emap[:, None], (len(emap), groups, 2)).copy()
+            rg_map[:, :, 1] = emap[:, 1, None] * groups + np.arange(groups)
+            if mixed and groups > 1:
+                rg_map[:, 1] = np.roll(rg_map[:, 1], 1, axis=0)
+            arrays[f"{side}_rg_map"] = rg_map
+        np.savez(path, **arrays)

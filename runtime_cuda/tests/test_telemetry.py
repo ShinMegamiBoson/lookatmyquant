@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from inkling_cuda.__main__ import generate
-from inkling_cuda.telemetry import parse_sample, read_sample
+from runtime_cuda.cli import benchmark
+from runtime_cuda.inkling_cuda.telemetry import parse_sample, read_sample
 
 
 class TelemetryTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class TelemetryTests(unittest.TestCase):
 
     def test_query_error_produces_an_invalid_sample(self):
         error = subprocess.CalledProcessError(1, "nvidia-smi", output="Driver query failed\n")
-        with patch("inkling_cuda.telemetry.subprocess.check_output", side_effect=error):
+        with patch("runtime_cuda.inkling_cuda.telemetry.subprocess.check_output", side_effect=error):
             sample = read_sample("0000:c5:00.0")
         self.assertIn("Driver query failed", sample["issues"][0])
 
@@ -46,16 +46,10 @@ class TelemetryTests(unittest.TestCase):
         args = SimpleNamespace(model=Path("unused"), tokens=[4], max_new_tokens=2, context=2, device=0,
                                check_telemetry=True, json=None)
         with (
-            patch("inkling_cuda.__main__.Cuda") as cuda,
-            patch("inkling_cuda.__main__.generate_result",
+            patch("runtime_cuda.cli.benchmark_result",
                   return_value={"generated_tokens": [17], "decode_tokens_per_second": 15.1}) as run,
-            patch("inkling_cuda.telemetry.read_sample", side_effect=samples),
+            patch("runtime_cuda.inkling_cuda.telemetry.read_sample", side_effect=samples),
             patch("sys.stdout", new_callable=io.StringIO) as stdout,
-            self.assertRaises(SystemExit) as raised,
         ):
-            device = cuda.return_value.__enter__.return_value
-            device.pci_bus_id.return_value = "0000:c5:00.0"
-            device.device_name.return_value = "NVIDIA GPU"
-            generate(args)
-        self.assertEqual(raised.exception.code, 2)
+            self.assertEqual(benchmark(args), 2)
         return json.loads(stdout.getvalue()), run

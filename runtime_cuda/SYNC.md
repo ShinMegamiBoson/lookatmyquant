@@ -7,6 +7,8 @@ numpy/PyTorch references and transformers, so upstream kernel tuning never force
 **Synced through upstream commit:** `5106923` (2026-11-21, "Add unified NVFP4 MoE Metal kernels and 11.2 GB / 12.8 GB
 Inkling-2-Mini results")
 
+CUDA also supports SQYFR v3 trellis row groups and FP16 input column scales introduced in `f9f8008`.
+
 When you sync, update the commit above, then run `python runtime_cuda/upstream_sync.py` again: it should list
 nothing new.
 
@@ -41,18 +43,16 @@ nothing new.
 | `generate.py` | `generate.py` `stream_serial`, `generate_serial` | serial greedy decoding |
 | `../test_upstream_fixture.py` | `../test_inkling.py` `build_mini_packed_dir` | the author's synthetic model, reused |
 | `reference.py`, `teacher.py`; `../compare.py`, `../kl_eval.py`, `../check_weights.py` | none (`../compare.py`, `../check_reference.py` play this part upstream) | transformers-based float32 reference, the original model, evaluation |
-| `tuning.py`, `tuning/`; `../tune.py`, `../remote_tune.sh`, `../tuning_coverage.py` | none | per-GPU kernel settings |
+| `tuning.py`, `tuning/`; `../tune.py`, `../tuning_coverage.py` | none | per-GPU kernel settings |
 
 ## Upstream behaviour not ported yet
 
 | Upstream | Where | Notes |
 |---|---|---|
-| DSpark drafter, speculative decoding (linear, tree, chat-fork, copy-wide) | `drafter.py`, `generate.py` `stream_dspark`, `fast_kernels.py` `make_tree_spec` | next big item |
-| exact `temp > 0` speculative sampling, top-p/top-k sampling | `generate.py` `verify_spec_sample_gpu`, `_sample_*` | serial decoding here is greedy only |
+| Tree, chat-fork and copy-wide speculative decoding | `generate.py` `stream_dspark`, `fast_kernels.py` `make_tree_spec` | The native CUDA path implements linear DSpark verification |
+| Top-p and top-k sampling | `generate.py` `_sample_*` | CUDA supports temperature sampling and positional seeded draws for native DSpark |
 | margin verify, N-gram prompt lookup | `generate.py` `verify_margin_greedy_gpu`, `NgramDraftIndex` | opt-in upstream |
 | dynamic MoE top-k (`moe_k_max`, `moe_k_min`, `moe_ratio_thr`, `moe_renorm`) | `model.py` `Inkling2Config`, `fast_kernels.py` `sigmoid_top8_norm_fast` | opt-in upstream; default (top-8) is what we run |
-| `lamq` CLI / `Runtime` integration | `runtime_mlx/runtime.py`, `cli.py` | no CUDA backend switch yet |
-| `stats_out` filled when a stream is closed early | `generate.py` `stream_serial` (5106923) | small |
 
 ## Known differences between upstream and transformers (guarded by `schema.py`)
 

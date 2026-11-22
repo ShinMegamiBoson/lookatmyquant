@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from fixture import build_mini_packed_dir
-from inkling_cuda.device_model import Device, DeviceModel, PREFILL_CHUNK
-from inkling_cuda.driver import Cuda
-from inkling_cuda.model import Model, VisitCache
-from inkling_cuda.packed import FORMATS, Slab, project, rotate
+from .fixture import build_mini_packed_dir, convert_row_groups
+from runtime_cuda.inkling_cuda.device_model import Device, DeviceModel, PREFILL_CHUNK
+from runtime_cuda.inkling_cuda.driver import Cuda
+from runtime_cuda.inkling_cuda.model import Model, VisitCache
+from runtime_cuda.inkling_cuda.packed import FORMATS, Slab, project, rotate
 
 
 def decoded_row(words, width, fmt, table):
@@ -32,7 +32,12 @@ def decoded_row(words, width, fmt, table):
 class PackedCudaTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.cuda = Cuda()
+        try:
+            cls.cuda = Cuda()
+        except (OSError, RuntimeError) as error:
+            if isinstance(error, OSError) or "CUDA_ERROR_NO_DEVICE" in str(error):
+                raise unittest.SkipTest(str(error)) from error
+            raise
 
     @classmethod
     def tearDownClass(cls):
@@ -149,6 +154,20 @@ class PackedCudaTests(unittest.TestCase):
             finally:
                 model.close()
 
+    def test_grouped_trellis_and_scaled_columns(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)
+            build_mini_packed_dir(path)
+            convert_row_groups(path, mixed=True)
+            cpu = Model(path, None).session(12)
+            model = DeviceModel(path, self.cuda)
+            try:
+                with model.session(12) as session:
+                    for token in (17, 92, 67, 124):
+                        np.testing.assert_allclose(session.step(token), cpu.step(token), rtol=0, atol=2e-3)
+            finally:
+                model.close()
+
     def test_greedy_sampling_can_exclude_a_token_on_device(self):
         with tempfile.TemporaryDirectory() as folder:
             build_mini_packed_dir(Path(folder))
@@ -173,7 +192,7 @@ class PackedCudaTests(unittest.TestCase):
     def test_temperature_verification_reuses_draws_after_rejection(self):
         try:
             import torch
-            from inkling_cuda.drafter import TemperatureSampler, stream_speculative
+            from runtime_cuda.inkling_cuda.drafter import TemperatureSampler, stream_speculative
         except ImportError:
             self.skipTest("CUDA PyTorch and safetensors are required")
         if not torch.cuda.is_available():

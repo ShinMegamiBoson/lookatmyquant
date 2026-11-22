@@ -1,7 +1,7 @@
 """Text inference for LookAtMyQuant Inkling-2-Mini on NVIDIA CUDA."""
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import json
 import re
@@ -29,7 +29,7 @@ class LoadedModel:
     def context_limit(self):
         config = json.loads((self.path / "config.json").read_text())
         text = config.get("text_config", config)
-        return int(text.get("max_position_embeddings", 16384))
+        return int(text.get("max_position_embeddings", 32768))
 
 
 def _ordinal(device):
@@ -55,7 +55,7 @@ def open_model(path_or_repo, *, device="cuda", engine="auto", revision=None, dra
     formats = validate_packed_dir(path, deep=False)
     needs_triton = "experts:nvfp4" in formats
     if engine == "auto":
-        engine = "triton" if needs_triton else "native"
+        engine = "native" if drafter is not None and not needs_triton else "triton"
     if engine == "native" and needs_triton:
         raise ValueError("NVFP4 packs require the Triton CUDA engine")
     if engine == "triton" and drafter is not None:
@@ -91,17 +91,26 @@ def eos_ids(model: LoadedModel, tokenizer) -> set[int]:
 
 
 def load_drafter(model, spec, *, context, revision=None):
-    from .inkling_cuda.drafter import Drafter
-
     if model.engine != "native":
         raise ValueError("DSpark currently requires the native CUDA engine and a trellis-only target")
+    from .inkling_cuda.drafter import Drafter
+
+    if type(context) is not int or not 1 <= context <= model.context_limit:
+        raise ValueError("DSpark context is outside the model context")
     path = resolve_path(spec, revision=revision, drafter=True, target=model.source)
     return Drafter(path, model.target, context, model.device)
 
 
 def _native_tokens(model, ids, limit, eos, blocked, drafter, block, temperature, seed, stats):
     context = len(ids) + limit - 1
-    with model.target.dev.cuda.activate(), model.target.session(context) as session:
+    with ExitStack() as stack:
+        stack.enter_context(model.target.dev.cuda.activate())
+        if temperature or drafter is not None:
+            import torch
+
+            stack.enter_context(torch.cuda.device(model.device))
+            stack.enter_context(torch.cuda.stream(torch.cuda.default_stream(model.device)))
+        session = stack.enter_context(model.target.session(context))
         if temperature:
             from .inkling_cuda.drafter import TemperatureSampler
 
@@ -123,13 +132,17 @@ def _native_tokens(model, ids, limit, eos, blocked, drafter, block, temperature,
                 return
 
 
-def _triton_tokens(model, ids, limit, eos, blocked, temperature, seed):
+def _triton_tokens(model, ids, limit, eos, blocked, temperature, seed, stats):
     from .inkling.generate import stream_serial
 
     if not temperature:
         blocked_ids = () if blocked is None else (blocked,)
-        for chunk in stream_serial(model.target, ids, max_tokens=limit, eos_ids=eos, blocked=blocked_ids):
+        triton_stats = {}
+        for chunk in stream_serial(model.target, ids, max_tokens=limit, eos_ids=eos, blocked=blocked_ids,
+                                   stats_out=triton_stats):
             yield from chunk
+        if triton_stats:
+            stats.update(prefill_seconds=triton_stats["prompt_s"], peak_gb=triton_stats["peak_gb"])
         return
 
     import torch
@@ -155,14 +168,16 @@ def stream_tokens(model, ids, *, max_tokens, eos_ids=(), blocked_token=None, dra
                   temperature=0., seed=None, stats_out=None):
     """Yield generated token IDs, including EOS when generated."""
     ids = list(ids)
-    if not ids or max_tokens < 1 or len(ids) + max_tokens - 1 > model.context_limit:
+    if not ids or type(max_tokens) is not int or max_tokens < 1 or len(ids) + max_tokens - 1 > model.context_limit:
         raise ValueError("Prompt and generation exceed the context limit or are empty")
     size = model.target.head.size if model.engine == "native" else model.target.order.numel()
     if any(not 0 <= token < size for token in ids) or blocked_token is not None and not 0 <= blocked_token < size:
         raise ValueError("Token ID outside the model vocabulary")
-    if not 0 <= temperature <= 2:
+    if type(temperature) not in (float, int) or not 0 <= temperature <= 2:
         raise ValueError("Temperature must be in [0, 2]")
-    if drafter is not None and draft_block_size < 2:
+    if seed is not None and (type(seed) is not int or not -(1 << 63) <= seed < (1 << 64)):
+        raise ValueError("Seed must be a 64-bit integer")
+    if drafter is not None and (type(draft_block_size) is not int or draft_block_size < 2):
         raise ValueError("DSpark block size must be at least two")
     if drafter is not None and model.engine != "native":
         raise ValueError("DSpark currently requires the native CUDA engine")
@@ -172,19 +187,22 @@ def stream_tokens(model, ids, *, max_tokens, eos_ids=(), blocked_token=None, dra
         tokens = _native_tokens(model, ids, max_tokens, eos, blocked_token, drafter, draft_block_size,
                                 temperature, seed, stats)
     else:
-        tokens = _triton_tokens(model, ids, max_tokens, eos, blocked_token, temperature, seed)
+        tokens = _triton_tokens(model, ids, max_tokens, eos, blocked_token, temperature, seed, stats)
     start = time.perf_counter()
-    first = None
+    first = last = None
     count = 0
     try:
         for token in tokens:
+            last = time.perf_counter()
             if first is None:
-                first = time.perf_counter()
+                first = last
             count += 1
             yield token
     finally:
         tokens.close()
-        elapsed = time.perf_counter() - first if first is not None else 0.
+        elapsed = last - first if first is not None else 0.
+        ttft = first - start if first is not None else None
+        stats.setdefault("prefill_seconds", ttft)
         stats.update(engine=model.engine, prompt_tokens=len(ids), generated_tokens=count,
-                     prefill_seconds=(first - start) if first is not None else None,
+                     time_to_first_token_seconds=ttft,
                      decode_tokens_per_second=(count - 1) / elapsed if count > 1 and elapsed else None)

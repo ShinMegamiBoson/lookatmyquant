@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .formats import EXPERT_FIDS, FMT_PARAMS, ID_TO_FMT, NVFP4_FID
+from .formats import EXPERT_FIDS, FMT_PARAMS, NVFP4_FID
 
 LM_FMTS = ("lm6", "lm8")
 LINEAR_FMTS = set(FMT_PARAMS) | set(LM_FMTS)
@@ -49,7 +49,7 @@ def _layer_key_ok(key: str) -> bool:
     return False
 
 
-def check_layer(path: Path, meta: dict, arrays=None) -> None:
+def check_layer(path: Path, meta: dict, arrays=None) -> list[str]:
     """One layer: its tensors, linear formats and expert format ids. `arrays` (an open npz) enables the map check."""
     name = path.name
     keys = _npz_keys(path)
@@ -89,11 +89,17 @@ def check_layer(path: Path, meta: dict, arrays=None) -> None:
                     raise UnsupportedPackedFile(f"{name}: {key} references missing {codes}")
                 with zipfile.ZipFile(path) as archive, archive.open(f"{codes}.npy") as handle:
                     version = np.lib.format.read_magic(handle)
-                    shape, _, _ = np.lib.format._read_array_header(handle, version)
+                    if version == (1, 0):
+                        shape, _, _ = np.lib.format.read_array_header_1_0(handle)
+                    elif version in ((2, 0), (3, 0)):
+                        # Pack arrays use simple ASCII numeric dtype descriptors. NPY 3 changes only the encoding.
+                        shape, _, _ = np.lib.format.read_array_header_2_0(handle)
+                    else:
+                        raise UnsupportedPackedFile(f"{name}: {codes} uses unknown NPY version {version}")
                 locs = pairs[pairs[:, 0] == fid, 1]
                 if locs.max() >= shape[0] or locs.min() < 0:
                     raise UnsupportedPackedFile(f"{name}: {side} {fmt} index outside the slab")
-
+    return keys
 
 
 def check_buckets(path: Path, meta: list[dict]) -> None:
@@ -163,10 +169,9 @@ def validate_packed_dir(packed_dir: str | Path, deep: bool = True) -> dict:
         meta = json.loads(p.with_name(p.name.replace("_packed.npz", "_meta.json")).read_text())
         if deep:
             with np.load(p) as arrays:
-                check_layer(p, meta, arrays)
+                keys = check_layer(p, meta, arrays)
         else:
-            check_layer(p, meta)
-        keys = _npz_keys(p)
+            keys = check_layer(p, meta)
         for side in ("gu", "dn"):
             if f"{side}_nvfp4_codes" in keys:
                 used.setdefault("experts:nvfp4", 0)

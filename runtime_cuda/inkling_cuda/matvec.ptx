@@ -67,9 +67,12 @@
     @%p8 bra PROJECT;
     // Pick the slab for the row group containing this output row.
     ld.param.u32 %r44, [groups];
+    setp.eq.u32 %p8, %r44, 1;
+    @%p8 bra LOOKUP;
     div.u32 %r45, %r15, %r42;
     rem.u32 %r43, %r15, %r42;
     mad.lo.u32 %r16, %r16, %r44, %r45;
+LOOKUP:
     mad.wide.u32 %rd17, %r16, 8, %rd16;
     ld.global.v2.u32 {%r41, %r16}, [%rd17];
     mad.wide.u32 %rd17, %r41, 48, %rd15;
