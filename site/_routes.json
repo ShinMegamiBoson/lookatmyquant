@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "include": [
+    "/compiler/explainer.mp4",
+    "/2/explainer.mp4",
+    "/grafting/explainer.mp4"
+  ],
+  "exclude": []
+}

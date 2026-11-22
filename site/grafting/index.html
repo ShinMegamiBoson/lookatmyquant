@@ -140,6 +140,7 @@ ol.refs { padding-left: 1.4em; font: 400 0.92rem/1.5 var(--sans); color: var(--m
 ol.refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
 ol.refs li b { color: var(--ink); font-weight: 600; }
 footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+#video video { display: block; width: 100%; height: auto; background: #191919; }
 </style>
 </head>
 <body>
@@ -158,6 +159,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <a href="#method">Grafting method</a>
       <a href="#replace-9b-4b">9B → 4B replacement</a>
       <a href="#replace-4b-2b">4B → 2B replacement</a>
+      <a href="#video">Replacement video</a>
       <a href="#add-4b-2b">4B → 2B addition</a>
       <a href="#add-27b-08b">27B → 0.8B addition</a>
       <a href="#learned-and-shuffled-weights">Learned vs. shuffled weights</a>
@@ -273,6 +275,11 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <div><p class="panel-title">Exact arithmetic, 200 problems</p><div class="bars"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">of baseline</div><div class="v">of donor</div></div><div class="bar model" title="88 of 200 (44.0%)"><div class="l">Qwen3.5-2B, intact<small>the baseline</small></div><div class="t" style="--base:76.92%;--donor:93.53%"><i style="width:76.92%"></i></div><div class="v">100%</div><div class="v">82%</div></div><div class="bar model" title="2 of 200 (1.0%)"><div class="l">2B calculation neurons disabled</div><div class="t" style="--base:76.92%;--donor:93.53%"><i style="width:1.75%"></i></div><div class="v">2%</div><div class="v">2%</div></div><div class="bar graft" title="50 of 200 (25.0%)"><div class="l">4B neurons replace 2B neurons</div><div class="t" style="--base:76.92%;--donor:93.53%"><i style="width:43.71%"></i></div><div class="v">57%</div><div class="v">47%</div></div><div class="bar graft" title="43 of 200 (21.5%)"><div class="l">4B neurons and heads replace 2B’s</div><div class="t" style="--base:76.92%;--donor:93.53%"><i style="width:37.59%"></i></div><div class="v">49%</div><div class="v">40%</div></div><div class="bar control" title="5 of 200 (2.5%)"><div class="l">4B neurons and heads, shuffled</div><div class="t" style="--base:76.92%;--donor:93.53%"><i style="width:4.37%"></i></div><div class="v">6%</div><div class="v">5%</div></div><div class="bar model" title="107 of 200 (53.5%)"><div class="l">Qwen3.5-4B, intact<small>the donor</small></div><div class="t" style="--base:76.92%;--donor:93.53%"><i style="width:93.53%"></i></div><div class="v">122%</div><div class="v">100%</div></div></div></div>
     </div>
     <figcaption><b>Figure 4.</b> Qwen3.5-4B neurons replace Qwen3.5-2B neurons, alone or with attention heads. The shuffled row swaps both neurons and heads. The intact 2B scored 70.0% on GSM8K and 44.0% on exact arithmetic. The intact 4B scored 88.4% and 53.5%.</figcaption>
+  </figure>
+
+  <figure class="col" id="video">
+    <video controls playsinline preload="none" width="1280" height="720" aria-label="The original calculation-neuron replacements from Qwen3.5-9B into Qwen3.5-4B and from Qwen3.5-4B into Qwen3.5-2B" poster="explainer.jpg" src="explainer.mp4"></video>
+    <figcaption>The original calculation-neuron replacements from Qwen3.5-9B into Qwen3.5-4B and from Qwen3.5-4B into Qwen3.5-2B (1 min 31 s). <a href="https://x.com/shinboson/status/2124225815470801108">Original post on X</a>.</figcaption>
   </figure>
 
   <section class="col">

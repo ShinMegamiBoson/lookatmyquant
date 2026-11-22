@@ -108,6 +108,7 @@ ol.refs li b { color: var(--ink); font-weight: 600; }
 .tip { position: fixed; z-index: 20; pointer-events: none; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 6px 18px rgba(0,0,0,.14); padding: 7px 10px; font: 400 0.84rem/1.4 var(--sans); max-width: 19rem; }
 .tip b { font-weight: 600; }
 footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+#video video { display: block; width: 100%; height: auto; background: #191919; }
 </style>
 </head>
 <body>
@@ -121,6 +122,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <nav class="links" aria-label="Sections">
       <a href="#results">Results</a>
       <a href="#findings">Findings</a>
+      <a href="#video">Video</a>
       <a href="#recipe">Recipe</a>
       <a href="#compiler">Compiler</a>
       <a href="#cost">Cost</a>
@@ -142,6 +144,11 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <div><p class="panel-title">KL from the original on text (lower is better)</p><div class="chart" id="f1text"></div></div>
     </div>
     <figcaption><b>Figure 1.</b> Left: exact-match math problems solved, of 540. Right: KL(original ‖ model) between next-token distributions, averaged over held-out text from 13 sources. Sizes are language-model weights.</figcaption>
+  </figure>
+
+  <figure class="col" id="video">
+    <video controls playsinline preload="none" width="1280" height="720" aria-label="How the compiler compresses Qwen3.5-4B in four steps" poster="explainer.jpg" src="explainer.mp4"></video>
+    <figcaption>How the compiler compresses Qwen3.5-4B in four steps (19 s). <a href="https://x.com/shinboson/status/2120499242342985821">Original post on X</a>.</figcaption>
   </figure>
 
   <section class="col">
