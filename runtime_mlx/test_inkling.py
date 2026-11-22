@@ -324,6 +324,20 @@ def test_mini_model_and_runtime_integration() -> None:
         assert c_p == pdir / "config.json"
 
 
+def test_prefill_budget_keeps_one_pass_when_it_fits() -> None:
+    from unittest.mock import patch
+
+    from runtime_mlx.inkling.generate import _prefill_step
+
+    with patch.object(mx, "device_info", return_value={"max_recommended_working_set_size": 24_000_000_000}), \
+         patch.object(mx, "get_active_memory", return_value=5_400_000_000):
+        assert _prefill_step(4096, -1) == 4096
+        assert _prefill_step(32768, -1) == 2048
+        assert _prefill_step(32768, 0) == 32768
+        assert _prefill_step(32768, None) == 32768
+        assert _prefill_step(4096, 512) == 512
+
+
 def test_chunked_prefill_matches_single_pass() -> None:
     """Chunked prefill (chunks smaller than the 8-token sliding window, prompt well past it) must reproduce one pass."""
     from runtime_mlx.inkling.generate import _prefill, stream_serial
@@ -402,6 +416,9 @@ def test_prompt_cache_reuse_matches_fresh_prefill() -> None:
 
         small = PromptCache(min_tokens=1000)
         assert gen(p1, small)[0] == fresh["p1"] and len(small) == 0
+        disabled = PromptCache(max_entries=0, min_tokens=0)
+        assert gen(p1, disabled) == gen(p1, disabled) == (fresh["p1"], 0)
+        assert len(disabled) == 0
 
 
 def test_moe_grouped_large_expert_count_parity() -> None:
@@ -800,6 +817,7 @@ def test_fast_kernels_suite() -> None:
 
 def main() -> None:
     test_mini_model_and_runtime_integration()
+    test_prefill_budget_keeps_one_pass_when_it_fits()
     test_chunked_prefill_matches_single_pass()
     test_prompt_cache_reuse_matches_fresh_prefill()
     test_moe_grouped_large_expert_count_parity()
