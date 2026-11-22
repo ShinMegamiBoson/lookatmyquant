@@ -368,6 +368,42 @@ def test_chunked_prefill_matches_single_pass() -> None:
         assert gen(5) == base and gen(3) == base and gen(4096) == base, f"chunked prefill changed greedy output: {base}"
 
 
+def test_prompt_cache_reuse_matches_fresh_prefill() -> None:
+    """PromptCache: extended, retried and unrelated prompts; reuse counts; eviction; snapshots never mutated."""
+    from runtime_mlx.inkling.generate import PromptCache, stream_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+        rng = np.random.default_rng(11)
+        p1 = [int(x) for x in rng.integers(1, 500, size=21)]
+        p2 = p1 + [int(x) for x in rng.integers(1, 500, size=9)]
+        p3 = p1[:5] + p2[10:]
+
+        def gen(p, pc=None):
+            st: dict = {}
+            g = stream_serial(model, p, max_tokens=10, eos_ids=(), stats_out=st, prefill_chunk=4, prompt_cache=pc)
+            return [t for c in g for t in c], st.get("prompt_cached_tokens")
+
+        fresh = {k: gen(p)[0] for k, p in (("p1", p1), ("p2", p2), ("p3", p3))}
+        pc = PromptCache(max_entries=2, min_tokens=0)
+        out, reused = gen(p1, pc)
+        assert out == fresh["p1"] and reused == 0 and len(pc) == 1
+        out, reused = gen(p2, pc)  # extends p1: reuses its snapshot (p1 minus its last token)
+        assert out == fresh["p2"] and reused == len(p1) - 1, reused
+        assert len(pc) == 1, "the p2 snapshot supersedes the p1 snapshot"
+        out, reused = gen(p2, pc)  # identical retry re-runs one token
+        assert out == fresh["p2"] and reused == len(p2) - 1, reused
+        out, reused = gen(p3, pc)  # shares only a short prefix: no reuse, second entry
+        assert out == fresh["p3"] and reused == 0 and len(pc) == 2
+        out, reused = gen(p2, pc)  # the earlier snapshot was not mutated by the generations that used it
+        assert out == fresh["p2"] and reused == len(p2) - 1
+
+        small = PromptCache(min_tokens=1000)
+        assert gen(p1, small)[0] == fresh["p1"] and len(small) == 0
+
+
 def test_moe_grouped_large_expert_count_parity() -> None:
     """Stress-test deterministic compaction inside `trellis_moe_grouped` with E=96 (>32 experts) and sentinel slots."""
     rng = np.random.default_rng(123)
@@ -625,6 +661,7 @@ def test_fast_kernels_suite() -> None:
 def main() -> None:
     test_mini_model_and_runtime_integration()
     test_chunked_prefill_matches_single_pass()
+    test_prompt_cache_reuse_matches_fresh_prefill()
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
     test_nvfp4_unified_moe_all_modes()

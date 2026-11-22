@@ -4,6 +4,7 @@
     lamq generate q38-27b --drafter q38-27b-drafter -p "Write merge_intervals in Python."
     lamq chat q38-27b --drafter q38-27b-drafter
     lamq info q38-27b
+    lamq serve inkling-5.4gb --drafter inkling-drafter --port 8080
 """
 
 from __future__ import annotations
@@ -201,6 +202,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_info = sub.add_parser("info", help="inspect a packed model's format and architecture without loading weights")
     p_info.add_argument("model", help="local model directory or Hugging Face repo ID")
     p_info.set_defaults(func=_cmd_info)
+
+    from .server import add_serve_args, serve
+
+    p_serve = sub.add_parser("serve", help="OpenAI-compatible HTTP server (packed Inkling-2-Mini models)")
+    add_serve_args(p_serve)
+    p_serve.set_defaults(func=serve)
 
     return ap
 
