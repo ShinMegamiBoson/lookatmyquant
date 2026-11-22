@@ -149,7 +149,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
 def _stream_cuda(args: argparse.Namespace, prompt: str) -> Iterator[Chunk]:
     from tokenizers.decoders import DecodeStream
 
-    from runtime_cuda import THINKING_TOKEN, eos_ids, load_drafter, open_model, stream_tokens
+    from runtime_cuda import eos_ids, load_drafter, open_model, stream_tokens
 
     with open_model(
         args.model, device=args.device, engine=args.engine or "auto", revision=args.revision,
@@ -164,12 +164,11 @@ def _stream_cuda(args: argparse.Namespace, prompt: str) -> Iterator[Chunk]:
             raise ValueError("prompt is empty or prompt and generation exceed the model context")
         drafter = load_drafter(model, args.drafter, context=context) if args.drafter else None
         stop_ids = eos_ids(model, tokenizer)
-        blocked = tokenizer.convert_tokens_to_ids(THINKING_TOKEN) if not args.raw and not args.thinking else None
         decoder = DecodeStream(skip_special_tokens=True)
         stats: dict = {}
         count, finish = 0, "length"
         with closing(stream_tokens(
-            model, ids, max_tokens=args.max_tokens, eos_ids=stop_ids, blocked_token=blocked,
+            model, ids, max_tokens=args.max_tokens, eos_ids=stop_ids,
             drafter=drafter, draft_block_size=args.draft_block_size or 2, temperature=args.temp,
             seed=args.seed, stats_out=stats,
         )) as tokens:

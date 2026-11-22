@@ -810,7 +810,9 @@ def add_serve_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--model-id", default=None, help="model id reported by /v1/models (default: the model's name)")
     p.add_argument("--context", type=int, default=32768, help="prompt + completion token limit (default 32768)")
     p.add_argument("--max-tokens", type=int, default=8192, help="completion tokens when a request sets none")
-    p.add_argument("--reasoning-effort", default="medium", choices=EFFORTS, help="when a request sets none")
+    p.add_argument("--reasoning-effort", default="medium", choices=EFFORTS, help="default chat template reasoning effort")
+    p.add_argument("--no-thinking", action="store_true",
+                   help="CUDA only: force the none template setting and block the thinking-channel token")
     p.add_argument("--temp", type=float, default=0.0, help="temperature when a request sets none (0 = greedy)")
     p.add_argument("--top-p", type=float, default=1.0, help="top-p when a request sets none")
     p.add_argument("--prompt-cache", type=int, default=0, help="local single-user prompt-prefix snapshots kept (default 0)")
@@ -828,6 +830,8 @@ def serve(args: argparse.Namespace) -> int:
             and 0 <= args.temp <= 2 and 0 <= args.top_p <= 1):
         raise SystemExit("invalid server limits or sampling defaults")
     if args.device == "mlx":
+        if getattr(args, "no_thinking", False):
+            raise SystemExit("--no-thinking requires a CUDA device")
         engine_class = Engine
     elif args.device == "cuda" or (args.device.startswith("cuda:") and args.device[5:].isdecimal()):
         from runtime_cuda.server import Engine as CudaEngine

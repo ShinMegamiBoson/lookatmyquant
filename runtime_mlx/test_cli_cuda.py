@@ -41,10 +41,6 @@ class CLITests(unittest.TestCase):
                 calls.append(("raw", prompt, add_special_tokens))
                 return [6]
 
-            def convert_tokens_to_ids(self, token):
-                self_test.assertEqual(token, "<|content_thinking|>")
-                return 88
-
         class DecodeStream:
             def __init__(self, *, skip_special_tokens):
                 self_test.assertTrue(skip_special_tokens)
@@ -72,7 +68,6 @@ class CLITests(unittest.TestCase):
 
         self_test = self
         fake_decoders.DecodeStream = DecodeStream
-        fake_cuda.THINKING_TOKEN = "<|content_thinking|>"
         fake_cuda.open_model = open_model
         fake_cuda.eos_ids = lambda *_: {99}
         fake_cuda.stream_tokens = stream_tokens
@@ -92,7 +87,7 @@ class CLITests(unittest.TestCase):
                 ("open", "model", {"device": "cuda:2", "engine": "native", "revision": "rev", "drafter": "draft"}),
                 ("chat", [{"role": "system", "content": "system"}, {"role": "user", "content": "hello"}],
                  {"tokenize": True, "add_generation_prompt": True, "reasoning_effort": "none"}),
-                ("stream", [4, 5], {"max_tokens": 8, "eos_ids": {99}, "blocked_token": 88,
+                ("stream", [4, 5], {"max_tokens": 8, "eos_ids": {99},
                                      "drafter": ("draft", 9), "draft_block_size": 3, "temperature": 0.7, "seed": 12}),
                 ("close",),
             ])
@@ -104,7 +99,12 @@ class CLITests(unittest.TestCase):
             self.assertEqual(out, "☕\n")
             self.assertIn("stop=stop", err)
             self.assertEqual(calls[1], ("raw", "unaltered", False))
-            self.assertIsNone(calls[2][2]["blocked_token"])
+            self.assertNotIn("blocked_token", calls[2][2])
+            calls.clear()
+            code, _, _ = self.invoke("generate", "model", "--device", "cuda", "--thinking", "-p", "hello", "--max-tokens", "3")
+            self.assertEqual(code, 0)
+            self.assertEqual(calls[1][2]["reasoning_effort"], "low")
+            self.assertNotIn("blocked_token", calls[2][2])
 
     def test_backend_flag_validation(self):
         for extra in (

@@ -135,12 +135,46 @@ def test_stream_separates_reasoning_and_text_until_end_of_turn():
     assert finish == "stop"
 
 
-def test_explicit_thinking_choice_is_independent_of_prompt_length():
-    cuda, _, _ = adapters([], prompt_tokens=640)
-    request = {"messages": [MESSAGE]}
+def test_default_and_request_reasoning_are_template_only():
+    for prompt_tokens in (2, 640):
+        cuda, _, _ = adapters([], prompt_tokens=prompt_tokens)
+        request = {"messages": [MESSAGE]}
+        for settings, expected in (
+            ({}, "low"),
+            ({"reasoning_effort": "none"}, "none"),
+            ({"reasoning_effort": 0}, 0),
+            ({"reasoning_effort": "high"}, "high"),
+        ):
+            assert cuda.prepare({**request, **settings})["blocked_token"] is None
+            assert cuda.tokenizer.apply_chat_template.call_args.kwargs["reasoning_effort"] == expected
+
+    cuda.args.reasoning_effort = "none"
     assert cuda.prepare(request)["blocked_token"] is None
-    assert cuda.prepare({**request, "reasoning_effort": "none"})["blocked_token"] == cuda.ids["thinking"]
-    assert cuda.prepare({**request, "reasoning_effort": "high"})["blocked_token"] is None
+    assert cuda.tokenizer.apply_chat_template.call_args.kwargs["reasoning_effort"] == "none"
+
+
+def test_explicit_cuda_serve_switch_preserves_hard_no_thinking():
+    from runtime_cuda.cli import main as cuda_main
+    from runtime_mlx.cli import main as lamq_main
+
+    cuda, _, _ = adapters([])
+    request = {"messages": [MESSAGE], "chat_template_kwargs": {"enable_thinking": False}}
+    assert cuda.prepare(request)["blocked_token"] == cuda.ids["thinking"]
+    assert cuda.tokenizer.apply_chat_template.call_args.kwargs["reasoning_effort"] == "none"
+
+    cuda, _, _ = adapters([], no_thinking=True)
+    assert cuda.prepare({"messages": [MESSAGE], "reasoning_effort": "high"})["blocked_token"] == cuda.ids["thinking"]
+    assert cuda.tokenizer.apply_chat_template.call_args.kwargs["reasoning_effort"] == "none"
+    with patch("runtime_mlx.server.serve", return_value=0) as run:
+        assert cuda_main(["serve", "tiny", "--no-thinking"]) == 0
+        assert run.call_args.args[0].device == "cuda"
+        assert run.call_args.args[0].no_thinking is True
+    try:
+        lamq_main(["serve", "tiny", "--no-thinking"])
+    except SystemExit as e:
+        assert str(e) == "--no-thinking requires a CUDA device"
+    else:
+        raise AssertionError("MLX unexpectedly accepted the CUDA-only option")
 
 
 if __name__ == "__main__":
@@ -148,5 +182,6 @@ if __name__ == "__main__":
     test_incoming_tools_and_history_arguments()
     test_stream_emits_text_then_declared_tool()
     test_stream_separates_reasoning_and_text_until_end_of_turn()
-    test_explicit_thinking_choice_is_independent_of_prompt_length()
+    test_default_and_request_reasoning_are_template_only()
+    test_explicit_cuda_serve_switch_preserves_hard_no_thinking()
     print("CUDA and MLX protocol tests passed")
