@@ -4,6 +4,7 @@ lamq generate shinmegamiboson/Qwen3.8-27B-LookAtMyQuant-7.2GB -p "What is 17 * 2
 lamq generate shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-5.4GB --drafter shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-drafter -p "Write merge_intervals in Python."
 lamq chat q38-27b --drafter q38-27b-drafter
 lamq info shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-4.7GB
+lamq serve inkling-5.4gb --port 8080
 """
 
 from __future__ import annotations
@@ -48,6 +49,10 @@ def _add_runtime_args(
         default=1.0,
         help="nucleus sampling probability when --temp > 0",
     )
+    parser.add_argument(
+        "--prefill-chunk", type=int, default=-1,
+        help="Inkling prompt tokens per prefill chunk (-1 automatic, 0 one pass)",
+    )
     parser.add_argument("--system", default=None, help="optional system message")
     parser.add_argument(
         "--thinking",
@@ -57,7 +62,7 @@ def _add_runtime_args(
     parser.add_argument(
         "--no-verify",
         action="store_true",
-        help="skip SHA-256 checksum verification when loading",
+        help="skip local checksum verification for opgraph-packed-1 models",
     )
     parser.add_argument(
         "--full-vocab",
@@ -126,6 +131,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
             mode=args.mode,
             block_size=args.block_size,
             adaptive=not args.no_adaptive,
+            prefill_chunk=args.prefill_chunk,
         )
         print(
             json.dumps(
@@ -157,6 +163,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         mode=args.mode,
         block_size=args.block_size,
         adaptive=not args.no_adaptive,
+        prefill_chunk=args.prefill_chunk,
     ):
         if chunk.text:
             sys.stdout.write(chunk.text)
@@ -203,6 +210,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 mode=args.mode,
                 block_size=args.block_size,
                 adaptive=not args.no_adaptive,
+                prefill_chunk=args.prefill_chunk,
             ):
                 if chunk.text:
                     sys.stdout.write(chunk.text)
@@ -259,6 +267,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_info.add_argument("model", help="local model directory or Hugging Face repo ID")
     p_info.set_defaults(func=_cmd_info)
+
+    from .server import add_serve_args, serve
+
+    p_serve = sub.add_parser("serve", help="OpenAI-compatible HTTP server (packed Inkling-2-Mini models)")
+    add_serve_args(p_serve)
+    p_serve.set_defaults(func=serve)
 
     return ap
 

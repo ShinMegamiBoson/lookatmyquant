@@ -54,12 +54,17 @@ def _prefill(
     prefill_chunk: int | None,
     tap_visits: tuple[int, ...] = (),
     drafter: DSparkDrafterMLX | None = None,
+    pos0: int = 0,
+    output_head: bool = True,
 ):
     """Prefill `prompt_ids` into `cache`, `prefill_chunk` tokens per forward pass.
 
+    `pos0` is the absolute position of `prompt_ids[0]` when `cache` already holds earlier tokens.
+
     Every chunk but the last is evaluated before the next is built, so activation memory is bounded
     by one chunk; KV and conv state carry across chunks exactly as they do between decode steps.
-    The last chunk runs `forward_ordered_logits` when `ordered`, otherwise `forward_argmax`. With
+    With `output_head`, the last chunk runs `forward_ordered_logits` when `ordered`, otherwise
+    `forward_argmax`. With
     `drafter`, taps of every chunk but the last are pushed to it as they are produced.
 
     Returns `(out, cache, taps, taps_start)` for the last chunk: `taps` is `None` without
@@ -76,20 +81,149 @@ def _prefill(
     while True:
         end = min(start + step, n)
         last = end >= n
-        fwd = (m.forward_ordered_logits if ordered else m.forward_argmax) if last else state_only
+        if last and output_head:
+            fwd = m.forward_ordered_logits if ordered else m.forward_argmax
+        else:
+            fwd = state_only
         if tap_visits:
             out, cache, taps = fwd(ids[start:end], cache=cache, tap_visits=tap_visits)
         else:
             out, cache = fwd(ids[start:end], cache=cache)
             taps = None
         if last:
-            return out, cache, taps, start
+            return out, cache, taps, pos0 + start
         pending = list(cache.state)
         if drafter is not None and taps is not None:
-            drafter.push_context(taps, start_pos=start)
+            drafter.push_context(taps, start_pos=pos0 + start)
             pending.extend(x for x in (*drafter.ctx_k, *drafter.ctx_v, drafter.f_rnn) if x is not None)
         mx.eval(*pending)
         start = end
+
+
+class PromptCache:
+    """Reuse prefilled state across generations whose prompts share a prefix (multi-turn chat, agent loops).
+
+    Each prefill through a `PromptCache` snapshots the target cache, and the drafter context when
+    drafting, at `len(prompt) - 1` tokens. A later prompt that starts with a snapshot's tokens
+    restores it and prefills only the rest, so an agent turn that appends a tool result costs just
+    those new tokens; an identical prompt (a retry) re-runs one token. A snapshot that a newer one
+    extends is dropped, and at most `max_entries` are kept, least recently used evicted first. Each
+    entry is a full copy of the KV state at its length, so memory grows with prompt length.
+
+    Matching is exact-prefix only: the sliding-window layers keep only their last window of KV, so
+    a snapshot cannot be rolled back to an earlier divergence point.
+    """
+
+    def __init__(self, max_entries: int = 2, min_tokens: int = 256):
+        self.max_entries = int(max_entries)
+        self.min_tokens = int(min_tokens)
+        self._entries: list[dict] = []  # {"tokens", "cache", "drafter", "used"}
+        self._clock = 0
+        self._owner = None
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def clear(self) -> None:
+        self._entries.clear()
+
+    def _match(self, ids: list[int], drafting: bool) -> dict | None:
+        best = None
+        for e in self._entries:
+            n = len(e["tokens"])
+            if (e["drafter"] is not None) == drafting and n < len(ids) and (best is None or n > len(best["tokens"])):
+                if ids[:n] == e["tokens"]:
+                    best = e
+        return best
+
+    def _store(self, tokens: list[int], cache, drafter: DSparkDrafterMLX | None) -> None:
+        if self.max_entries <= 0 or len(tokens) < self.min_tokens:
+            return
+        n = len(tokens)
+        self._entries = [e for e in self._entries if not (len(e["tokens"]) <= n and tokens[: len(e["tokens"])] == e["tokens"])]
+        self._clock += 1
+        self._entries.append(
+            {"tokens": list(tokens), "cache": cache.clone(), "drafter": drafter.context_state() if drafter is not None else None,
+             "used": self._clock}
+        )
+        self._entries.sort(key=lambda e: e["used"], reverse=True)
+        del self._entries[self.max_entries :]
+
+    def prefill(
+        self,
+        m: Inkling2LoopPackedMLX,
+        prompt_ids: Sequence[int],
+        *,
+        ordered: bool,
+        prefill_chunk: int | None = PREFILL_CHUNK,
+        tap_visits: tuple[int, ...] = (),
+        drafter: DSparkDrafterMLX | None = None,
+    ):
+        """Like `_prefill` on a fresh cache, reusing a snapshot when one matches.
+
+        Returns `(out, cache, taps, taps_start, reused_tokens)`. With `drafter`, its context covers
+        every prompt token except the returned `taps`, which the caller pushes at `taps_start`.
+        """
+        ids = list(prompt_ids)
+        n = len(ids)
+        drafting = drafter is not None
+        if self.max_entries <= 0 or n - 1 < max(1, self.min_tokens):
+            return _prefill_prompt(m, ids, ordered=ordered, prefill_chunk=prefill_chunk,
+                                   prompt_cache=None, tap_visits=tap_visits, drafter=drafter)
+        owner = (m, drafter)
+        if self._owner is None or any(a is not b for a, b in zip(owner, self._owner)):
+            self.clear()
+            self._owner = owner
+        hit = self._match(ids, drafting)
+        if hit is not None:
+            self._clock += 1
+            hit["used"] = self._clock
+            cache = hit["cache"].clone()
+            if drafting:
+                drafter.restore_context(hit["drafter"])
+            start = len(hit["tokens"])
+        else:
+            cache = m.make_cache()
+            if drafting:
+                drafter.reset()
+            start = 0
+        if start < n - 1:  # prefill up to the snapshot point, then snapshot
+            _, cache, taps, taps_start = _prefill(
+                m, ids[start : n - 1], cache, ordered=False, prefill_chunk=prefill_chunk,
+                tap_visits=tap_visits, drafter=drafter, pos0=start, output_head=False,
+            )
+            if drafting:
+                drafter.push_context(taps, start_pos=taps_start)
+            self._store(ids[: n - 1], cache, drafter)
+            start = n - 1
+        out, cache, taps, taps_start = _prefill(
+            m, ids[start:], cache, ordered=ordered, prefill_chunk=prefill_chunk,
+            tap_visits=tap_visits, drafter=drafter, pos0=start,
+        )
+        return out, cache, taps, taps_start, (len(hit["tokens"]) if hit is not None else 0)
+
+
+def _prefill_prompt(
+    m: Inkling2LoopPackedMLX,
+    prompt_ids: Sequence[int],
+    *,
+    ordered: bool,
+    prefill_chunk: int | None,
+    prompt_cache: PromptCache | None,
+    tap_visits: tuple[int, ...] = (),
+    drafter: DSparkDrafterMLX | None = None,
+):
+    """Prefill a whole prompt from scratch, or through `prompt_cache`. Returns `(out, cache, taps, taps_start, reused)`."""
+    if prompt_cache is not None:
+        return prompt_cache.prefill(
+            m, prompt_ids, ordered=ordered, prefill_chunk=prefill_chunk, tap_visits=tap_visits, drafter=drafter
+        )
+    if drafter is not None:
+        drafter.reset()
+    out, cache, taps, taps_start = _prefill(
+        m, prompt_ids, m.make_cache(), ordered=ordered, prefill_chunk=prefill_chunk, tap_visits=tap_visits, drafter=drafter
+    )
+    return out, cache, taps, taps_start, 0
 
 
 def _sample_next(logits_1d: mx.array, temp: float = 0.0, top_p: float = 1.0, top_k: int = 0) -> int:
@@ -429,6 +563,7 @@ def stream_serial(
     top_k: int = 0,
     stats_out: dict[str, Any] | None = None,
     prefill_chunk: int | None = PREFILL_CHUNK,
+    prompt_cache: PromptCache | None = None,
 ) -> Iterator[list[int]]:
     """Stream single-token serial generation from a packed Inkling-2-Mini model."""
     if temp < 0.0:
@@ -442,15 +577,15 @@ def stream_serial(
     emitted = 0
     step_ms: list[float] = []
     next_pending: mx.array | None = None
+    reused = 0
     try:
-        cache = m.make_cache()
         t0 = time.perf_counter()
         if greedy:
-            nxt_mx, cache, _, _ = _prefill(m, prompt_ids, cache, ordered=False, prefill_chunk=prefill_chunk)
+            nxt_mx, cache, _, _, reused = _prefill_prompt(m, prompt_ids, ordered=False, prefill_chunk=prefill_chunk, prompt_cache=prompt_cache)
             nxt_mx = nxt_mx[0, -1]
             nxt = int(nxt_mx)
         else:
-            ord_logits, cache, _, _ = _prefill(m, prompt_ids, cache, ordered=True, prefill_chunk=prefill_chunk)
+            ord_logits, cache, _, _, reused = _prefill_prompt(m, prompt_ids, ordered=True, prefill_chunk=prefill_chunk, prompt_cache=prompt_cache)
             nxt_mx = _sample_ordered_gpu(
                 ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
             )
@@ -507,6 +642,7 @@ def stream_serial(
                 {
                     "mode": "serial",
                     "prompt_tokens": len(prompt_ids),
+                    "prompt_cached_tokens": reused,
                     "tokens": decode_toks,
                     "generated_tokens": emitted,
                     "prompt_s": round(t1 - t0, 4),
@@ -543,6 +679,7 @@ def stream_dspark(
     ngram_min_match: int = 5,
     stats_out: dict[str, Any] | None = None,
     prefill_chunk: int | None = PREFILL_CHUNK,
+    prompt_cache: PromptCache | None = None,
 ) -> Iterator[list[int]]:
     """Stream hybrid N-gram + DSpark speculative decoding (exact greedy, tight-margin greedy, or exact unbiased `temp > 0`)."""
     if temp < 0.0:
@@ -585,13 +722,13 @@ def stream_dspark(
     ngram_rounds = 0
     ngram_accepted = 0
     ngram_first_rejects = 0
+    reused = 0
     try:
-        drafter.reset()
-        cache = m.make_cache()
         t0 = time.perf_counter()
         if stochastic:
-            first_ord_logits, cache, taps, taps_start = _prefill(
-                m, prompt_ids, cache, ordered=True, prefill_chunk=prefill_chunk, tap_visits=tap_ids, drafter=drafter
+            first_ord_logits, cache, taps, taps_start, reused = _prefill_prompt(
+                m, prompt_ids, ordered=True, prefill_chunk=prefill_chunk, prompt_cache=prompt_cache,
+                tap_visits=tap_ids, drafter=drafter,
             )
             first_mx = _sample_ordered_gpu(
                 first_ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
@@ -599,8 +736,9 @@ def stream_dspark(
             mx.eval(first_mx, taps)
             first = int(first_mx)
         else:
-            first_mx, cache, taps, taps_start = _prefill(
-                m, prompt_ids, cache, ordered=False, prefill_chunk=prefill_chunk, tap_visits=tap_ids, drafter=drafter
+            first_mx, cache, taps, taps_start, reused = _prefill_prompt(
+                m, prompt_ids, ordered=False, prefill_chunk=prefill_chunk, prompt_cache=prompt_cache,
+                tap_visits=tap_ids, drafter=drafter,
             )
             first_mx = first_mx[0, -1]
             mx.eval(first_mx, taps)
@@ -931,6 +1069,7 @@ def stream_dspark(
                 {
                     "mode": mode_name,
                     "prompt_tokens": len(prompt_ids),
+                    "prompt_cached_tokens": reused,
                     "tokens": decode_toks,
                     "generated_tokens": emitted_total,
                     "prompt_s": round(t1 - t0, 4),

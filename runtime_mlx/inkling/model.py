@@ -299,6 +299,33 @@ class Inkling2Cache:
         self._spec_conv_full: list[list[mx.array | None]] = [[None, None, None, None] for _ in range(n_slots)]
         self._spec_conv_pair: list[list[tuple[mx.array, mx.array] | None]] = [[None, None, None, None] for _ in range(n_slots)]
 
+    def clone(self) -> "Inkling2Cache":
+        """Independent, evaluated copy of this cache (KV, conv state and lengths), e.g. to snapshot a prefilled prompt.
+
+        Must not be called mid speculative verify; the copy starts with no verify in progress.
+        """
+        if self._spec_recording:
+            raise RuntimeError("cannot clone an Inkling2Cache during speculative verification")
+        new = object.__new__(Inkling2Cache)
+        new.__dict__.update(self.__dict__)
+        n_slots = len(self.keys)
+
+        def cp(a):
+            return None if a is None else mx.array(a)
+
+        new.keys = [cp(a) for a in self.keys]
+        new.values = [cp(a) for a in self.values]
+        new.kv_f16 = [cp(a) for a in self.kv_f16]
+        new.kv_len, new.kv_start, new.kv_cap = list(self.kv_len), list(self.kv_start), list(self.kv_cap)
+        new.kv_is_sliding = list(self.kv_is_sliding)
+        new.conv_states = [[cp(a) for a in row] for row in self.conv_states]
+        new._spec_base_kv_len = list(self._spec_base_kv_len)
+        new._spec_kv_full = [None] * n_slots
+        new._spec_conv_full = [[None, None, None, None] for _ in range(n_slots)]
+        new._spec_conv_pair = [[None, None, None, None] for _ in range(n_slots)]
+        mx.eval(*new.state)
+        return new
+
     def begin_spec_verify(self):
         self._spec_recording = True
         self._spec_base_seq = self.seq_len
