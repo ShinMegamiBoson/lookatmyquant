@@ -8,7 +8,7 @@ The code is under the MIT license.
 
 ## LookAtMyQuant 2: Qwen3.5-4B in 1.2 GB
 
-[LookAtMyQuant 2](https://lookatmyquant2.pages.dev) takes Qwen3.5-4B to 1.23 GB, 2.3 bits per weight. The file solves 330 of 540 exact-answer math problems. Prism ML's Bonsai 2 Ternary 4B solves 328 at 1.20 GB, and the original solves 359. Its KL from the original on held-out text is 0.45 nats, against 0.59 for Bonsai.
+[LookAtMyQuant 2](https://lookatmyquant.pages.dev/2/) takes Qwen3.5-4B to 1.23 GB, 2.3 bits per weight. The file solves 330 of 540 exact-answer math problems. Prism ML's Bonsai 2 Ternary 4B solves 328 at 1.20 GB, and the original solves 359. Its KL from the original on held-out text is 0.45 nats, against 0.59 for Bonsai.
 
 The recipe is post-training quantization with trellis codes, calibrated on the model's own worked math solutions with digit tokens weighted 10×, and with bits allocated per row by Fisher information. 4,000 steps of distillation follow, in which every layer is re-quantized once from the original weights. The page has the findings, the full recipe and its cost, about $34 of GPU time.
 
@@ -270,8 +270,7 @@ python pack_drafter.py path/to/drafter path/to/drafter-4bit
 | `cache/codes/` | The e-means trellis codebooks at 1 to 4 bits |
 | `results/batch/`, `results/gguf/` | The measurements and plan runs behind the site |
 | `results/COMPILER.md`, `results/COMPLETENESS.md` | Write-ups of the compiler on SmolLM2-360M and Qwen3.5-4B, and of the reproduction check |
-| `site/` | The website. Run `python3 -m http.server 8000` inside it, then visit http://localhost:8000 |
-| `site2/` | The LookAtMyQuant 2 page. It runs the same way |
+| `site/` | The website: the front page, and each paper in its own folder (`compiler/`, `2/`, `grafting/`). Run `python3 -m http.server 8000` inside it, then visit http://localhost:8000 |
 | `tests/` | Tests of the grammar and the codes |
 
 ## The tests need SmolLM2-360M and WikiText-2
