@@ -18,6 +18,80 @@ def _unwrap_model(model: Inkling2LoopPackedMLX | Inkling2MLXModel) -> Inkling2Lo
     return model.inner if isinstance(model, Inkling2MLXModel) else model
 
 
+# One-pass prefill on Inkling-2-Mini 5.4 GB uses about 0.6 GB of temporary
+# memory per thousand tokens. Use a conservative estimate and leave room for
+# other allocations when comparing against MLX's recommended working-set size.
+PREFILL_CHUNK = -1
+_PREFILL_BYTES_PER_TOKEN = 700_000
+_PREFILL_RESERVE_BYTES = 3_000_000_000
+_PREFILL_DEFAULT_STEP = 2048
+
+
+def _prefill_step(length: int, chunk: int | None) -> int:
+    if chunk is None or chunk == 0:
+        return length
+    if chunk > 0:
+        return chunk
+    if chunk != PREFILL_CHUNK:
+        raise ValueError("prefill_chunk must be -1 (automatic), 0, None, or a positive integer")
+    if length <= _PREFILL_DEFAULT_STEP:
+        return length
+    budget = mx.device_info().get("max_recommended_working_set_size", 0)
+    if not budget:
+        return _PREFILL_DEFAULT_STEP
+    available = max(0, budget - mx.get_active_memory() - _PREFILL_RESERVE_BYTES)
+    if length * _PREFILL_BYTES_PER_TOKEN <= available:
+        return length
+    return min(_PREFILL_DEFAULT_STEP, max(256, available // _PREFILL_BYTES_PER_TOKEN))
+
+
+def _prefill(
+    m: Inkling2LoopPackedMLX,
+    prompt_ids: Sequence[int],
+    cache,
+    *,
+    ordered: bool,
+    prefill_chunk: int | None,
+    tap_visits: tuple[int, ...] = (),
+    drafter: DSparkDrafterMLX | None = None,
+):
+    """Prefill `prompt_ids` into `cache`, `prefill_chunk` tokens per forward pass.
+
+    Every chunk but the last is evaluated before the next is built, so activation memory is bounded
+    by one chunk; KV and conv state carry across chunks exactly as they do between decode steps.
+    The last chunk runs `forward_ordered_logits` when `ordered`, otherwise `forward_argmax`. With
+    `drafter`, taps of every chunk but the last are pushed to it as they are produced.
+
+    Returns `(out, cache, taps, taps_start)` for the last chunk: `taps` is `None` without
+    `tap_visits`, and the caller pushes it with `start_pos=taps_start`. A prompt no longer than one
+    chunk takes exactly the unchunked path (one forward, `taps_start == 0`).
+    """
+    ids = list(prompt_ids)
+    n = len(ids)
+    if n == 0:
+        raise ValueError("prompt must contain at least one token")
+    step = _prefill_step(n, prefill_chunk)
+    state_only = getattr(m, "forward_prefill_chunk", m.forward_argmax)
+    start = 0
+    while True:
+        end = min(start + step, n)
+        last = end >= n
+        fwd = (m.forward_ordered_logits if ordered else m.forward_argmax) if last else state_only
+        if tap_visits:
+            out, cache, taps = fwd(ids[start:end], cache=cache, tap_visits=tap_visits)
+        else:
+            out, cache = fwd(ids[start:end], cache=cache)
+            taps = None
+        if last:
+            return out, cache, taps, start
+        pending = list(cache.state)
+        if drafter is not None and taps is not None:
+            drafter.push_context(taps, start_pos=start)
+            pending.extend(x for x in (*drafter.ctx_k, *drafter.ctx_v, drafter.f_rnn) if x is not None)
+        mx.eval(*pending)
+        start = end
+
+
 def _sample_next(logits_1d: mx.array, temp: float = 0.0, top_p: float = 1.0, top_k: int = 0) -> int:
     if temp <= 0.0:
         return int(mx.argmax(logits_1d))
@@ -354,6 +428,7 @@ def stream_serial(
     top_p: float = 1.0,
     top_k: int = 0,
     stats_out: dict[str, Any] | None = None,
+    prefill_chunk: int | None = PREFILL_CHUNK,
 ) -> Iterator[list[int]]:
     """Stream single-token serial generation from a packed Inkling-2-Mini model."""
     if temp < 0.0:
@@ -371,11 +446,11 @@ def stream_serial(
         cache = m.make_cache()
         t0 = time.perf_counter()
         if greedy:
-            nxt_mx, cache = m.forward_argmax(list(prompt_ids), cache=cache)
+            nxt_mx, cache, _, _ = _prefill(m, prompt_ids, cache, ordered=False, prefill_chunk=prefill_chunk)
             nxt_mx = nxt_mx[0, -1]
             nxt = int(nxt_mx)
         else:
-            ord_logits, cache = m.forward_ordered_logits(list(prompt_ids), cache=cache)
+            ord_logits, cache, _, _ = _prefill(m, prompt_ids, cache, ordered=True, prefill_chunk=prefill_chunk)
             nxt_mx = _sample_ordered_gpu(
                 ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
             )
@@ -467,6 +542,7 @@ def stream_dspark(
     ngram_max_draft: int = 8,
     ngram_min_match: int = 5,
     stats_out: dict[str, Any] | None = None,
+    prefill_chunk: int | None = PREFILL_CHUNK,
 ) -> Iterator[list[int]]:
     """Stream hybrid N-gram + DSpark speculative decoding (exact greedy, tight-margin greedy, or exact unbiased `temp > 0`)."""
     if temp < 0.0:
@@ -514,20 +590,24 @@ def stream_dspark(
         cache = m.make_cache()
         t0 = time.perf_counter()
         if stochastic:
-            first_ord_logits, cache, taps = m.forward_ordered_logits(list(prompt_ids), cache=cache, tap_visits=tap_ids)
+            first_ord_logits, cache, taps, taps_start = _prefill(
+                m, prompt_ids, cache, ordered=True, prefill_chunk=prefill_chunk, tap_visits=tap_ids, drafter=drafter
+            )
             first_mx = _sample_ordered_gpu(
                 first_ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
             )
             mx.eval(first_mx, taps)
             first = int(first_mx)
         else:
-            first_mx, cache, taps = m.forward_argmax(list(prompt_ids), cache=cache, tap_visits=tap_ids)
+            first_mx, cache, taps, taps_start = _prefill(
+                m, prompt_ids, cache, ordered=False, prefill_chunk=prefill_chunk, tap_visits=tap_ids, drafter=drafter
+            )
             first_mx = first_mx[0, -1]
             mx.eval(first_mx, taps)
             first = int(first_mx)
         t1 = time.perf_counter()
 
-        drafter.push_context(taps, start_pos=0)
+        drafter.push_context(taps, start_pos=taps_start)
         ngram_idx = NgramDraftIndex(prompt_ids) if ngram else None
         if ngram_idx is not None:
             ngram_idx.extend([first])
@@ -884,6 +964,7 @@ def generate_serial(
     temp: float = 0.0,
     top_p: float = 1.0,
     top_k: int = 0,
+    prefill_chunk: int | None = PREFILL_CHUNK,
 ) -> tuple[list[int], dict[str, Any]]:
     stats: dict[str, Any] = {}
     out: list[int] = []
@@ -896,6 +977,7 @@ def generate_serial(
         top_p=top_p,
         top_k=top_k,
         stats_out=stats,
+        prefill_chunk=prefill_chunk,
     ):
         out.extend(chunk)
     return out, stats
@@ -918,6 +1000,7 @@ def generate_dspark(
     ngram: bool = False,
     ngram_max_draft: int = 8,
     ngram_min_match: int = 5,
+    prefill_chunk: int | None = PREFILL_CHUNK,
 ) -> tuple[list[int], dict[str, Any]]:
     stats: dict[str, Any] = {}
     out: list[int] = []
@@ -939,6 +1022,7 @@ def generate_dspark(
         ngram_max_draft=ngram_max_draft,
         ngram_min_match=ngram_min_match,
         stats_out=stats,
+        prefill_chunk=prefill_chunk,
     ):
         out.extend(chunk)
     return out, stats

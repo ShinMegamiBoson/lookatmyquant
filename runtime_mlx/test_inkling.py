@@ -324,6 +324,50 @@ def test_mini_model_and_runtime_integration() -> None:
         assert c_p == pdir / "config.json"
 
 
+def test_chunked_prefill_matches_single_pass() -> None:
+    """Chunked prefill (chunks smaller than the 8-token sliding window, prompt well past it) must reproduce one pass."""
+    from runtime_mlx.inkling.generate import _prefill, stream_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+        rng = np.random.default_rng(7)
+        toks = [int(x) for x in rng.integers(1, 500, size=29)]
+
+        ref, _ = model.forward_all_logits(toks)
+        mx.eval(ref)
+        ref = np.array(ref)[0]
+
+        # Model level: KV, sliding-window and conv state carried across 5-token chunks.
+        cache = model.make_cache()
+        parts = []
+        for s in range(0, len(toks), 5):
+            lg, cache = model.forward_all_logits(toks[s : s + 5], cache=cache)
+            mx.eval(lg)
+            parts.append(np.array(lg)[0])
+        chunked = np.concatenate(parts, axis=0)
+        assert float(np.max(np.abs(ref - chunked))) < 5e-3
+        assert (np.argmax(ref, axis=-1) == np.argmax(chunked, axis=-1)).all()
+
+        # _prefill: last-chunk output and taps bookkeeping.
+        out, _, taps, taps_start = _prefill(
+            model, toks, model.make_cache(), ordered=False, prefill_chunk=5, tap_visits=(1, 5, 7, 10)
+        )
+        mx.eval(out, taps)
+        assert int(np.array(out)[0, -1]) == int(np.argmax(ref[-1]))
+        assert taps_start == 25 and taps.shape == (4, 4, 256)
+        out1, _, taps1, start1 = _prefill(model, toks, model.make_cache(), ordered=False, prefill_chunk=None)
+        assert taps1 is None and start1 == 0 and int(np.array(out1)[0, -1]) == int(np.argmax(ref[-1]))
+
+        # End to end: greedy generation identical with and without chunking.
+        def gen(chunk):
+            return [t for c in stream_serial(model, toks, max_tokens=12, eos_ids=(), prefill_chunk=chunk) for t in c]
+
+        base = gen(None)
+        assert gen(5) == base and gen(3) == base and gen(4096) == base, f"chunked prefill changed greedy output: {base}"
+
+
 def test_moe_grouped_large_expert_count_parity() -> None:
     """Stress-test deterministic compaction inside `trellis_moe_grouped` with E=96 (>32 experts) and sentinel slots."""
     rng = np.random.default_rng(123)
@@ -653,6 +697,7 @@ def test_fast_kernels_suite() -> None:
 
 def main() -> None:
     test_mini_model_and_runtime_integration()
+    test_chunked_prefill_matches_single_pass()
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
     test_nvfp4_unified_moe_all_modes()
