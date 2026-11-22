@@ -1,4 +1,4 @@
-"""Download a published pack or run greedy text generation."""
+"""Run Inkling CUDA inference or check NVIDIA benchmark telemetry."""
 import argparse
 from contextlib import ExitStack
 import json
@@ -85,42 +85,74 @@ def generate(args):
         eos = json.loads(generation_config.read_text(encoding="utf-8")).get("eos_token_id", [])
         if isinstance(eos, int):
             eos = [eos]
-    on_device = args.backend == "cuda"
+    monitor = None
     with ExitStack() as stack:
         cuda = stack.enter_context(Cuda(args.device))
-        started = time.perf_counter()
-        model = (DeviceModel if on_device else Model)(args.model, cuda)
-        if on_device:
-            stack.callback(model.close)
-        load_seconds = time.perf_counter() - started
-        session = model.session(args.context)
-        if on_device:
-            stack.enter_context(session)
-        draft_stats = {}
-        if args.drafter:
-            from .drafter import speculative_greedy
+        if args.check_telemetry:
+            from .telemetry import TelemetryWatch, report
 
-            output, prefill_seconds, decode_rate, draft_stats = speculative_greedy(
-                args.drafter, session, args.device, ids, args.max_new_tokens, set(eos), args.draft_block_size,
-            )
+            monitor = stack.enter_context(TelemetryWatch(cuda.pci_bus_id()))
+        if monitor is not None and monitor.samples[0]["issues"]:
+            result = {"device": cuda.device_name(), "decode_tokens_per_second": None}
         else:
-            output, prefill_seconds, decode_rate = greedy(session, ids, args.max_new_tokens, eos, on_device)
-        result = {
-            "device": cuda.device_name(),
-            "backend": args.backend,
-            "resident_weights_bytes": cuda.resident_bytes,
-            "logical_visits_per_token": model.cfg.total_visits,
-            "prompt_tokens": ids,
-            "generated_tokens": output,
-            "text": tokenizer.decode(output, skip_special_tokens=True) if tokenizer else None,
-            "load_seconds": load_seconds,
-            "prefill_seconds": prefill_seconds,
-            "decode_tokens_per_second": decode_rate,
-            **draft_stats,
-        }
+            result = generate_result(args, cuda, stack, ids, eos, tokenizer)
+    if monitor is not None:
+        result["telemetry"] = report(monitor.device, monitor.samples)
+        if not result["telemetry"]["valid"]:
+            result["decode_tokens_per_second"] = None
     if args.json:
         args.json.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2, ensure_ascii=True))
+    if monitor is not None and not result["telemetry"]["valid"]:
+        raise SystemExit(2)
+
+
+def generate_result(args, cuda, stack, ids, eos, tokenizer):
+    on_device = args.backend == "cuda"
+    started = time.perf_counter()
+    model = (DeviceModel if on_device else Model)(args.model, cuda)
+    if on_device:
+        stack.callback(model.close)
+    load_seconds = time.perf_counter() - started
+    session = model.session(args.context)
+    if on_device:
+        stack.enter_context(session)
+    draft_stats = {}
+    if args.drafter:
+        from .drafter import speculative_greedy
+
+        output, prefill_seconds, decode_rate, draft_stats = speculative_greedy(
+            args.drafter, session, args.device, ids, args.max_new_tokens, set(eos), args.draft_block_size,
+        )
+    else:
+        output, prefill_seconds, decode_rate = greedy(session, ids, args.max_new_tokens, eos, on_device)
+    return {
+        "device": cuda.device_name(),
+        "backend": args.backend,
+        "resident_weights_bytes": cuda.resident_bytes,
+        "logical_visits_per_token": model.cfg.total_visits,
+        "prompt_tokens": ids,
+        "generated_tokens": output,
+        "text": tokenizer.decode(output, skip_special_tokens=True) if tokenizer else None,
+        "load_seconds": load_seconds,
+        "prefill_seconds": prefill_seconds,
+        "decode_tokens_per_second": decode_rate,
+        **draft_stats,
+    }
+
+
+def check_telemetry(args):
+    from .telemetry import read_sample, report
+
+    samples = []
+    for index in range(args.samples):
+        if index:
+            time.sleep(1)
+        samples.append(read_sample(args.device))
+    result = report(args.device, samples)
+    print(json.dumps(result, indent=2, ensure_ascii=True))
+    if not result["valid"]:
+        raise SystemExit(2)
 
 
 def main():
@@ -144,7 +176,11 @@ def main():
     run.add_argument("--backend", choices=("cuda", "hybrid"), default="cuda")
     run.add_argument("--drafter", type=Path)
     run.add_argument("--draft-block-size", type=int, choices=range(2, 9))
+    run.add_argument("--check-telemetry", action="store_true", help="Withhold decode score if NVIDIA telemetry is invalid")
     run.add_argument("--json", type=Path)
+    check = sub.add_parser("check-telemetry", help="Sample NVIDIA telemetry without loading a CUDA model")
+    check.add_argument("--device", default="0", help="nvidia-smi GPU index, UUID or PCI bus ID")
+    check.add_argument("--samples", type=int, default=3)
     server = sub.add_parser("serve")
     server.add_argument("model", type=Path)
     server.add_argument("--name")
@@ -161,6 +197,10 @@ def main():
         download(args.model, args.size, args.revision)
     elif args.command == "download-drafter":
         download_drafter(args.path, args.revision)
+    elif args.command == "check-telemetry":
+        if args.samples < 1:
+            parser.error("--samples must be positive")
+        check_telemetry(args)
     elif args.command == "serve":
         if args.context < 2:
             parser.error("--context must be at least two tokens")

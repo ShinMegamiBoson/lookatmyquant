@@ -40,6 +40,17 @@ python -m inkling_cuda serve .\models\inky-5.4 --drafter .\models\inky-drafter
 
 The server keeps the drafter resident and uses block size 2 by default. Use `--draft-block-size` to override it. The drafter uses four target activations per position and scores proposals over the first five head buckets. The target verifies against the full packed head before each token can reach the client. A positive `temperature` uses CUDA-enabled PyTorch to sample the target distribution, with a positional random draw reused if a draft is rejected. The standalone `generate` command retains greedy decoding and reports draft acceptance with its timing and token data.
 
+### Checking telemetry before benchmarking
+
+Use `check-telemetry` for a read-only NVIDIA diagnostic without loading a model. Use `generate --check-telemetry` to sample the actual CUDA device before, during, and after a timing run.
+
+```powershell
+python -m inkling_cuda check-telemetry
+python -m inkling_cuda generate .\models\inky-5.4 --prompt "Explain how a thermos works." --max-new-tokens 64 --check-telemetry --json timing.json
+```
+
+The check records the enforced power limit, clocks, and GPU utilization. It returns exit code 2 on query errors, unavailable power draw, or implausible readings. A checked run skips model loading if the first sample fails. If telemetry fails during generation, the report retains the tokens and samples with a null decode score. Low clocks by themselves can be normal at idle. Passing the check establishes that the sampled fields were plausible, and a separate CUDA workload can help isolate a clock or performance problem.
+
 ## Verification
 
 ```powershell

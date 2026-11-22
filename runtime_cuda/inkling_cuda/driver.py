@@ -51,6 +51,11 @@ class Cuda:
         self.call("cuDeviceGetName", name, I32(len(name)), self.device)
         return name.value.decode()
 
+    def pci_bus_id(self):
+        bus_id = ct.create_string_buffer(32)
+        self.call("cuDeviceGetPCIBusId", bus_id, I32(len(bus_id)), self.device)
+        return bus_id.value.decode()
+
     def memory(self):
         free, total = SIZE(), SIZE()
         self.call("cuMemGetInfo_v2", ct.byref(free), ct.byref(total))
