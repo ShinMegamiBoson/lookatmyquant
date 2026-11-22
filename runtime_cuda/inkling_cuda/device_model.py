@@ -583,25 +583,30 @@ class DeviceSession:
         self.forward(token, logits)
         return self.cuda.read(self.logits, np.empty(self.model.head.size, np.float32)) if logits else None
 
-    def predict(self, token, *, blocked_token=None):
+    def predict(self, token, *, blocked_token=None, sampler=None):
+        predictions, _ = self.predict_block((token,), blocked_token=blocked_token, sampler=sampler)
+        return int(predictions[0])
+
+    def validate_blocked_token(self, blocked_token):
         if blocked_token is not None and not 0 <= blocked_token < self.model.head.size:
             raise ValueError("Blocked token is outside the output vocabulary")
-        self.forward(token, logits=True)
-        if blocked_token is not None:
-            # The argmax kernel treats non-finite logits as errors.
-            self.cuda.call("cuMemsetD32Async", offset(self.logits, blocked_token),
-                           U32(0xff7fffff), SIZE(1), PTR())
-        self.sample(self.logits, self.best)
-        return int(self.read_predictions(1)[0])
 
-    def predict_block(self, tokens, *, all_tokens=False, tap_visits=()):
+    def predict_block(self, tokens, *, all_tokens=False, tap_visits=(), blocked_token=None, sampler=None):
+        self.validate_blocked_token(blocked_token)
         scores, taps = self.forward_block(tokens, logits=True, all_logits=all_tokens, tap_visits=tap_visits)
         count = len(tokens) if all_tokens else 1
+        if sampler is not None:
+            start = self.position - count
+            return sampler([row(scores, i) for i in range(count)], start, blocked_token), taps
         for i in range(count):
-            self.sample(row(scores, i), offset(self.best, 2 * i))
+            self.sample(row(scores, i), offset(self.best, 2 * i), blocked_token)
         return self.read_predictions(count), taps
 
-    def sample(self, logits, result):
+    def sample(self, logits, result, blocked_token=None):
+        if blocked_token is not None:
+            # The argmax kernel treats non-finite logits as errors.
+            self.cuda.call("cuMemsetD32Async", offset(logits, blocked_token),
+                           U32(0xff7fffff), SIZE(1), PTR())
         groups = self.argmax_groups
         invalid = offset(result, 1)
         self.cuda.call("cuMemsetD32Async", invalid, U32(0), SIZE(1), PTR())

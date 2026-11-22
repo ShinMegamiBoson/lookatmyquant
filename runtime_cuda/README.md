@@ -24,9 +24,9 @@ Use the cached pack directory and start the loopback provider.
 python -m inkling_cuda serve .\models\inky-5.4 --no-thinking
 ~~~
 
-Set the client's OpenAI base URL to `http://127.0.0.1:8098/v1/` and its model ID to `inky-5.4`. The provider uses greedy, non-streaming CUDA inference and a 16,384-token context by default. It exposes exact template and tokenizer endpoints for Goose preflight and returns completed, declared Inkling tool calls in OpenAI format.
+Set the client's OpenAI base URL to `http://127.0.0.1:8098/v1/` and its model ID to `inky-5.4`. The provider supports streaming and non-streaming chat completions and defaults to a 16,384-token context. It streams reasoning separately from answer text and returns completed, declared Inkling tool calls in OpenAI format. The template and tokenizer endpoints remain available for Goose preflight.
 
-`--no-thinking` excludes the thinking-channel marker on the device before sampling. It can help when the 5.4 GB pack keeps reopening its thinking channel instead of emitting a tool call. The standalone generation and speculative decoding commands retain their existing sampling behavior.
+Short requests and requests with tools default to low reasoning effort. Other prompts of at least 512 tokens default to direct answers to leave more of the output budget for the answer. For direct answers the server masks the thinking-channel marker at target sampling. Callers can select an explicit `reasoning_effort` at any prompt length. The process-wide `--no-thinking` option forces direct answers for every request.
 
 ### DSpark speculative decoding
 
@@ -35,10 +35,10 @@ Install a [CUDA-enabled PyTorch build](https://pytorch.org/get-started/locally/)
 ~~~powershell
 python -m pip install safetensors
 python -m inkling_cuda download-drafter .\models\inky-drafter
-python -m inkling_cuda generate .\models\inky-5.4 --drafter .\models\inky-drafter --draft-block-size 4 --prompt "What is the capital of France?" --max-new-tokens 64
+python -m inkling_cuda serve .\models\inky-5.4 --drafter .\models\inky-drafter
 ~~~
 
-The drafter opens the published 4-bit pack and expands its matrices on the GPU for BF16 GEMMs. It uses four target activations per position and scores its proposals over the first five head buckets. The target verifies the entire block against the full packed head and commits only the matching input prefix. DSpark reports draft acceptance with the usual timing and token data.
+The server keeps the drafter resident and uses block size 2 by default. Use `--draft-block-size` to override it. The drafter uses four target activations per position and scores proposals over the first five head buckets. The target verifies against the full packed head before each token can reach the client. A positive `temperature` uses CUDA-enabled PyTorch to sample the target distribution, with a positional random draw reused if a draft is rejected. The standalone `generate` command retains greedy decoding and reports draft acceptance with its timing and token data.
 
 ## Verification
 
@@ -59,7 +59,7 @@ On an RTX 5080 Laptop GPU, the two published packs produced identical token IDs 
 
 For the 5.4 GB run, the hybrid decoder matched the same 48 IDs. The 28-token prompt took 0.56 s to prefill with CUDA and 2.97 s with the hybrid backend. On the separate arithmetic prompt “What is 17 times 23? Give just the answer.” the 5.4 GB pack repeated the expression in both generation modes.
 
-The implemented scope is single-sequence greedy text generation. End-to-end comparison with the Apple Silicon Metal runtime remains open. To replay the same prompt tokens on MLX, save a CUDA run with `--json cuda-run.json` and run this from the repository root on Apple Silicon with the same checkpoint revision.
+The implemented scope is single-sequence text generation. End-to-end comparison with the Apple Silicon Metal runtime remains open. To replay the same prompt tokens on MLX, save a greedy CUDA run with `--json cuda-run.json` and run this from the repository root on Apple Silicon with the same checkpoint revision.
 
 ~~~python
 import json

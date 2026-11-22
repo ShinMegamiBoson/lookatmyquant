@@ -151,8 +151,11 @@ def main():
     server.add_argument("--port", type=int, default=8098)
     server.add_argument("--context", type=int, default=16_384)
     server.add_argument("--device", type=int, default=0)
+    server.add_argument("--drafter", type=Path, help="Enable DSpark using the published drafter pack")
+    server.add_argument("--draft-block-size", type=int, choices=range(2, 9),
+                        help="DSpark verify block size (default 2)")
     server.add_argument("--no-thinking", action="store_true",
-                        help="Exclude the thinking-channel token during greedy generation")
+                        help="Exclude the thinking-channel token during generation")
     args = parser.parse_args()
     if args.command == "download":
         download(args.model, args.size, args.revision)
@@ -163,6 +166,8 @@ def main():
             parser.error("--context must be at least two tokens")
         if not 0 <= args.port <= 65_535:
             parser.error("--port must be between 0 and 65535")
+        if args.draft_block_size and not args.drafter:
+            parser.error("--draft-block-size requires --drafter")
         from .serve import serve
 
         serve(args)

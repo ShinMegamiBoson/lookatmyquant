@@ -154,7 +154,7 @@ class PackedCudaTests(unittest.TestCase):
             build_mini_packed_dir(Path(folder))
             model = DeviceModel(folder, self.cuda)
             try:
-                with model.session(16) as reference, model.session(16) as masked:
+                with model.session(16) as reference, model.session(16) as masked, model.session(16) as batched:
                     scores = reference.step(42)
                     blocked = int(scores.argmax())
                     scores[blocked] = -np.inf
@@ -162,7 +162,61 @@ class PackedCudaTests(unittest.TestCase):
                         self.assertEqual(masked.predict(42, blocked_token=blocked), int(scores.argmax()))
                         read.assert_called_once()
                     self.assertEqual(masked.position, 1)
-                    self.assertEqual(masked.predict(9), int(reference.step(9).argmax()))
+                    second = reference.step(9)
+                    self.assertEqual(masked.predict(9), int(second.argmax()))
+                    second[blocked] = -np.inf
+                    predicted, _ = batched.predict_block((42, 9), all_tokens=True, blocked_token=blocked)
+                    np.testing.assert_array_equal(predicted, [scores.argmax(), second.argmax()])
+            finally:
+                model.close()
+
+    def test_temperature_verification_reuses_draws_after_rejection(self):
+        try:
+            import torch
+            from inkling_cuda.drafter import TemperatureSampler, stream_speculative
+        except ImportError:
+            self.skipTest("CUDA PyTorch and safetensors are required")
+        if not torch.cuda.is_available():
+            self.skipTest("CUDA PyTorch is required")
+
+        with tempfile.TemporaryDirectory() as folder:
+            build_mini_packed_dir(Path(folder))
+            model = DeviceModel(folder, self.cuda)
+            try:
+                prompt, limit, blocked = (5, 19, 42), 8, 0
+                device = torch.device("cuda", 0)
+                with model.session(16) as serial:
+                    sampler = TemperatureSampler(serial, device, 0.6, 981)
+                    serial.prefill(prompt[:-1])
+                    token = prompt[-1]
+                    expected = []
+                    for _ in range(limit):
+                        token = serial.predict(token, blocked_token=blocked, sampler=sampler)
+                        expected.append(token)
+
+                class AlternatingDrafter:
+                    block_size, context, tap_ids = 2, 16, ()
+
+                    def push(self, session, taps, count):
+                        self.position += count
+
+                    def propose(self, session, anchor, count, blocked_token):
+                        index = session.position - len(prompt) + 1
+                        guess = expected[index]
+                        if index % 2:
+                            guess = (guess + 1) % model.head.size
+                        return [anchor, guess]
+
+                drafter = AlternatingDrafter()
+                drafter.device = device
+                stats = {}
+                with model.session(16) as speculative:
+                    sampler = TemperatureSampler(speculative, device, 0.6, 981)
+                    actual = list(stream_speculative(drafter, speculative, prompt, limit, set(), 2,
+                                                     blocked_token=blocked, sampler=sampler, stats=stats))
+                self.assertEqual(actual, expected)
+                self.assertGreater(stats["accepted_tokens"], 0)
+                self.assertLess(stats["accepted_tokens"], stats["proposed_tokens"])
             finally:
                 model.close()
 

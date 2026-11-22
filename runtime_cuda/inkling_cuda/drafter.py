@@ -40,8 +40,40 @@ def rms(x, weight, eps):
     return F.rms_norm(x.float(), (x.shape[-1],), weight.float(), eps).to(x.dtype)
 
 
+class TemperatureSampler:
+    """Sample target logits with one reusable random draw per input position."""
+    def __init__(self, session, device, temperature, seed):
+        self.cuda = session.cuda
+        self.temperature = temperature
+        generator = torch.Generator(device=device)
+        generator.seed() if seed is None else generator.manual_seed(seed)
+        self.draws = torch.rand(session.context, generator=generator, device=device)
+        self.logits = torch.empty((PREFILL_CHUNK, session.model.head.size), device=device, dtype=torch.float32)
+
+    def __call__(self, pointers, position, blocked_token):
+        count = len(pointers)
+        logits = self.logits[:count]
+        width = logits.shape[1]
+        for index, pointer in enumerate(pointers):
+            self.cuda.copy(offset(U64(logits.data_ptr()), index * width), pointer, 4 * width)
+        valid = logits.isfinite().all(dim=1)
+        if blocked_token is not None:
+            logits[:, blocked_token] = -torch.inf
+        # Center prior to scaling to keep very low temperatures finite at the maximum.
+        weights = logits.sub_(logits.amax(dim=1, keepdim=True)).div_(self.temperature).exp_().cumsum(dim=1)
+        total = weights[:, -1]
+        threshold = torch.minimum(self.draws[position:position + count] * total,
+                                  torch.nextafter(total, torch.zeros_like(total)))
+        picks = torch.searchsorted(weights, threshold[:, None], right=True).flatten()
+        indices, finite = torch.stack((picks, valid.long())).tolist()
+        if not all(finite) or any(index >= width for index in indices):
+            raise FloatingPointError("Invalid logits for temperature sampling")
+        return indices
+
+
 class Drafter:
-    def __init__(self, path, target, device):
+    @torch.inference_mode()
+    def __init__(self, path, model, context, device):
         folder = path if path.is_dir() else path.parent
         config = read_json(folder / "config.json")["mtp_config"]
         manifest_path = folder / "manifest.json"
@@ -53,15 +85,16 @@ class Drafter:
             raise ValueError("DSpark group size must be a positive multiple of eight")
         if path.is_dir():
             path = folder / manifest.get("weights", "mtp_4bit.safetensors")
-        self.device, self.target = device, target
+        self.device = torch.device(device)
+        self.context = context
         self.block_size = config["block_size"]
         self.tap_ids = tuple(config["target_layer_ids"])
         self.hidden = config["hidden_size"]
         self.heads, self.kv_heads = config["num_attention_heads"], config["num_key_value_heads"]
         self.dim, self.eps = config["head_dim"], config["rms_norm_eps"]
         self.rank = config["markov_rank"]
-        if (self.hidden != target.model.cfg.hidden_size or not 2 <= self.block_size <= PREFILL_CHUNK
-                or any(not 0 <= tap <= target.model.cfg.total_visits for tap in self.tap_ids)):
+        if (self.hidden != model.cfg.hidden_size or not 2 <= self.block_size <= PREFILL_CHUNK
+                or any(not 0 <= tap <= model.cfg.total_visits for tap in self.tap_ids)):
             raise ValueError("DSpark config does not match the target decoder")
         self.q_dim, self.kv_dim = self.heads * self.dim, self.kv_heads * self.dim
         self.inv_freq = config["rope_theta"] ** (
@@ -97,11 +130,11 @@ class Drafter:
             ):
                 layer[key] = torch.cat([layer.pop(name + ".weight") for name in names])
             self.layers.append(layer)
-            capacity = min(target.context, window) if i in local_layers else target.context
+            capacity = min(context, window) if i in local_layers else context
             shape = (self.kv_heads, capacity, self.dim)
             self.caches.append(tuple(torch.empty(shape, device=device, dtype=torch.float16) for _ in range(2)))
         self.weights = {key: value for key, value in self.weights.items() if not key.startswith("layers.")}
-        head = target.model.head
+        head = model.head
         self.shortlist = head.buckets[:5]
         shortlist_size = self.shortlist[-1][1]
         ids = np.argsort(head.inverse)[:shortlist_size]
@@ -117,10 +150,10 @@ class Drafter:
     def fuse_taps(self, taps, index, weight):
         return rms((taps * self.fuse[index, :, None]).sum(dim=1), weight, 1e-6)
 
-    def push(self, pointers, count):
+    def push(self, session, pointers, count):
         """Copy the committed target activations directly between CUDA allocations."""
         targets = torch.empty((count, len(self.tap_ids), self.hidden), device=self.device, dtype=torch.float32)
-        cuda = self.target.cuda
+        cuda = session.cuda
         for i in range(count):
             for j, visit in enumerate(self.tap_ids):
                 cuda.copy(U64(targets[i, j].data_ptr()), row(pointers[visit], i), 4 * self.hidden)
@@ -141,8 +174,7 @@ class Drafter:
         )[0]
         self.position += count
 
-    def embed(self, token):
-        session = self.target
+    def embed(self, session, token):
         scratch = session.scratch
         scratch.mark = 0
         ptr = session.model.embedding.embed(token, scratch)
@@ -151,10 +183,10 @@ class Drafter:
         session.cuda.copy(U64(out.data_ptr()), ptr, 4 * self.hidden)
         return out.bfloat16()
 
-    def block(self, anchor):
+    def block(self, session, anchor):
         size = self.block_size
         masks = self.weights["mask_embed"].reshape(1, self.hidden).bfloat16().expand(size - 1, -1)
-        h = torch.cat((self.embed(anchor).unsqueeze(0), masks))
+        h = torch.cat((self.embed(session, anchor).unsqueeze(0), masks))
         positions = torch.arange(self.position, self.position + size, device=self.device)
         for layer, (keys, values) in zip(self.layers, self.caches, strict=True):
             q, k, v = linear(rms(h, layer["input_layernorm.weight"], self.eps), layer["qkv"]).bfloat16().split(
@@ -179,16 +211,20 @@ class Drafter:
             h = h + linear(F.silu(gate) * up, layer["mlp.down_proj.weight"]).bfloat16()
         return rms(h.float(), self.weights["norm.weight"], self.eps)
 
-    def draft_token(self, hidden):
-        scratch = self.target.scratch
+    def draft_token(self, session, hidden, blocked_token):
+        scratch = session.scratch
         scratch.mark = 0
         ptr, out = U64(hidden.data_ptr()), U64(self.head_scores.data_ptr())
         for lo, _, slab, signs in self.shortlist:
-            self.target.model.head.project_bucket(ptr, slab, signs, offset(out, lo), scratch)
+            session.model.head.project_bucket(ptr, slab, signs, offset(out, lo), scratch)
+        if blocked_token is not None:
+            index = int(session.model.head.inverse[blocked_token])
+            if index < self.head_scores.numel():
+                self.head_scores[index] = -torch.inf
         return self.head_ids.index_select(0, self.head_scores.argmax().reshape(1))
 
-    def propose(self, anchor, count):
-        hidden = self.block(anchor)
+    def propose(self, session, anchor, count, blocked_token):
+        hidden = self.block(session, anchor)
         state = torch.zeros(self.rank, device=self.device)
         tokens = [torch.tensor([anchor], device=self.device, dtype=torch.long)]
         w = self.weights
@@ -200,44 +236,55 @@ class Drafter:
             gate = gate.sigmoid()
             state = gate * state + (1 - gate) * candidate.tanh()
             delta = linear(latent.tanh(), w["markov_head.hidden_out.weight"]).float() + w["markov_head.hidden_out.bias"]
-            tokens.append(self.draft_token(h + delta))
+            tokens.append(self.draft_token(session, h + delta, blocked_token))
         return torch.cat(tokens).tolist()
 
 
 @torch.inference_mode()
-def speculative_greedy(path, session, ordinal, inputs, limit, eos, block_size):
-    device = torch.device("cuda", ordinal)
+def stream_speculative(drafter, session, inputs, limit, eos, block_size, *,
+                       blocked_token=None, sampler=None, stats=None):
+    """Yield only target-verified IDs and reset the drafter's request state."""
+    if not len(inputs) or not 1 <= limit <= session.context - len(inputs) + 1:
+        raise ValueError("Prompt and generation exceed the context limit")
+    if session.position != 0 or session.context > drafter.context:
+        raise ValueError("DSpark requires a fresh target session within its context capacity")
+    session.validate_blocked_token(blocked_token)
+    device = drafter.device
     # The native driver launches and the PyTorch CUDA operations share this stream.
     with torch.cuda.device(device), torch.cuda.stream(torch.cuda.default_stream(device)):
-        start = time.perf_counter()
-        drafter = Drafter(Path(path), session, device)
-        torch.cuda.current_stream().synchronize()
-        load_seconds = time.perf_counter() - start
+        drafter.position = 0
         size = min(block_size or 4, drafter.block_size)
+        stats = {} if stats is None else stats
+        stats.update(draft_block_size=size, draft_checks=0, proposed_tokens=0, accepted_tokens=0)
         start = time.perf_counter()
         for i in range(0, len(inputs), PREFILL_CHUNK):
             prompt_chunk = inputs[i:i + PREFILL_CHUNK]
             if i + len(prompt_chunk) == len(inputs):
-                predictions, taps = session.predict_block(prompt_chunk, tap_visits=drafter.tap_ids)
+                predictions, taps = session.predict_block(
+                    prompt_chunk, tap_visits=drafter.tap_ids, blocked_token=blocked_token, sampler=sampler,
+                )
             else:
                 _, taps = session.forward_block(prompt_chunk, logits=False, tap_visits=drafter.tap_ids)
-            drafter.push(taps, len(prompt_chunk))
+            drafter.push(session, taps, len(prompt_chunk))
         torch.cuda.current_stream().synchronize()
-        prefill_seconds = time.perf_counter() - start
+        stats["prefill_seconds"] = time.perf_counter() - start
 
-        output = [int(predictions[0])]
-        accepted = proposed = checks = 0
-        start = time.perf_counter()
-        while len(output) < limit and output[-1] not in eos:
-            count = min(size, limit - len(output), session.context - session.position)
-            anchor = output[-1]
+        anchor = int(predictions[0])
+        yield anchor
+        emitted = 1
+        while emitted < limit and anchor not in eos:
+            count = min(size, limit - emitted, session.context - session.position)
             if count == 1:
-                output.append(session.predict(anchor))
-                break
-            draft = drafter.propose(anchor, count)
+                yield session.predict(anchor, blocked_token=blocked_token, sampler=sampler)
+                return
+            draft = drafter.propose(session, anchor, count, blocked_token)
             base = session.position
-            predictions, taps = session.predict_block(draft, all_tokens=True, tap_visits=drafter.tap_ids)
+            predictions, taps = session.predict_block(
+                draft, all_tokens=True, tap_visits=drafter.tap_ids, blocked_token=blocked_token, sampler=sampler,
+            )
             match = 0
+            # Accept exactly the sampled target token. A rejected suffix reuses
+            # the same positional draws when it is evaluated on the corrected path.
             for guess, actual in zip(draft[1:], predictions):
                 if guess != actual:
                     break
@@ -246,20 +293,30 @@ def speculative_greedy(path, session, ordinal, inputs, limit, eos, block_size):
                     break
             committed = match + 1
             session.commit_block_prefix(base, committed)
-            output.extend(draft[1:committed])
-            if output[-1] not in eos:
-                output.append(int(predictions[match]))
-            if len(output) < limit and output[-1] not in eos:
-                drafter.push(taps, committed)
-            checks += 1
-            accepted += match
-            proposed += len(draft) - 1
-        decode_seconds = time.perf_counter() - start
-        rate = (len(output) - 1) / decode_seconds if len(output) > 1 else None
-        return output, prefill_seconds, rate, {
-            "drafter_load_seconds": load_seconds,
-            "draft_block_size": size,
-            "draft_checks": checks,
-            "proposed_tokens": proposed,
-            "accepted_tokens": accepted,
-        }
+            verified = draft[1:committed]
+            if not verified or verified[-1] not in eos:
+                verified.append(int(predictions[match]))
+            stats["draft_checks"] += 1
+            stats["accepted_tokens"] += match
+            stats["proposed_tokens"] += len(draft) - 1
+            for anchor in verified:
+                yield anchor
+                emitted += 1
+            if emitted < limit and anchor not in eos:
+                drafter.push(session, taps, committed)
+
+
+def speculative_greedy(path, session, ordinal, inputs, limit, eos, block_size):
+    device = torch.device("cuda", ordinal)
+    start = time.perf_counter()
+    with torch.cuda.device(device), torch.cuda.stream(torch.cuda.default_stream(device)):
+        drafter = Drafter(Path(path), session.model, session.context, device)
+        torch.cuda.current_stream().synchronize()
+    stats = {"drafter_load_seconds": time.perf_counter() - start}
+    stream = stream_speculative(drafter, session, inputs, limit, eos, block_size, stats=stats)
+    output = [next(stream)]
+    start = time.perf_counter()
+    output.extend(stream)
+    decode_seconds = time.perf_counter() - start
+    rate = (len(output) - 1) / decode_seconds if len(output) > 1 else None
+    return output, stats.pop("prefill_seconds"), rate, stats
