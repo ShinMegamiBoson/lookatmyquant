@@ -112,14 +112,17 @@ class Inkling2Config:
 
 # ----------------------------------------------------------------------------- Primitives (float32, as transformers)
 # Pure functions; `_fused` ones are compiled by torch.compile into one or two generated kernels each (set
-# LAMQ_CUDA_COMPILE=0 to run them eagerly). Cache writes stay outside them as plain in-place copies.
+# LAMQ_CUDA_COMPILE=0 to run them eagerly). Cache writes stay outside them as plain in-place copies. They compile
+# with symbolic shapes from the first call: otherwise the first prompt length gets its own specialised kernels and
+# later lengths recompile into symbolic ones, which round differently, so the same prompt could generate different
+# text depending on what ran before it.
 
 _COMPILE = os.environ.get("LAMQ_CUDA_COMPILE", "1") != "0"
 torch._dynamo.config.cache_size_limit = max(torch._dynamo.config.cache_size_limit, 64)
 
 
 def _fused(fn):
-    return torch.compile(fn, fullgraph=True) if _COMPILE else fn
+    return torch.compile(fn, fullgraph=True, dynamic=True) if _COMPILE else fn
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
