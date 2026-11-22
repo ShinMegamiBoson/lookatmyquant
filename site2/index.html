@@ -126,7 +126,8 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <a href="#cost">Cost</a>
       <a href="https://github.com/ShinMegamiBoson/lookatmyquant">Code</a>
       <a href="https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-qwen35-4b-1.2gb">Weights</a>
-      <a class="back" href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a>
+      <a class="back" href="https://lookatmyquant.pages.dev/compiler/">LookAtMyQuant 1</a>
+      <a class="back" href="https://lookatmyquant.pages.dev/">All papers</a>
     </nav>
   </header>
 
@@ -146,7 +147,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   <section class="col">
     <h2 id="results">At 1.2 GB our <span class="nb">Qwen3.5-4B</span> solves <span data-v="ours">330</span> of 540 math problems and Bonsai 2 Ternary solves <span data-v="bonsai">328</span></h2>
     <p>Bonsai 2 Ternary 4B <a href="#r1">[1]</a> is Prism ML's ternary-weight version of Qwen3.5-4B <a href="#r2">[2]</a>. It stores 2-bit codes with a scale and a bias per 128 weights, and its language-model weights take <span data-v="bonsaiGb">1.20</span> GB. The original's take <span data-v="origGb">8.4</span> GB in bf16.</p>
-    <p>Our file is the same model at 2.3 bits per weight, <span data-v="oursGb">1.23</span> GB. It is post-training quantization with trellis codes from the <a href="https://lookatmyquant.pages.dev/">LookAtMyQuant</a> compiler, followed by 4,000 steps of distillation from the original. The packed file is a <a href="https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-qwen35-4b-1.2gb">release of the repository</a>.</p>
+    <p>Our file is the same model at 2.3 bits per weight, <span data-v="oursGb">1.23</span> GB. It is post-training quantization with trellis codes from the <a href="https://lookatmyquant.pages.dev/compiler/">LookAtMyQuant</a> compiler, followed by 4,000 steps of distillation from the original. The packed file is a <a href="https://github.com/ShinMegamiBoson/lookatmyquant/releases/tag/lm2-qwen35-4b-1.2gb">release of the repository</a>.</p>
     <p>The math test is 540 generated problems with exact integer or fraction answers, in twelve families at three difficulties, from long addition to determinants and modular exponentiation. Scoring is exact match on the final boxed answer. Decoding is greedy with thinking disabled and at most 2,048 new tokens.</p>
     <p>Ours solves <span data-v="ours">330</span>, Bonsai <span data-v="bonsai">328</span> and the original <span data-v="orig">359</span>. <span data-v="onlyOurs">62</span> problems are solved only by ours and <span data-v="onlyBonsai">60</span> only by Bonsai (McNemar p = <span data-v="pBonsai">0.93</span>), so the test does not separate the two files.</p>
     <p>On text, ours is closer to the original. KL(original ‖ model) on held-out text from 13 sources is <span data-v="oursKL">0.45</span> nats for ours and <span data-v="bonsaiKL">0.59</span> for Bonsai, and ours is lower on <span data-v="srcOurs">11</span> of the 13 (Figure 2). Bonsai is lower on <span data-v="srcBonsai">chat and Hindi</span>.</p>
@@ -314,7 +315,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   month  = nov
 }</pre>
 
-    <footer>LookAtMyQuant 2 · November 2026 · <a href="https://lookatmyquant.pages.dev/">LookAtMyQuant 1</a></footer>
+    <footer>LookAtMyQuant 2 · November 2026 · <a href="https://lookatmyquant.pages.dev/compiler/">LookAtMyQuant 1</a> · <a href="https://lookatmyquant.pages.dev/">All papers</a></footer>
   </section>
 </div>
 <div class="tip" id="tip" hidden></div>

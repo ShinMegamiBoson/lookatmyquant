@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Grafting Neural Primitives Across Model Scales</title>
+<meta name="description" content="Calculation neurons taken from a larger Qwen model and joined to a smaller one through a trained interface of 0.14% of its parameters raise its exact arithmetic from 44.0% to 54.5%.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Grafting Neural Primitives Across Model Scales">
+<meta property="og:description" content="Calculation neurons taken from a larger Qwen model and joined to a smaller one through a trained interface of 0.14% of its parameters raise its exact arithmetic from 44.0% to 54.5%.">
+<meta property="og:url" content="https://lookatmyquant.pages.dev/grafting/">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: the same academic project page as LookAtMyQuant and LookAtMyQuant 2. Centered title block, a teaser figure, then one reading column with wider figures.
+   Chart colors: blue is a graft with the donor's own weights, orange is a control, gray is an unmodified or lesioned model. Every bar is labelled with its name and value. */
+:root {
+  --bg: #FFFFFF; --ink: #1A1E24; --muted: #5B6370; --faint: #8C939E; --line: #E2E5EA; --soft: #F4F6F8; --link: #1F56C4;
+  --ours: #2A78D6; --rival: #EB6834; --other: #8D95A1;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+    --ours: #3987E5; --rival: #D95926; --other: #666D79; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+  --ours: #3987E5; --rival: #D95926; --other: #666D79; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.62 var(--serif); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 56px 96px; }
+.col { max-width: 44rem; margin: 0 auto; }
+.wide { max-width: 62rem; margin: 0 auto; }
+figure.wide { margin: 34px auto 38px; }
+figure.col { margin: 30px auto 34px; }
+section.wide { margin-top: 26px; margin-bottom: 30px; }
+header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
+h1 { font: 600 clamp(2rem, 5.4vw, 3.1rem)/1.08 var(--serif); letter-spacing: -0.015em; margin: 0; text-wrap: balance; max-width: 24ch; }
+.subtitle { font: 400 clamp(1.1rem, 2.5vw, 1.4rem)/1.34 var(--serif); color: var(--muted); margin: 0; max-width: 46ch; text-wrap: balance; }
+.authors { font: 500 1.05rem/1.4 var(--sans); margin: 6px 0 0; }
+.meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+.links a { font: 500 0.92rem var(--sans); color: var(--bg); background: var(--ink); text-decoration: none; padding: 7px 16px; border-radius: 999px; }
+.links a.back { color: var(--ink); background: var(--bg); box-shadow: inset 0 0 0 1px var(--faint); }
+.links a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+h2 { font: 600 clamp(1.35rem, 5vw, 1.6rem)/1.2 var(--serif); margin: 56px 0 14px; text-wrap: balance; letter-spacing: -0.005em; }
+.nb { white-space: nowrap; }
+p { margin: 0 0 14px; }
+a { color: var(--link); text-underline-offset: 2px; }
+b, strong { font-weight: 600; }
+ul.plain { padding-left: 1.2em; margin: 0 0 14px; }
+ul.plain li { margin-bottom: 8px; }
+figure { margin: 30px auto 34px; display: grid; gap: 12px; min-width: 0; }
+figcaption, .tcap { font: 400 0.95rem/1.5 var(--sans); color: var(--muted); }
+figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 0.9rem var(--sans); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex: none; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .grid3 { grid-template-columns: 1fr; } }
+.panel-title { font: 600 0.92rem/1.35 var(--sans); color: var(--ink); margin: 0 0 10px; }
+.panel-title span { display: block; font-weight: 400; color: var(--muted); }
+/* bars: gray track, bar from zero with a rounded data end, name on the left and value on the right in ink */
+.bars { display: grid; gap: 10px; font: 400 0.9rem/1.3 var(--sans); }
+.bar { display: grid; grid-template-columns: minmax(0, 14.5rem) minmax(0, 1fr) 3.3rem; column-gap: 12px; row-gap: 3px; align-items: center; }
+.bar .l small { display: block; color: var(--muted); font-size: 0.82rem; }
+.bar .t { height: 14px; background: var(--soft); border-radius: 0 4px 4px 0; }
+.bar .t i { display: block; height: 100%; min-width: 2px; background: var(--other); border-radius: 0 4px 4px 0; }
+.bar.graft .t i { background: var(--ours); }
+.bar.control .t i { background: var(--rival); }
+.bar .v { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.bars.tight { gap: 7px; }
+.bars.tight .bar { grid-template-columns: minmax(0, 8.6rem) minmax(0, 1fr) 3.3rem; column-gap: 8px; }
+.bars.tight .bar .t { height: 12px; }
+@media (max-width: 560px) { .bars:not(.tight) .bar { grid-template-columns: minmax(0, 1fr) 3.3rem; } .bars:not(.tight) .bar .l { grid-column: 1 / -1; } }
+.pairs { display: grid; gap: 18px; font: 400 0.9rem/1.3 var(--sans); }
+.pair { display: grid; gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.pair:last-child { border-bottom: 0; padding-bottom: 0; }
+.pair .ph b { font-weight: 600; }
+.pair .ph span { color: var(--muted); margin-left: 8px; }
+.pair .bar { grid-template-columns: 8.4rem minmax(0, 1fr) 3.3rem; }
+.pair .pd { color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .pair .ph span { display: block; margin-left: 0; } }
+/* the wiring diagram */
+.diagram { max-width: 35rem; margin: 0 auto; width: 100%; }
+.diagram svg { display: block; width: 100%; height: auto; }
+.diagram .dl { font: 400 16px var(--sans); fill: var(--muted); }
+.diagram .dl.b { font-weight: 600; fill: var(--ink); }
+.diagram .st { stroke: var(--other); stroke-width: 2; fill: none; }
+.diagram .tr { stroke: var(--ours); stroke-width: 2.5; fill: none; }
+.diagram .bx { fill: var(--soft); stroke: var(--other); stroke-width: 1.5; }
+.eq { font: 400 0.98rem/1.9 var(--serif); background: var(--soft); border-radius: 6px; padding: 12px 18px; margin: 0 0 14px; overflow-x: auto; white-space: nowrap; }
+.eq i { font-style: italic; }
+sub, sup { font-size: 0.72em; line-height: 0; }
+/* the four structures */
+.stills { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .stills { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stills div { background: #191918; border-radius: 6px; overflow: hidden; display: grid; }
+.stills img { display: block; width: 100%; height: auto; }
+.stills span { font: 600 0.9rem var(--sans); color: #F2F1ED; padding: 0 12px 10px; }
+.scroll-x { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font: 400 0.9rem/1.4 var(--sans); font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-weight: 600; color: var(--ink); border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+td.num, th.num { text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { min-width: 12.5rem; }
+tr.group td { font: 600 0.78rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 14px; }
+.tcap { margin: 0 0 8px; }
+.note { font: 400 0.86rem/1.4 var(--sans); color: var(--muted); }
+pre.bib { font: 400 0.82rem/1.5 var(--mono); background: var(--soft); border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 0; }
+ol.refs { padding-left: 1.4em; font: 400 0.92rem/1.5 var(--sans); color: var(--muted); }
+ol.refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
+ol.refs li b { color: var(--ink); font-weight: 600; }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+</style>
+</head>
+<body>
+<!-- Written by build_paper.py. Every number comes from the experiments' result files; change the page there. -->
+<div class="wrap">
+  <header class="title col">
+    <h1>Grafting Neural Primitives Across Model Scales</h1>
+    <p class="subtitle">A larger model’s calculation neurons, joined to a smaller model through a trained interface of 0.14% of its parameters, raise its exact arithmetic from 44.0% to 54.5%. The larger model scores 53.5%.</p>
+    <p class="authors">Shin Megami Boson</p>
+    <p class="meta">November 2026</p>
+    <nav class="links" aria-label="Sections">
+      <a href="#results">Results</a>
+      <a href="#method">Method</a>
+      <a href="#replace">Replacement</a>
+      <a href="#scale">27B into 0.8B</a>
+      <a href="#structures">Structures</a>
+      <a href="#weights">Controls</a>
+      <a href="#cost">Cost</a>
+      <a class="back" href="../">All papers</a>
+    </nav>
+  </header>
+
+  <figure class="wide" id="fig1">
+    <div class="legend">
+      <span><i style="background:var(--ours)"></i>Graft with the donor’s own weights</span>
+      <span><i style="background:var(--rival)"></i>Control</span>
+      <span><i style="background:var(--other)"></i>Unmodified or lesioned model</span>
+    </div>
+    <div class="grid2">
+      <div><p class="panel-title">Replacing a lesioned group<span>The 9B’s calculation group in the 4B. GSM8K, 250 problems.</span></p><div class="bars"><div class="bar model" title="224 of 250"><div class="l">Qwen3.5-4B, intact</div><div class="t"><i style="width:89.6%"></i></div><div class="v">89.6%</div></div><div class="bar model" title="12 of 250"><div class="l">Its calculation group lesioned</div><div class="t"><i style="width:4.8%"></i></div><div class="v">4.8%</div></div><div class="bar graft" title="210 of 250"><div class="l">The 9B’s group in its place<small>445,490 parameters trained</small></div><div class="t"><i style="width:84.0%"></i></div><div class="v">84.0%</div></div><div class="bar control" title="94 of 250"><div class="l">The same with shuffled weights<small>873,522 trained</small></div><div class="t"><i style="width:37.6%"></i></div><div class="v">37.6%</div></div></div></div>
+      <div><p class="panel-title">Adding to an intact model<span>The 4B’s calculation group beside the 2B. Exact arithmetic, 200 problems.</span></p><div class="bars"><div class="bar model" title="88 of 200"><div class="l">Qwen3.5-2B, intact</div><div class="t"><i style="width:44.0%"></i></div><div class="v">44.0%</div></div><div class="bar graft" title="109 of 200"><div class="l">The 4B’s group added beside it<small>2,700,722 parameters trained</small></div><div class="t"><i style="width:54.5%"></i></div><div class="v">54.5%</div></div><div class="bar control" title="100 of 200"><div class="l">The same with shuffled weights<small>2,700,722 trained</small></div><div class="t"><i style="width:50.0%"></i></div><div class="v">50.0%</div></div><div class="bar control" title="99 of 200"><div class="l">LoRA on the 2B, no donor<small>2,752,512 trained</small></div><div class="t"><i style="width:49.5%"></i></div><div class="v">49.5%</div></div><div class="bar model" title="107 of 200"><div class="l">Qwen3.5-4B, intact</div><div class="t"><i style="width:53.5%"></i></div><div class="v">53.5%</div></div></div></div>
+    </div>
+    <figcaption><b>Figure 1.</b> The two ways a group of neurons is grafted. Left: the host’s own group is lesioned and the donor’s runs in its place. Right: the donor’s group runs beside an intact host. In both, every weight of the host and of the donor’s neurons is frozen and only the interface is trained.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="results">Qwen3.5-4B’s calculation neurons raise <span class="nb">Qwen3.5-2B’s</span> exact arithmetic from 44.0% to 54.5%</h2>
+    <p>Lesioning a set of neurons shows that a model needs them. It does not show that the set is a unit that works anywhere else. We test that by moving the set. Neurons are taken from one model with their weights frozen and joined to a second model whose weights are also frozen, and only the interface between the two is trained. We call a set of neurons or attention heads that keeps its function through the move a primitive.</p>
+    <p>The neurons come from the Encyclopedia of LLM homologies <a href="#r1">[1]</a>, which places every MLP neuron of a model by the neurons it fires with. One group fires on equals signs and on results as they are worked out. Each Qwen model <a href="#r2">[2]</a> we use has it: 3,948 neurons in Qwen3.5-2B, 6,857 in the 4B, 8,713 in the 9B and 22,025 in Qwen3.8-27B. We call it the calculation group.</p>
+    <p>In the main experiment the 4B’s group runs beside an intact 2B. At each layer a linear map reads the 2B’s residual stream into the 4B’s coordinates, the 4B’s neurons fire with their own weights, and a second map writes their output back (Figure 2). The write map starts at zero, so before training the model is exactly the 2B. Training changes 2,700,722 interface parameters, 0.14% of the 2B, over 1,500 steps.</p>
+    <p>Exact arithmetic is 200 five-shot problems in five families: sums and differences, expressions, products, fractions and greatest common divisors. The intact 2B solves 44.0% and the grafted 2B 54.5%, with 39 problems gained and 18 lost (McNemar p = 0.0075 <a href="#r3">[3]</a>). The intact 4B solves 53.5% (p = 0.87 against the graft).</p>
+    <p>Two controls are trained the same way. With every weight matrix of the donor’s neurons shuffled, the graft reaches 50.0%. A LoRA <a href="#r4">[4]</a> on the 2B’s own MLPs, with 2,752,512 trained parameters and no donor, reaches 49.5%. Neither is significantly above the intact 2B (p = 0.14 and 0.18). Against the shuffled graft, the real one gains 14 problems and loses 5 (p = 0.064).</p>
+    <p>Other text is left alone. KL from the intact 2B on general text is 0.0017 for the graft and 0.0054 for the LoRA, and HellaSwag <a href="#r5">[5]</a> is 61.6% against 62.0% intact. GSM8K <a href="#r6">[6]</a> goes from 70.0% to 73.0%, and to 73.4% and 71.8% under the two controls, while the 4B scores 88.4%. The calculation group carries arithmetic, and most of the 4B’s lead on word problems lies outside it.</p>
+
+    <h2 id="method">The donor’s neurons keep their own weights and wiring, and only the interface is trained</h2>
+  </section>
+
+  <figure class="col" id="fig2">
+    <div class="diagram"><svg viewBox="0 0 520 268" role="img" aria-label="The donor's neurons read the host's residual stream through a read map, write to a private donor stream, and write back to the host through a write map.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0 1 10 5 0 9z" fill="var(--other)"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0 1 10 5 0 9z" fill="var(--ours)"/></marker>
+  </defs>
+  <text x="8" y="22" class="dl b">Host’s residual stream</text>
+  <text x="508" y="22" class="dl m" text-anchor="end">every host weight frozen</text>
+  <line x1="8" y1="40" x2="508" y2="40" class="st" marker-end="url(#ah)"/>
+  <line x1="120" y1="40" x2="120" y2="118" class="tr" marker-end="url(#ab)"/>
+  <text x="132" y="76" class="dl b">Read map</text>
+  <text x="132" y="96" class="dl m">trained</text>
+  <line x1="352" y1="120" x2="352" y2="42" class="tr" marker-end="url(#ab)"/>
+  <text x="364" y="76" class="dl b">Write map</text>
+  <text x="364" y="96" class="dl m">trained from zero</text>
+  <rect x="60" y="120" width="400" height="58" rx="6" class="bx"/>
+  <text x="260" y="145" class="dl b" text-anchor="middle">Donor’s neurons or heads</text>
+  <text x="260" y="166" class="dl m" text-anchor="middle">their own weights, frozen</text>
+  <line x1="200" y1="178" x2="200" y2="216" class="st" marker-end="url(#ah)"/>
+  <line x1="320" y1="218" x2="320" y2="180" class="st" marker-end="url(#ah)"/>
+  <line x1="8" y1="218" x2="508" y2="218" class="st" marker-end="url(#ah)"/>
+  <text x="8" y="243" class="dl b">Donor stream, private</text>
+  <text x="8" y="262" class="dl m">what the donor’s units write for one another</text>
+</svg></div>
+    <figcaption><b>Figure 2.</b> One grafted layer. Gray is frozen and blue is trained. The donor stream runs the length of the model, so the donor’s neurons reach one another without passing through the host.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p>The host has residual width <i>d</i><sub>H</sub> and the donor <i>d</i><sub>D</sub>. Each donor layer <i>m</i> runs inside one host layer <i>h</i>, chosen by relative depth. At that layer, with host stream <i>x</i><sub>H</sub> and donor stream <i>s</i><sub>D</sub>:</p>
+    <div class="eq">
+      <i>u</i> = RMSNorm<sub>D</sub>( (<i>A</i><sub>0</sub> + <i>U</i><sub>A</sub><i>V</i><sub>A</sub><sup>T</sup>) <i>x</i><sub>H</sub> + <i>s</i><sub>D</sub> )<br>
+      Δ = <i>f</i><sub>D</sub>(<i>u</i>; α, τ), &nbsp; <i>s</i><sub>D</sub> ← <i>s</i><sub>D</sub> + Δ<br>
+      <i>x</i><sub>H</sub> ← <i>x</i><sub>H</sub> + β (<i>B</i><sub>0</sub> + <i>U</i><sub>B</sub><i>V</i><sub>B</sub><sup>T</sup>) Δ
+    </div>
+    <ul class="plain">
+      <li><b>Read.</b> <i>A</i><sub>0</sub> is a ridge regression from the host’s residual stream to the donor’s, fitted on paired activations and then frozen. <i>U</i><sub>A</sub><i>V</i><sub>A</sub><sup>T</sup> is a trained low-rank correction.</li>
+      <li><b>Run.</b> <i>f</i><sub>D</sub> is the donor’s neurons or attention heads with their own weights. A trained gain α and threshold τ for each neuron are the only changes to them.</li>
+      <li><b>Keep the donor’s wiring.</b> What the donor’s units write for one another accumulates in <i>s</i><sub>D</sub>, in the donor’s coordinates. Connections inside the graft are therefore exactly the donor’s.</li>
+      <li><b>Write.</b> <i>B</i><sub>0</sub> is the fitted map back to the host and <i>U</i><sub>B</sub><i>V</i><sub>B</sub><sup>T</sup> its trained correction. The scale β starts at zero, so at step 0 the grafted model’s logits equal the host’s.</li>
+      <li><b>Train.</b> The loss is a KL divergence to two teachers in equal parts. On the donor’s own correct solutions to math problems the target is the donor’s next-token distribution. On general text it is the intact host’s. Only the interface receives gradients, and a checksum confirms the host’s weights are unchanged afterwards.</li>
+    </ul>
+    <p>A graft is used in one of two ways. To <b>add</b>, the host is left whole. To <b>replace</b>, the host’s own group is first lesioned by holding each of its neurons at its mean activation, and the donor’s group stands in for it.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 1.</b> The four experiments. Width is the residual width of the donor and of the host. Trained parameters are the interface, with their share of the host’s parameters.</p>
+    <div class="scroll-x"><table><thead><tr><th>Donor and host</th><th>Mode</th><th class="num">Width</th><th>Grafted</th><th class="num">Trained parameters</th><th class="num">Steps</th></tr></thead><tbody><tr><td>Qwen3.5-9B into 4B</td><td>replace</td><td class="num">4,096 into 2,560</td><td>8,713 neurons for 6,857</td><td class="num">445,490 (0.011%)</td><td class="num">450</td></tr><tr><td>Qwen3.5-4B into 2B</td><td>replace</td><td class="num">2,560 into 2,048</td><td>6,857 neurons for 3,948</td><td class="num">2,913,714 (0.15%)</td><td class="num">1,500</td></tr><tr><td>Qwen3.5-4B into 2B</td><td>add</td><td class="num">2,560 into 2,048</td><td>6,857 neurons</td><td class="num">2,700,722 (0.14%)</td><td class="num">1,500</td></tr><tr><td>Qwen3.8-27B into Qwen3.5-0.8B</td><td>add</td><td class="num">5,120 into 1,024</td><td>3,816 to 19,435 neurons, 16 heads</td><td class="num">1.97M to 5.54M (0.26% to 0.74%)</td><td class="num">1,600</td></tr></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="replace">In place of a lesioned group, the 9B’s neurons restore 93% of the GSM8K accuracy the lesion removed</h2>
+    <p>Replacement is the stricter test of the donor’s weights, because the host has lost its own way to calculate. Lesioning the 4B’s 6,857 calculation neurons, 2.3% of its MLP neurons, takes GSM8K from 89.6% to 4.8% and exact arithmetic from 52.0% to 0.5%. HellaSwag is 72.6% before and 72.2% after.</p>
+    <p>With Qwen3.5-9B’s 8,713 neurons in their place and only the fitted maps, before any gradient step, GSM8K is 53.6%. Training 445,490 parameters on the write side, 0.011% of the 4B, brings it to 84.0%. The same interface around shuffled weights reaches 37.6% with twice the trained parameters: the graft solves 119 problems the control misses and misses 3 it solves (p = 1.1 × 10<sup>−31</sup>). Around an equal number of the 9B’s prose neurons it reaches 33.6%. Neuron surgery <a href="#r7">[7]</a> reports every step of this experiment.</p>
+    <p>The 4B and the 9B share ancestry: a neuron of one has its closest match in the same layer of the other <a href="#r1">[1]</a>. Qwen3.5-2B was trained separately. Lesioning its 3,948 calculation neurons takes GSM8K from 70.0% to 1.0%. The 4B’s group in their place brings it back to 47.6%, which is 68% of what the lesion removed, and exact arithmetic to 25.0% of an intact 44.0% (Figure 3).</p>
+  </section>
+
+  <figure class="wide" id="fig3">
+    <div class="grid2">
+      <div><p class="panel-title">GSM8K, 500 problems</p><div class="bars"><div class="bar model" title="350 of 500"><div class="l">Qwen3.5-2B, intact</div><div class="t"><i style="width:70.0%"></i></div><div class="v">70.0%</div></div><div class="bar model" title="5 of 500"><div class="l">Its calculation group lesioned</div><div class="t"><i style="width:1.0%"></i></div><div class="v">1.0%</div></div><div class="bar graft" title="238 of 500"><div class="l">The 4B’s group in its place</div><div class="t"><i style="width:47.6%"></i></div><div class="v">47.6%</div></div><div class="bar graft" title="218 of 500"><div class="l">The 4B’s group and heads in place</div><div class="t"><i style="width:43.6%"></i></div><div class="v">43.6%</div></div><div class="bar control" title="70 of 500"><div class="l">Group and heads, shuffled weights</div><div class="t"><i style="width:14.0%"></i></div><div class="v">14.0%</div></div></div></div>
+      <div><p class="panel-title">Exact arithmetic, 200 problems</p><div class="bars"><div class="bar model" title="88 of 200"><div class="l">Qwen3.5-2B, intact</div><div class="t"><i style="width:44.0%"></i></div><div class="v">44.0%</div></div><div class="bar model" title="2 of 200"><div class="l">Its calculation group lesioned</div><div class="t"><i style="width:1.0%"></i></div><div class="v">1.0%</div></div><div class="bar graft" title="50 of 200"><div class="l">The 4B’s group in its place</div><div class="t"><i style="width:25.0%"></i></div><div class="v">25.0%</div></div><div class="bar graft" title="43 of 200"><div class="l">The 4B’s group and heads in place</div><div class="t"><i style="width:21.5%"></i></div><div class="v">21.5%</div></div><div class="bar control" title="5 of 200"><div class="l">Group and heads, shuffled weights</div><div class="t"><i style="width:2.5%"></i></div><div class="v">2.5%</div></div></div></div>
+    </div>
+    <figcaption><b>Figure 3.</b> Qwen3.5-4B’s calculation group in place of Qwen3.5-2B’s. The fourth bar also replaces 18 of the 2B’s attention and Gated DeltaNet heads with 32 of the 4B’s, and the control shuffles the weights of that graft.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="heads">Replacing the 2B’s attention heads as well moved general text 1.7 times further from the host and did not raise accuracy</h2>
+    <p>The calculation group is MLP neurons only. To move the attention that feeds it too, we lesioned the 18 attention and Gated DeltaNet heads of the 2B that are most selective for math and ran 32 heads of the 4B in the donor stream. On math the model moved closer to the 4B: KL from the 4B on its own solutions fell 35%, from 0.0335 to 0.0217. On general text it moved away from the 2B, with KL rising from 0.0388 to 0.0670. Accuracy did not improve: GSM8K is 43.6% against 47.6% (p = 0.10) and exact arithmetic 21.5% against 25.0% (p = 0.25).</p>
+    <p>The 2B has 8 query heads in a full-attention layer, and the heads that serve math also serve other text. Lesioning the 18 heads on top of the calculation group, before any graft, raises KL on general text from 0.092 to 0.227. Every later experiment therefore adds to the host and lesions nothing.</p>
+
+    <h2 id="scale">Across a 36× size gap, 7,343 neurons of <span class="nb">Qwen3.8-27B</span> raise <span class="nb">Qwen3.5-0.8B’s</span> exact arithmetic from 30.5% to 44.0%</h2>
+    <p>Qwen3.8-27B has 26.90 billion text parameters, 64 layers and a residual width of 5,120. Qwen3.5-0.8B has 0.75 billion, 24 layers and a width of 1,024. Donor layer <i>m</i> runs inside host layer round(23<i>m</i> / 63), and the donor stream is 5,120 wide, so the 27B’s neurons never reach one another through the narrower host.</p>
+    <p>Full maps between widths of 5,120 and 1,024 at every layer would hold 839 million parameters, more than the 0.8B itself. We store each fitted map at rank 64, taking the approximation that is best under the covariance of the host’s activations. The maps then hold 63 million parameters, 13.3 times fewer.</p>
+    <p>Each graft trains for 1,600 steps on 1,291 of the 27B’s own correct solutions to GSM8K training problems and generated arithmetic, and on general text. The interface has 1.97 to 5.54 million parameters, 0.26% to 0.74% of the 0.8B. No test problem is in the training text.</p>
+    <p>The best graft on exact arithmetic is the Tube, 7,343 neurons of the 27B’s calculation group that the next section defines. It takes the 0.8B from 30.5% to 44.0%, with 33 problems gained and 6 lost (p = 1.4 × 10<sup>−5</sup>). A LoRA on the 0.8B’s MLPs with more trained parameters and the same objective reaches 35.0%, which is not significantly above the intact model (p = 0.19), and the Tube beats it (p = 0.0029). Qwen3.5-2B scores 43.0%. The grafted model has 0.92 billion parameters and the 2B 1.88 billion.</p>
+    <p>On GSM8K the best graft is the Gate, at 58.0% from 48.6% (p = 1.5 × 10<sup>−4</sup>). The LoRA reaches 52.8%. Word problems stay well below the larger models: the 2B scores 71.4% and the 27B 96.2%.</p>
+    <p>Every graft stays closer to the 0.8B on general text than the LoRA does. KL from the intact model is 0.011 to 0.017 for the grafts and 0.048 for the LoRA. HellaSwag is between 49.0% and 50.8% for all of them, against 49.0% intact.</p>
+  </section>
+
+  <figure class="wide" id="fig4">
+    <div class="legend">
+      <span><i style="background:var(--ours)"></i>Graft of the 27B beside the 0.8B</span>
+      <span><i style="background:var(--rival)"></i>Control</span>
+      <span><i style="background:var(--other)"></i>Unmodified model</span>
+    </div>
+    <div class="grid3">
+      <div><p class="panel-title">Exact arithmetic, 200 problems</p><div class="bars tight"><div class="bar model" title="61 of 200"><div class="l">Qwen3.5-0.8B</div><div class="t"><i style="width:30.5%"></i></div><div class="v">30.5%</div></div><div class="bar control" title="70 of 200"><div class="l">LoRA, no donor</div><div class="t"><i style="width:35.0%"></i></div><div class="v">35.0%</div></div><div class="bar graft" title="88 of 200"><div class="l">Tube</div><div class="t"><i style="width:44.0%"></i></div><div class="v">44.0%</div></div><div class="bar graft" title="85 of 200"><div class="l">Cloud</div><div class="t"><i style="width:42.5%"></i></div><div class="v">42.5%</div></div><div class="bar graft" title="76 of 200"><div class="l">Ring</div><div class="t"><i style="width:38.0%"></i></div><div class="v">38.0%</div></div><div class="bar graft" title="78 of 200"><div class="l">Gate</div><div class="t"><i style="width:39.0%"></i></div><div class="v">39.0%</div></div><div class="bar graft" title="80 of 200"><div class="l">Composed</div><div class="t"><i style="width:40.0%"></i></div><div class="v">40.0%</div></div><div class="bar control" title="81 of 200"><div class="l">Composed, shuffled</div><div class="t"><i style="width:40.5%"></i></div><div class="v">40.5%</div></div><div class="bar model" title="86 of 200"><div class="l">Qwen3.5-2B</div><div class="t"><i style="width:43.0%"></i></div><div class="v">43.0%</div></div><div class="bar model" title="115 of 200"><div class="l">Qwen3.8-27B</div><div class="t"><i style="width:57.5%"></i></div><div class="v">57.5%</div></div></div></div>
+      <div><p class="panel-title">GSM8K, 500 problems</p><div class="bars tight"><div class="bar model" title="243 of 500"><div class="l">Qwen3.5-0.8B</div><div class="t"><i style="width:48.6%"></i></div><div class="v">48.6%</div></div><div class="bar control" title="264 of 500"><div class="l">LoRA, no donor</div><div class="t"><i style="width:52.8%"></i></div><div class="v">52.8%</div></div><div class="bar graft" title="266 of 500"><div class="l">Tube</div><div class="t"><i style="width:53.2%"></i></div><div class="v">53.2%</div></div><div class="bar graft" title="266 of 500"><div class="l">Cloud</div><div class="t"><i style="width:53.2%"></i></div><div class="v">53.2%</div></div><div class="bar graft" title="258 of 500"><div class="l">Ring</div><div class="t"><i style="width:51.6%"></i></div><div class="v">51.6%</div></div><div class="bar graft" title="290 of 500"><div class="l">Gate</div><div class="t"><i style="width:58.0%"></i></div><div class="v">58.0%</div></div><div class="bar graft" title="279 of 500"><div class="l">Composed</div><div class="t"><i style="width:55.8%"></i></div><div class="v">55.8%</div></div><div class="bar control" title="281 of 500"><div class="l">Composed, shuffled</div><div class="t"><i style="width:56.2%"></i></div><div class="v">56.2%</div></div><div class="bar model" title="357 of 500"><div class="l">Qwen3.5-2B</div><div class="t"><i style="width:71.4%"></i></div><div class="v">71.4%</div></div><div class="bar model" title="481 of 500"><div class="l">Qwen3.8-27B</div><div class="t"><i style="width:96.2%"></i></div><div class="v">96.2%</div></div></div></div>
+      <div><p class="panel-title">Bind5, 100 items</p><div class="bars tight"><div class="bar model"><div class="l">Qwen3.5-0.8B</div><div class="t"><i style="width:99.0%"></i></div><div class="v">99.0%</div></div><div class="bar control"><div class="l">LoRA, no donor</div><div class="t"><i style="width:86.0%"></i></div><div class="v">86.0%</div></div><div class="bar graft"><div class="l">Tube</div><div class="t"><i style="width:84.0%"></i></div><div class="v">84.0%</div></div><div class="bar graft"><div class="l">Cloud</div><div class="t"><i style="width:85.0%"></i></div><div class="v">85.0%</div></div><div class="bar graft"><div class="l">Ring</div><div class="t"><i style="width:97.0%"></i></div><div class="v">97.0%</div></div><div class="bar graft"><div class="l">Gate</div><div class="t"><i style="width:79.0%"></i></div><div class="v">79.0%</div></div><div class="bar graft"><div class="l">Composed</div><div class="t"><i style="width:82.0%"></i></div><div class="v">82.0%</div></div><div class="bar control"><div class="l">Composed, shuffled</div><div class="t"><i style="width:89.0%"></i></div><div class="v">89.0%</div></div><div class="bar model"><div class="l">Qwen3.5-2B</div><div class="t"><i style="width:99.0%"></i></div><div class="v">99.0%</div></div><div class="bar model"><div class="l">Qwen3.8-27B</div><div class="t"><i style="width:74.0%"></i></div><div class="v">74.0%</div></div></div></div>
+    </div>
+    <figcaption><b>Figure 4.</b> Grafts of Qwen3.8-27B beside Qwen3.5-0.8B on three tests, in the same order in each panel. Bind5 states where five people live and asks for one of them.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="structures">Four structures of the 27B change the 0.8B in four different ways</h2>
+    <p>Tube, Cloud, Ring and Gate are four structures first described on the Qwen3.5-4B map (Figure 5). We selected each in the 27B by its rule.</p>
+  </section>
+
+  <figure class="wide" id="fig5">
+    <div class="stills">
+      <div><img src="fig-tube.webp" width="520" height="440" alt="The Tube neurons lit on the map of Qwen3.5-4B's MLP neurons" loading="lazy"><span>Tube</span></div>
+      <div><img src="fig-cloud.webp" width="520" height="440" alt="The Cloud neurons lit on the map" loading="lazy"><span>Cloud</span></div>
+      <div><img src="fig-ring.webp" width="520" height="440" alt="The neurons that read the Ring's attention heads lit on the map" loading="lazy"><span>Ring</span></div>
+      <div><img src="fig-gate.webp" width="520" height="440" alt="The Gate neurons lit on the map" loading="lazy"><span>Gate</span></div>
+    </div>
+    <figcaption><b>Figure 5.</b> The four structures on the map of Qwen3.5-4B’s 294,912 MLP neurons, where neurons that fire together sit together. The Ring is attention heads, which the map does not hold, so its panel lights the neurons that read those heads most directly.</figcaption>
+  </figure>
+
+  <section class="col">
+    <ul class="plain">
+      <li><b>Tube.</b> Neurons whose nearest neighbours by firing correlation span few directions: a local intrinsic dimension <a href="#r8">[8]</a> under 80. In the 4B they hold 98 of the 104 neurons of its addition circuit. The graft is the 7,343 such neurons of the 27B’s calculation group.</li>
+      <li><b>Cloud.</b> Neurons with a local intrinsic dimension of 120 or more, most common in the middle layers. The graft is 10,000 of them from the 27B’s word-problem and problem-setup groups, those with the highest attribution on GSM8K training problems.</li>
+      <li><b>Ring.</b> Attention heads that copy from the context. In each of the 27B’s 16 full-attention layers we took the head whose attribution most favours answering from the context over answering from memory. The graft is those 16 heads and no MLP neuron.</li>
+      <li><b>Gate.</b> Neurons that switch the model to recall. The graft is the 3,816 MLP neurons of the 27B with the highest attribution for closed-book answers over in-context ones.</li>
+    </ul>
+    <p>Three tests separate reading the context from recalling. Bind5 is 100 prompts that state where five people live, in invented places, and ask for one of them. Rule following is 92 prompts of six kinds: few-shot sums, copying a word list, binding, subject-verb agreement, closing brackets and continuing a series. The fact questions are 70 facts asked closed-book and 70 invented facts stated in the context and then asked. All are scored on the next token.</p>
+    <p><b>The Tube gives the most arithmetic and the Cloud the most multiplication.</b> The Tube’s 44.0% is the highest exact-arithmetic score of any graft. On the 40 products the Cloud takes the 0.8B from 15.0% to 37.5% and the Tube to 35.0%.</p>
+    <p><b>The Ring is the only graft that keeps binding.</b> Bind5 is 99.0% intact and 97.0% with the Ring (p = 0.62). Under the Tube, the Cloud and the Gate it falls to 84.0%, 85.0% and 79.0%, and under the LoRA to 86.0%. The Ring also has the lowest KL on general text of any arm, 0.0109, and the highest rule-following score, 95.7% against 94.6% intact. Its 16 heads still raise exact arithmetic to 38.0% (p = 0.014).</p>
+    <p><b>The Gate gives the most GSM8K and the least binding.</b> Its Bind5 is 79.0%, with 20 items lost and 0 gained (p = 1.9 × 10<sup>−6</sup>). The 27B has the same profile. It answers 95.7% of the closed-book questions and 74.0% of Bind5, where the 0.8B answers 50.0% and 99.0%.</p>
+    <p><b>Combined, the structures do not recover binding.</b> The composed graft holds the Tube, the Cloud, the Ring’s heads and the calculation group’s 3,816 digit-place neurons in one donor stream: 19,435 neurons and 16 heads. It scores 55.8% on GSM8K and 40.0% on exact arithmetic. On invented facts stated in the context it scores 81.4%, against 72.9% for the Tube alone (6 gained, 0 lost, p = 0.031) and 80.0% intact. Its Bind5 is 82.0%, so the Ring’s heads do not keep binding once the MLP grafts are present.</p>
+    <p><b>Rank-64 maps and pruning cost nothing we can measure.</b> An unpruned graft of 101,633 neurons and 32 heads with full-rank maps has 3.36 billion parameters. It scores 53.2% and 39.5%, against 55.8% and 40.0% for the composed graft at 1.22 billion (p = 0.28 and 1.0).</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 2.</b> Every arm of the 27B-into-0.8B round. Parameters count the host, the donor’s frozen units, the maps and the interface. Facts are closed-book / invented in context. KL is from the intact 0.8B on general text.</p>
+    <div class="scroll-x"><table><thead><tr><th>Model</th><th class="num">Parameters</th><th class="num">Trained</th><th class="num">GSM8K</th><th class="num">Exact arithmetic</th><th class="num">Bind5</th><th class="num">Rule following</th><th class="num">Facts</th><th class="num">KL</th></tr></thead><tbody><tr class="group"><td colspan="9">Unmodified models</td></tr><tr><td>Qwen3.5-0.8B<br><span class="note">the host</span></td><td class="num">0.75B</td><td class="num">0</td><td class="num">48.6%</td><td class="num">30.5%</td><td class="num">99.0%</td><td class="num">94.6%</td><td class="num">50.0% / 80.0%</td><td class="num">–</td></tr><tr><td>Qwen3.5-2B</td><td class="num">1.88B</td><td class="num">0</td><td class="num">71.4%</td><td class="num">43.0%</td><td class="num">99.0%</td><td class="num">97.8%</td><td class="num">72.9% / 88.6%</td><td class="num">–</td></tr><tr><td>Qwen3.8-27B<br><span class="note">the donor</span></td><td class="num">26.90B</td><td class="num">0</td><td class="num">96.2%</td><td class="num">57.5%</td><td class="num">74.0%</td><td class="num">89.1%</td><td class="num">95.7% / 80.0%</td><td class="num">–</td></tr><tr class="group"><td colspan="9">Grafts of the 27B beside the 0.8B</td></tr><tr><td>Tube<br><span class="note">7,343 neurons</span></td><td class="num">0.92B</td><td class="num">4.73M</td><td class="num">53.2%</td><td class="num">44.0%</td><td class="num">84.0%</td><td class="num">93.5%</td><td class="num">50.0% / 72.9%</td><td class="num">0.0155</td></tr><tr><td>Cloud<br><span class="note">10,000 neurons</span></td><td class="num">0.96B</td><td class="num">4.74M</td><td class="num">53.2%</td><td class="num">42.5%</td><td class="num">85.0%</td><td class="num">91.3%</td><td class="num">51.4% / 74.3%</td><td class="num">0.0152</td></tr><tr><td>Ring<br><span class="note">16 attention heads</span></td><td class="num">0.87B</td><td class="num">1.97M</td><td class="num">51.6%</td><td class="num">38.0%</td><td class="num">97.0%</td><td class="num">95.7%</td><td class="num">54.3% / 80.0%</td><td class="num">0.0109</td></tr><tr><td>Gate<br><span class="note">3,816 neurons</span></td><td class="num">0.87B</td><td class="num">4.73M</td><td class="num">58.0%</td><td class="num">39.0%</td><td class="num">79.0%</td><td class="num">87.0%</td><td class="num">47.1% / 78.6%</td><td class="num">0.0167</td></tr><tr><td>Whole calculation group<br><span class="note">22,025 neurons</span></td><td class="num">1.15B</td><td class="num">4.76M</td><td class="num">54.2%</td><td class="num">39.0%</td><td class="num">85.0%</td><td class="num">93.5%</td><td class="num">52.9% / 80.0%</td><td class="num">0.0159</td></tr><tr><td>Composed<br><span class="note">19,435 neurons and 16 heads</span></td><td class="num">1.22B</td><td class="num">5.54M</td><td class="num">55.8%</td><td class="num">40.0%</td><td class="num">82.0%</td><td class="num">91.3%</td><td class="num">57.1% / 81.4%</td><td class="num">0.0164</td></tr><tr><td>Composed, unpruned<br><span class="note">101,633 neurons, 32 heads, full-rank maps</span></td><td class="num">3.36B</td><td class="num">6.49M</td><td class="num">53.2%</td><td class="num">39.5%</td><td class="num">81.0%</td><td class="num">87.0%</td><td class="num">55.7% / 77.1%</td><td class="num">0.0167</td></tr><tr class="group"><td colspan="9">Controls</td></tr><tr><td>LoRA on the 0.8B<br><span class="note">no donor</span></td><td class="num">0.76B</td><td class="num">5.53M</td><td class="num">52.8%</td><td class="num">35.0%</td><td class="num">86.0%</td><td class="num">89.1%</td><td class="num">51.4% / 84.3%</td><td class="num">0.0477</td></tr><tr><td>Composed, shuffled weights</td><td class="num">1.22B</td><td class="num">5.54M</td><td class="num">56.2%</td><td class="num">40.5%</td><td class="num">89.0%</td><td class="num">92.4%</td><td class="num">52.9% / 77.1%</td><td class="num">0.0214</td></tr></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="weights">The donor’s own weights are worth 30 to 46 points in replacement, and nothing across a 5× width gap</h2>
+    <p>Each experiment has a control with the donor’s weights shuffled. Every entry of each weight matrix moves to a random position in that matrix, which keeps the distribution of the weights and destroys what was learned. The control is then trained exactly like the graft (Figure 6).</p>
+  </section>
+
+  <figure class="col" id="fig6">
+    <div class="pairs"><div class="pair"><div class="ph"><b>The 9B’s group replaces the 4B’s</b><span>width 4,096 into 2,560, GSM8K</span></div><div class="bar graft"><div class="l">Donor’s weights</div><div class="t"><i style="width:84.0%"></i></div><div class="v">84.0%</div></div><div class="bar control"><div class="l">Shuffled weights</div><div class="t"><i style="width:37.6%"></i></div><div class="v">37.6%</div></div><div class="pd">+46.4 points, p = 1.1 × 10<sup>−31</sup></div></div><div class="pair"><div class="ph"><b>The 4B’s group and heads replace the 2B’s</b><span>width 2,560 into 2,048, GSM8K</span></div><div class="bar graft"><div class="l">Donor’s weights</div><div class="t"><i style="width:43.6%"></i></div><div class="v">43.6%</div></div><div class="bar control"><div class="l">Shuffled weights</div><div class="t"><i style="width:14.0%"></i></div><div class="v">14.0%</div></div><div class="pd">+29.6 points, p = 4.2 × 10<sup>−33</sup></div></div><div class="pair"><div class="ph"><b>The 4B’s group is added to the 2B</b><span>width 2,560 into 2,048, exact arithmetic</span></div><div class="bar graft"><div class="l">Donor’s weights</div><div class="t"><i style="width:54.5%"></i></div><div class="v">54.5%</div></div><div class="bar control"><div class="l">Shuffled weights</div><div class="t"><i style="width:50.0%"></i></div><div class="v">50.0%</div></div><div class="pd">+4.5 points, p = 0.064</div></div><div class="pair"><div class="ph"><b>The 27B’s composed graft is added to the 0.8B</b><span>width 5,120 into 1,024, GSM8K</span></div><div class="bar graft"><div class="l">Donor’s weights</div><div class="t"><i style="width:55.8%"></i></div><div class="v">55.8%</div></div><div class="bar control"><div class="l">Shuffled weights</div><div class="t"><i style="width:56.2%"></i></div><div class="v">56.2%</div></div><div class="pd">−0.4 points, p = 0.93</div></div><div class="pair"><div class="ph"><b>The 27B’s composed graft is added to the 0.8B</b><span>width 5,120 into 1,024, exact arithmetic</span></div><div class="bar graft"><div class="l">Donor’s weights</div><div class="t"><i style="width:40.0%"></i></div><div class="v">40.0%</div></div><div class="bar control"><div class="l">Shuffled weights</div><div class="t"><i style="width:40.5%"></i></div><div class="v">40.5%</div></div><div class="pd">−0.5 points, p = 1.0</div></div></div>
+    <figcaption><b>Figure 6.</b> The donor’s weights against the same weights shuffled, in every setting that has the control. Width is the donor’s residual width into the host’s.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p>The weights matter most in replacement. They are worth 46.4 points of GSM8K for the 9B’s group in the 4B and 29.6 for the 4B’s group and heads in the 2B. Added beside an intact 2B, which still has its own calculation group, they are worth 4.5 points of exact arithmetic (p = 0.064).</p>
+    <p>Across the 5× width gap between the 27B and the 0.8B they are worth nothing. The composed graft scores 55.8% and 40.0%, and the same graft with shuffled weights 56.2% and 40.5% (p = 0.93 and 1.0). The shuffled graft is itself well above the intact 0.8B (p = 0.0014 on GSM8K and 0.0022 on exact arithmetic). At this gap the gain comes from frozen nonlinear units of the donor’s width, read and written through a trained interface, whatever their weights. Only the composed graft has this control, so the differences between the four structures may reflect the kind and number of units as much as what they learned. The real weights do keep the model closer to the host on general text, with a KL of 0.0164 against 0.0214.</p>
+    <p>A likely reason is rank. A linear read of a 1,024-wide stream reaches at most 1,024 of the 5,120 directions the 27B’s neurons were trained to read, one fifth of them. We have not tested this. A nonlinear read map is the next experiment.</p>
+
+    <h2 id="related">Relation to model stitching, activation patching and distillation</h2>
+    <p>Model stitching <a href="#r9">[9]</a> <a href="#r10">[10]</a> joins the first layers of one network to the last layers of another through a trained layer, and relative representations <a href="#r11">[11]</a> do it without training. A stitched model is cut once, across the whole width. A graft joins a sparse set of units spread over every layer, 1.5% of the 27B’s parameters in the composed graft, to a host that keeps all of its own.</p>
+    <p>Activation patching and interchange interventions <a href="#r12">[12]</a> <a href="#r13">[13]</a> <a href="#r14">[14]</a> copy activations from one run into another and need the source model at inference. Crosscoders <a href="#r15">[15]</a> learn features shared between models in order to compare them. Here the rest of the donor is discarded before evaluation, and the grafted model runs alone.</p>
+    <p>The LoRA control is distillation: the host is trained on the same donor solutions with the same loss and no donor weights. The grafts above are measured against it in every round.</p>
+
+    <h2 id="cost">The three rounds cost $59 of GPU time</h2>
+    <p>All runs used rented GPUs on Modal: $17.37 for the two replacement runs of the first round, $18.73 for the 4B and the 2B, and $23.11 for the 27B and the 0.8B, whose nine arms trained in parallel on nine H100s for an hour.</p>
+
+    <h2 id="limits">Limitations</h2>
+    <ul class="plain">
+      <li>All five models are Qwen models, and the 4B, the 9B and the 27B share ancestry. No graft between labs was tried.</li>
+      <li>Each arm is one training run. The p-values account for the test items and not for variation between runs, and they are not corrected for the number of grafts compared on each test.</li>
+      <li>Between the 27B and the 0.8B only the composed graft has a shuffled-weights control.</li>
+      <li>The context tests are small: 100 Bind5 items, 92 rule-following prompts and 70 facts.</li>
+      <li>Each round ran its own baselines. The 2B scores 70.0% on GSM8K and 44.0% on exact arithmetic in the second round, and 71.4% and 43.0% in the third. The first round used 250 GSM8K problems and the later rounds 500.</li>
+      <li>A grafted model was run as two networks joined in PyTorch at 16 bits. We have not written one as a single file or measured its speed.</li>
+    </ul>
+
+    <h2 id="refs">References</h2>
+    <ol class="refs"><li id="r1"><b>Encyclopedia of LLM homologies.</b> A map of the MLP neurons of 30 language models. 2026. <a href="https://qwen-neuron-map.pages.dev/">qwen-neuron-map.pages.dev</a></li><li id="r2"><b>Qwen3.5 and Qwen3.8.</b> Qwen team. <a href="https://huggingface.co/Qwen/Qwen3.5-4B">huggingface.co/Qwen/Qwen3.5-4B</a>, <a href="https://huggingface.co/Qwen/Qwen3.8-27B">huggingface.co/Qwen/Qwen3.8-27B</a></li><li id="r3"><b>McNemar’s test.</b> McNemar, Note on the sampling error of the difference between correlated proportions or percentages. Psychometrika 12, 1947.</li><li id="r4"><b>LoRA.</b> Hu et al., LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></li><li id="r5"><b>HellaSwag.</b> Zellers et al., HellaSwag: Can a Machine Really Finish Your Sentence? ACL 2019. <a href="https://arxiv.org/abs/1905.07830">arXiv:1905.07830</a></li><li id="r6"><b>GSM8K.</b> Cobbe et al., Training Verifiers to Solve Math Word Problems. 2021. <a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a></li><li id="r7"><b>Neuron surgery.</b> The replacement experiment in full, with a film. 2026. <a href="https://qwen-neuron-map.pages.dev/surgery/">qwen-neuron-map.pages.dev/surgery</a></li><li id="r8"><b>Local intrinsic dimension.</b> Levina and Bickel, Maximum Likelihood Estimation of Intrinsic Dimension. NeurIPS 2004.</li><li id="r9"><b>Model stitching.</b> Lenc and Vedaldi, Understanding Image Representations by Measuring Their Equivariance and Equivalence. CVPR 2015. <a href="https://arxiv.org/abs/1411.5908">arXiv:1411.5908</a></li><li id="r10"><b>Stitching revisited.</b> Bansal, Nakkiran and Barak, Revisiting Model Stitching to Compare Neural Representations. NeurIPS 2021. <a href="https://arxiv.org/abs/2106.07682">arXiv:2106.07682</a></li><li id="r11"><b>Relative representations.</b> Moschella et al., Relative Representations Enable Zero-Shot Latent Space Communication. ICLR 2023. <a href="https://arxiv.org/abs/2209.15430">arXiv:2209.15430</a></li><li id="r12"><b>Interchange interventions.</b> Geiger et al., Causal Abstractions of Neural Networks. NeurIPS 2021. <a href="https://arxiv.org/abs/2106.02997">arXiv:2106.02997</a></li><li id="r13"><b>Causal tracing.</b> Meng et al., Locating and Editing Factual Associations in GPT. NeurIPS 2022. <a href="https://arxiv.org/abs/2202.05262">arXiv:2202.05262</a></li><li id="r14"><b>Path patching.</b> Wang et al., Interpretability in the Wild: a Circuit for Indirect Object Identification in GPT-2 Small. ICLR 2023. <a href="https://arxiv.org/abs/2211.00593">arXiv:2211.00593</a></li><li id="r15"><b>Crosscoders.</b> Lindsey et al., Sparse Crosscoders for Cross-Layer Features and Model Diffing. Transformer Circuits Thread, 2024. <a href="https://transformer-circuits.pub/2024/crosscoders/index.html">transformer-circuits.pub/2024/crosscoders</a></li></ol>
+
+    <h2 id="citation">Citation</h2>
+    <pre class="bib">@misc{boson2026grafting,
+  title  = {Grafting Neural Primitives Across Model Scales},
+  author = {{Shin Megami Boson}},
+  year   = {2026},
+  month  = nov,
+  url    = {https://lookatmyquant.pages.dev/grafting/}
+}</pre>
+
+    <footer>Grafting Neural Primitives Across Model Scales · November 2026 · <a href="../">All papers</a></footer>
+  </section>
+</div>
+</body>
+</html>
