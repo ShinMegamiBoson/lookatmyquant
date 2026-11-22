@@ -95,6 +95,20 @@ class RequestError(Exception):
 # --------------------------------------------------------------------------- request -> template
 
 
+def declared_tool_names(tools: Any) -> set[str]:
+    """Validate OpenAI function declarations and return the names allowed in tool calls."""
+    if tools is not None and not isinstance(tools, list):
+        raise RequestError(400, "tools must be an array")
+    tool_names: set[str] = set()
+    for tool in tools or ():
+        fn = tool.get("function") if isinstance(tool, dict) and tool.get("type") == "function" else None
+        name = fn.get("name") if isinstance(fn, dict) else None
+        if not isinstance(name, str) or not name:
+            raise RequestError(400, "each tool must declare a named function")
+        tool_names.add(name)
+    return tool_names
+
+
 def normalize_messages(msgs: Any) -> list[dict]:
     """Convert OpenAI chat messages into the shape Inkling's chat template expects.
 
@@ -361,15 +375,7 @@ class Engine:
     def _apply_template(self, req: dict, *, tokenize: bool):
         messages = normalize_messages(req.get("messages"))
         tools = req.get("tools")
-        if tools is not None and not isinstance(tools, list):
-            raise RequestError(400, "tools must be an array")
-        tool_names = set()
-        for tool in tools or ():
-            fn = tool.get("function") if isinstance(tool, dict) and tool.get("type") == "function" else None
-            name = fn.get("name") if isinstance(fn, dict) else None
-            if not isinstance(name, str) or not name:
-                raise RequestError(400, "each tool must declare a named function")
-            tool_names.add(name)
+        tool_names = declared_tool_names(tools)
         effort = req.get("reasoning_effort")
         if isinstance(effort, dict):
             effort = effort.get("effort")

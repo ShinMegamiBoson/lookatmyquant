@@ -1,93 +1,152 @@
 import json
+import sys
 from contextlib import nullcontext
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock, patch
 
-from tokenizers import Tokenizer
-from tokenizers.decoders import Fuse
-from tokenizers.models import WordLevel
+from runtime_cuda.server import Engine as CudaEngine
+from runtime_mlx.server import SPECIAL, Engine as MlxEngine, RequestError
 
-from runtime_cuda.inkling_cuda.serve import END, MODEL, TEXT, THINK, TOOL, assistant_message
-from runtime_cuda.server import Engine
-
+END, MODEL, TEXT, THINK, TOOL, EOS = (SPECIAL[k] for k in ("end", "model", "text", "thinking", "tool_json", "eos"))
 TOOLS = [{"type": "function", "function": {"name": "propose_edit"}}]
 MESSAGE = {"role": "user", "content": "A question"}
+ARGS = '{"old":"a","new":"b"}'
 
 
-def endpoint(generated, *, no_thinking=False, prompt_tokens=2):
-    values = [
-        "[UNK]", MODEL, TEXT, TOOL, END, THINK, "propose_edit",
-        "I will edit the source.", '{"old":"a","new":"b"}', "let me work it out",
-        "391", "<eos>", " more",
-    ]
+def adapters(generated, *, no_thinking=False, prompt_tokens=2):
+    values = list(dict.fromkeys([*SPECIAL.values(), *generated, "<default_eos>"]))
     table = {piece: i for i, piece in enumerate(values)}
-    backend = Tokenizer(WordLevel(table, unk_token="[UNK]"))
-    backend.decoder = Fuse()
-    tokenizer = Mock(backend_tokenizer=backend)
-    tokenizer.convert_tokens_to_ids.side_effect = lambda pieces: [table[p] for p in pieces]
-    tokenizer.decode.side_effect = backend.decode
+    ids = {key: table[special] for key, special in SPECIAL.items()}
+    tokenizer = Mock()
+    tokenizer.convert_tokens_to_ids.side_effect = table.__getitem__
+    tokenizer.decode.side_effect = lambda tokens, **_: "".join(values[token] for token in tokens)
     tokenizer.encode.return_value = [0] * prompt_tokens
-    args = SimpleNamespace(model="tiny", device="cuda", context=1024, drafter=None,
+    tokenizer.apply_chat_template.side_effect = lambda _, *, tokenize, **kw: [0] * prompt_tokens if tokenize else "prompt"
+    args = SimpleNamespace(model="tiny", device="cuda", context=1024, drafter=None, prefill_chunk=0,
                            no_thinking=no_thinking, reasoning_effort="low", max_tokens=100, temp=0., top_p=1.)
-    model = SimpleNamespace(context_limit=1024)
+    model = SimpleNamespace(context_limit=1024, lm_head=SimpleNamespace(order_mx=SimpleNamespace(size=len(table))))
     with (patch("runtime_cuda.server.open_model", return_value=nullcontext((model, tokenizer))),
-          patch("runtime_cuda.server.eos_ids", return_value={table["<eos>"]})):
-        engine = Engine(args)
-    return engine, iter(table[piece] for piece in generated)
+          patch("runtime_cuda.server.eos_ids", return_value={table["<default_eos>"]})):
+        cuda = CudaEngine(args)
+    mlx = MlxEngine.__new__(MlxEngine)
+    mlx.args, mlx.tok, mlx.hf, mlx.ids, mlx.m = args, tokenizer, tokenizer, ids, model
+    mlx.drafter = mlx.prompt_cache = None
+    return cuda, mlx, [table[piece] for piece in generated]
 
 
-def test_native_tool_call_requires_completed_declared_frame():
-    for text in (
-        MODEL + "propose_edit" + TOOL + '{"old":"a","new":"b"}',
-        MODEL + "other" + TOOL + '{"old":"a","new":"b"}' + END,
+def run_cuda(engine, request, output):
+    events = []
+    with patch("runtime_cuda.server.stream_tokens", return_value=(t for t in output)) as backend:
+        usage, finish = engine.run(engine.prepare(request), lambda *ev: events.append(ev), lambda: False)
+    return events, usage, finish, backend.call_args.kwargs
+
+
+def run_mlx(engine, request, output):
+    events = []
+    mlx, mx, inkling = ModuleType("mlx"), ModuleType("mlx.core"), ModuleType("runtime_mlx.inkling")
+    mlx.core = mx
+    mx.reset_peak_memory = mx.clear_cache = lambda: None
+    mx.get_peak_memory = lambda: 0
+    inkling.stream_serial = lambda *args, **kwargs: (output for _ in range(1))
+    inkling.stream_dspark = inkling.stream_serial
+    with (patch.dict(sys.modules, {"mlx": mlx, "mlx.core": mx, "runtime_mlx.inkling": inkling}),
+          patch("runtime_mlx.server.log")):
+        usage, finish = engine._run(engine.prepare(request), lambda *ev: events.append(ev), lambda: False)
+    return events, usage, finish
+
+
+def assert_same_response(cuda, mlx, request, ids):
+    events, usage, finish, backend = run_cuda(cuda, request, ids)
+    mlx_events, mlx_usage, mlx_finish = run_mlx(mlx, request, ids)
+    def comparable(events):
+        return [(kind, data["function"] if kind == "tool" else data) for kind, data in events]
+
+    assert (comparable(events), usage, finish) == (comparable(mlx_events), mlx_usage, mlx_finish)
+    return events, usage, finish, backend
+
+
+def test_tool_calls_require_completed_declared_frame():
+    plain = [MODEL, TEXT, "Continuing normally.", END, EOS]
+    for tool_tokens, tools, tail in (
+        ([MODEL, "propose_edit", TOOL, ARGS], TOOLS, [EOS]),
+        ([MODEL, "other", TOOL, ARGS, END], TOOLS, plain),
+        ([MODEL, "propose_edit", TOOL, ARGS, END], [], plain),
+        ([MODEL, "propose_edit", TOOL, '{"name":"propose_edit","args":{}', END], TOOLS, plain),
+        ([MODEL, "propose_edit", TOOL, '{"name":"other","args":{}}', END], TOOLS, plain),
+        ([MODEL, "propose_edit", TOOL, '{"arguments":[]}', END], TOOLS, plain),
+        ([MODEL, "propose_edit", SPECIAL["tool_text"], ARGS, END], TOOLS, plain),
     ):
-        message, reason = assistant_message(text, TOOLS, "one")
-        assert "tool_calls" not in message
-        assert reason == "stop"
+        cuda, mlx, ids = adapters(tool_tokens + tail)
+        events, _, finish, _ = assert_same_response(cuda, mlx, {"messages": [MESSAGE], "tools": tools}, ids)
+        assert events == ([("content", "Continuing normally.")] if tail == plain else [])
+        assert finish == "stop"
 
 
-def test_plain_content_and_history_arguments():
-    message, _ = assistant_message(MODEL + TEXT + "All done." + END, None, "one")
-    assert message["content"] == "All done."
-    engine, _ = endpoint([], no_thinking=True)
+def test_incoming_tools_and_history_arguments():
+    cuda, mlx, _ = adapters([], no_thinking=True)
     call = {"function": {"name": "propose_edit", "arguments": '{"new":"b","old":"a"}'}}
     req = {"messages": [{"role": "assistant", "tool_calls": [call]}], "tools": TOOLS}
-    engine.render(req)
-    rendered = engine.tokenizer.apply_chat_template.call_args
-    assert rendered.args[0][0]["tool_calls"][0]["function"]["arguments"] == {"old": "a", "new": "b"}
-    assert rendered.kwargs["reasoning_effort"] == "none"
-    assert call["function"]["arguments"] == '{"new":"b","old":"a"}'
+    for engine in (cuda, mlx):
+        engine.render(req)
+        rendered = engine.tok.apply_chat_template.call_args if engine is mlx else engine.tokenizer.apply_chat_template.call_args
+        assert rendered.args[0][0]["tool_calls"][0]["function"]["arguments"] == {"old": "a", "new": "b"}
+        assert rendered.kwargs["tools"] == TOOLS
+        assert call["function"]["arguments"] == '{"new":"b","old":"a"}'
+        for bad in ([{}], [{"type": "function", "function": {"name": ""}}]):
+            try:
+                engine.prepare(dict(req, tools=bad))
+            except RequestError as e:
+                assert e.status == 400
+            else:
+                raise AssertionError("invalid tool declaration was accepted")
 
 
 def test_stream_emits_text_then_declared_tool():
-    engine, output = endpoint([MODEL, TEXT, "I will edit the source.", END, MODEL, "propose_edit",
-                               TOOL, '{"old":"a","new":"b"}', END], no_thinking=True)
-    request = {"messages": [MESSAGE], "tools": TOOLS, "max_tokens": 12}
-    events = []
-    with patch("runtime_cuda.server.stream_tokens", return_value=(t for t in output)) as run:
-        usage, finish = engine.run(engine.prepare(request), lambda *ev: events.append(ev), lambda: False)
-    assert usage == {"prompt_tokens": 2, "completion_tokens": 9, "total_tokens": 11}
-    assert finish == "tool_calls"
-    assert run.call_args.kwargs["blocked_token"] == engine.thinking
-    assert events[0] == ("content", "I will edit the source.")
-    kind, call = events[1]
-    assert kind == "tool" and call["function"]["name"] == "propose_edit"
-    assert json.loads(call["function"]["arguments"]) == {"old": "a", "new": "b"}
+    for header, body in (
+        (["propose_edit"], ARGS),
+        (["propose_edit"], '{"arguments":' + ARGS + '}'),
+        (["propose_edit"], '{"name":"propose_edit","args":' + ARGS + '}'),
+        ([], '{"name":"propose_edit","arguments":' + ARGS + '}'),
+    ):
+        generated = [MODEL, TEXT, "I will edit the source.", END, MODEL, *header, TOOL, body, END]
+        cuda, mlx, ids = adapters(generated, no_thinking=True)
+        request = {"messages": [MESSAGE], "tools": TOOLS, "max_tokens": 12}
+        events, usage, finish, backend = assert_same_response(cuda, mlx, request, ids)
+        assert usage["completion_tokens"] == len(generated)
+        assert finish == "tool_calls"
+        assert backend["blocked_token"] == cuda.ids["thinking"]
+        assert events[0] == ("content", "I will edit the source.")
+        kind, call = events[1]
+        assert kind == "tool" and call["function"]["name"] == "propose_edit"
+        assert json.loads(call["function"]["arguments"]) == {"old": "a", "new": "b"}
 
 
-def test_stream_separates_reasoning_and_text_and_stops_at_closed_answer():
-    engine, output = endpoint([MODEL, THINK, "let me work it out", END, MODEL, TEXT, "391", END, " more"])
-    events = []
-    with patch("runtime_cuda.server.stream_tokens", return_value=(t for t in output)):
-        usage, finish = engine.run(engine.prepare({"messages": [MESSAGE]}), lambda *ev: events.append(ev), lambda: False)
-    assert events == [("reasoning", "let me work it out"), ("content", "391")]
+def test_stream_separates_reasoning_and_text_until_end_of_turn():
+    generated = [MODEL, THINK, "let me work it out", END, MODEL, TEXT, "391", END, MODEL, TEXT, "Confirmed.", END]
+    cuda, mlx, ids = adapters(generated + [EOS, "ignored"])
+    events, usage, finish, _ = assert_same_response(cuda, mlx, {"messages": [MESSAGE]}, ids)
+    assert events == [("reasoning", "let me work it out"), ("content", "391"), ("content", "\n\nConfirmed.")]
     assert finish == "stop"
-    assert usage["completion_tokens"] == 8
+    assert usage["completion_tokens"] == len(generated) + 1
+
+    cuda, _, ids = adapters([MODEL, TEXT, "391", "<default_eos>"])
+    events, _, finish, _ = run_cuda(cuda, {"messages": [MESSAGE]}, ids)
+    assert events == [("content", "391")]
+    assert finish == "stop"
 
 
 def test_explicit_thinking_choice_is_independent_of_prompt_length():
-    engine, _ = endpoint([], prompt_tokens=640)
+    cuda, _, _ = adapters([], prompt_tokens=640)
     request = {"messages": [MESSAGE]}
-    assert engine.prepare(request)["blocked_token"] is None
-    assert engine.prepare({**request, "reasoning_effort": "none"})["blocked_token"] == engine.thinking
-    assert engine.prepare({**request, "reasoning_effort": "high"})["blocked_token"] is None
+    assert cuda.prepare(request)["blocked_token"] is None
+    assert cuda.prepare({**request, "reasoning_effort": "none"})["blocked_token"] == cuda.ids["thinking"]
+    assert cuda.prepare({**request, "reasoning_effort": "high"})["blocked_token"] is None
+
+
+if __name__ == "__main__":
+    test_tool_calls_require_completed_declared_frame()
+    test_incoming_tools_and_history_arguments()
+    test_stream_emits_text_then_declared_tool()
+    test_stream_separates_reasoning_and_text_until_end_of_turn()
+    test_explicit_thinking_choice_is_independent_of_prompt_length()
+    print("CUDA and MLX protocol tests passed")
