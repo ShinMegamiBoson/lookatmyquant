@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lookatmyquant"
 version = "0.3.0"
-description = "Quantization compiler and Apple Silicon MLX runtime for LookAtMyQuant models"
+description = "Quantization compiler, Apple Silicon MLX runtime and NVIDIA CUDA runtime for LookAtMyQuant models"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
@@ -25,10 +25,22 @@ compiler = [
     "pandas",
     "modal",
 ]
+# NVIDIA GPUs (runtime_cuda); Triton comes with torch. The float32 reference (runtime_cuda.inkling.reference) and its
+# tests also need transformers from git main, the first with Inkling2Loop.
+cuda = [
+    "torch==2.14.0",
+    "transformers==5.16.1",
+    "safetensors==0.8.0",
+]
 
 [project.scripts]
 lamq = "runtime_mlx.cli:main"
 
 [tool.setuptools]
 py-modules = ["compiler_artifact"]
-packages = ["runtime_mlx", "runtime_mlx.strategies", "runtime_mlx.inkling", "opgraph"]
+packages = ["runtime_mlx", "runtime_mlx.strategies", "runtime_mlx.inkling", "runtime_cuda", "runtime_cuda.inkling", "runtime_cuda.inkling_cuda", "opgraph"]
+
+[tool.setuptools.package-data]
+runtime_cuda = ["reference_prompts.json", "SYNC.md", "README.md", "LICENSE"]
+"runtime_cuda.inkling" = ["tuning/*.json", "tuning/*.md"]
+"runtime_cuda.inkling_cuda" = ["matvec.ptx"]

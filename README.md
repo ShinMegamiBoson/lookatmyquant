@@ -118,11 +118,23 @@ curl http://localhost:8080/v1/chat/completions -H 'Content-Type: application/jso
 
 `--context` (default 32768) caps prompt plus completion. A longer prompt gets llama.cpp's "exceeds the available context size" error, which agent clients take as a cue to compact. Requests have a 1 MiB JSON limit and receive HTTP 503 if the model is busy. The server binds to `127.0.0.1` by default and rejects requests with a browser `Origin` header. Set `LAMQ_API_KEY` to require `Authorization: Bearer <key>` on every endpoint. Other bind addresses require a key. Use a TLS-terminating proxy for connections over an untrusted network.
 
-For a trusted single-user loopback server, `--prompt-cache N` keeps up to N prefilled KV snapshots (0 by default). An extension to an earlier prompt reuses its matching snapshot, and an identical retry prefills one token. The server disables reuse when requiring a bearer key or binding to a network address. In Python, pass `prompt_cache=PromptCache()` from `runtime_mlx.inkling` to `stream_dspark` or `stream_serial`.
+For a trusted single-user MLX loopback server, `--prompt-cache N` keeps up to N prefilled KV snapshots (0 by default). An extension to an earlier prompt reuses its matching snapshot, and an identical retry prefills one token. The server disables reuse when requiring a bearer key or binding to a network address. In Python, pass `prompt_cache=PromptCache()` from `runtime_mlx.inkling` to `stream_dspark` or `stream_serial`.
 
 Use `POST /apply-template` to render a chat prompt or `POST /tokenize` with a `content` string to return token IDs.
 
 Inkling prefill uses one pass when the prompt fits the estimated MLX memory budget and chunks long prompts under memory pressure. Set `--prefill-chunk N` in `lamq generate`, `lamq chat`, or `lamq serve` to choose a chunk size, or set it to 0 for one pass.
+
+## Run Inkling-2-Mini on NVIDIA GPUs
+
+Install the CUDA extra on a machine with a supported NVIDIA GPU. The public model ID and chat template are shared with the Apple Silicon runtime.
+
+```sh
+pip install -e ".[cuda]"
+lamq generate shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB --device cuda -p "What is 17 times 23?"
+lamq serve shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB --device cuda
+```
+
+Triton handles ordinary generation and NVFP4 experts. The native CUDA engine supports DSpark on trellis packs. See the [CUDA runtime](runtime_cuda/README.md) for model support, revision selection, and benchmark commands.
 
 ## Run the compiler on SmolLM2-360M in three commands
 
@@ -279,6 +291,8 @@ python pack_drafter.py path/to/drafter path/to/drafter-4bit
 | `lamq_export.py`, `runtime_mlx/` | The export format and the Apple Silicon runtime |
 | `runtime_mlx/fast_q35.py`, `block_q35.py`, `block_argmax_q35.py`, `pack_dense.py`, `modal_pack.py` | The runtime for packed Qwen3.5-4B and Qwen3.8-27B files: one token at a time, a block of 8 or 16 tokens in one pass, and the packer |
 | `runtime_mlx/inkling/`, `runtime_mlx/test_inkling.py` | Apple Silicon MLX runtime, 4 KB SRAM `ht2`/`ht3` Metal kernels, and 4-bit DSpark block-8 speculative drafter for packed Inkling-2-Mini models |
+| `runtime_cuda/`, `runtime_cuda/inkling/` | The CUDA runtime for packed Inkling-2-Mini models: Triton kernels, the model, per-GPU tuning, a float32 transformers reference, and the checks against it and the original |
+| `runtime_cuda/tune.py`, `remote_tune.sh`, `tuning_coverage.py`, `upstream_sync.py` | Measuring a GPU's kernel settings, on this machine or a rented one, what each card gets, and what changed in `runtime_mlx` since the last sync |
 | `runtime_mlx/drafter_q35.py`, `draft_vocab_q35.py`, `convert_dspine.py`, `check_drafter.py`, `bench_drafted.py`, `drafter/`, `modal_drafter.py`, `pack_drafter.py` | Speculative decoding with a DSpine drafter, Tencent DSpine conversion, drafter training, and the drafter stored at 4 bits |
 | `opgraph/` | The grammar: a model as a tensor network, and the rewrites and codes that act on it |
 | `run_completeness.py`, `make_report.py` | The check that nine published methods are reproduced exactly |
@@ -312,6 +326,8 @@ python tests/test_reallocation.py
 `runtime_mlx/test_fast_q35.py` and `runtime_mlx/test_block_q35.py` check the Qwen3.5 kernels against NumPy products of independently unpacked codes, with no model. When `LAMQ_Q35_PACKED` names a packed file, the second also checks a block of tokens against decoding them one at a time. When `LAMQ_Q38_PACKED` names the packed Qwen3.8-27B file, it runs the same checks on a model whose output head is stored apart from its embedding.
 
 `runtime_mlx/test_inkling.py` checks the Inkling-2-Mini runtime on a miniature packed model it builds, including chunked prefill and `PromptCache` reuse against a fresh prefill. `runtime_mlx/test_server.py` checks `lamq serve`'s output parsing, message conversion and HTTP layer, with no model.
+
+`python -m pytest runtime_cuda/` exercises the CUDA runtimes. GPU kernel checks use synthetic inputs. Checkpoint comparisons also require the packed weights and their reference outputs.
 
 ## What this repository leaves out
 
