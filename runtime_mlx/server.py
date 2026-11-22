@@ -34,6 +34,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -771,6 +772,7 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
 
 def add_serve_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("model", help="packed Inkling-2-Mini directory or Hugging Face repo ID")
+    p.add_argument("--device", default="mlx", help="mlx (Apple Silicon), cuda, or cuda:N")
     p.add_argument("--drafter", default=None, help="DSpark drafter directory, .safetensors file or Hugging Face repo ID")
     p.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1, network listening requires LAMQ_API_KEY)")
     p.add_argument("--port", type=int, default=8080)
@@ -794,23 +796,33 @@ def serve(args: argparse.Namespace) -> int:
     if not (0 <= args.prompt_cache <= 8 and args.context >= 2 and args.max_tokens > 0 and args.prefill_chunk >= -1
             and 0 <= args.temp <= 2 and 0 <= args.top_p <= 1):
         raise SystemExit("invalid server limits or sampling defaults")
+    if args.device == "mlx":
+        engine_class = Engine
+    elif args.device == "cuda" or (args.device.startswith("cuda:") and args.device[5:].isdecimal()):
+        from runtime_cuda.server import Engine as CudaEngine
+
+        if args.prefill_chunk != -1 or args.prompt_cache:
+            raise SystemExit("--prefill-chunk and --prompt-cache are MLX options")
+        if args.top_p != 1.0:
+            raise SystemExit("CUDA serving currently requires --top-p 1")
+        engine_class = CudaEngine
+    else:
+        raise SystemExit("--device must be mlx, cuda, or cuda:N")
     if not loopback or api_key:
         args.prompt_cache = 0
-    engine = Engine(args)
-    if not args.no_warmup:
-        engine.warmup()
     model_id = args.model_id or str(args.model).rstrip("/").split("/")[-1]
-    srv = BoundedHTTPServer((args.host, args.port), make_handler(engine, model_id, api_key=api_key, loopback=loopback))
-    srv.daemon_threads = True
-    address = f"[{args.host}]" if ":" in args.host else args.host
-    log(f"serving {model_id!r} on http://{address}:{srv.server_port}/v1 (context {args.context}, "
-        f"reasoning_effort {args.reasoning_effort}, temp {args.temp})")
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        srv.server_close()
+    with closing(engine_class(args)) as engine:
+        handler = make_handler(engine, model_id, api_key=api_key, loopback=loopback)
+        with BoundedHTTPServer((args.host, args.port), handler) as srv:
+            if not args.no_warmup:
+                engine.warmup()
+            address = f"[{args.host}]" if ":" in args.host else args.host
+            log(f"serving {model_id!r} on http://{address}:{srv.server_port}/v1 (context {args.context}, "
+                f"reasoning_effort {args.reasoning_effort}, temp {args.temp})")
+            try:
+                srv.serve_forever()
+            except KeyboardInterrupt:
+                pass
     return 0
 
 
