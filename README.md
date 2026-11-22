@@ -291,8 +291,8 @@ python pack_drafter.py path/to/drafter path/to/drafter-4bit
 | `lamq_export.py`, `runtime_mlx/` | The export format and the Apple Silicon runtime |
 | `runtime_mlx/fast_q35.py`, `block_q35.py`, `block_argmax_q35.py`, `pack_dense.py`, `modal_pack.py` | The runtime for packed Qwen3.5-4B and Qwen3.8-27B files: one token at a time, a block of 8 or 16 tokens in one pass, and the packer |
 | `runtime_mlx/inkling/`, `runtime_mlx/test_inkling.py` | Apple Silicon MLX runtime, 4 KB SRAM `ht2`/`ht3` Metal kernels, and 4-bit DSpark block-8 speculative drafter for packed Inkling-2-Mini models |
-| `runtime_cuda/`, `runtime_cuda/inkling/` | The CUDA runtime for packed Inkling-2-Mini models: Triton kernels, the model, per-GPU tuning, a float32 transformers reference, and the checks against it and the original |
-| `runtime_cuda/tune.py`, `remote_tune.sh`, `tuning_coverage.py`, `upstream_sync.py` | Measuring a GPU's kernel settings, on this machine or a rented one, what each card gets, and what changed in `runtime_mlx` since the last sync |
+| `runtime_cuda/inkling/`, `runtime_cuda/inkling_cuda/` | Triton and native CUDA engines for packed Inkling-2-Mini models, with a float32 Transformers reference for comparison |
+| `runtime_cuda/tune.py`, `runtime_cuda/tuning_coverage.py`, `runtime_cuda/upstream_sync.py` | Measure and inspect per-GPU kernel settings and compare CUDA source coverage with the MLX runtime |
 | `runtime_mlx/drafter_q35.py`, `draft_vocab_q35.py`, `convert_dspine.py`, `check_drafter.py`, `bench_drafted.py`, `drafter/`, `modal_drafter.py`, `pack_drafter.py` | Speculative decoding with a DSpine drafter, Tencent DSpine conversion, drafter training, and the drafter stored at 4 bits |
 | `opgraph/` | The grammar: a model as a tensor network, and the rewrites and codes that act on it |
 | `run_completeness.py`, `make_report.py` | The check that nine published methods are reproduced exactly |
