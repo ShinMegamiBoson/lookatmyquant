@@ -54,6 +54,7 @@ section.wide { margin-top: 26px; margin-bottom: 30px; }
 header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
 h1 { font: 600 clamp(2rem, 5.4vw, 3.1rem)/1.08 var(--serif); letter-spacing: -0.015em; margin: 0; text-wrap: balance; max-width: 24ch; }
 .subtitle { font: 400 clamp(1.1rem, 2.5vw, 1.4rem)/1.34 var(--serif); color: var(--muted); margin: 0; max-width: 48ch; text-wrap: balance; }
+.lead { font: 400 1.2rem/1.5 var(--serif); margin-bottom: 30px; text-wrap: pretty; }
 .authors { font: 500 1.05rem/1.4 var(--sans); margin: 6px 0 0; }
 .meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
 .links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
@@ -154,17 +155,19 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p class="authors">Shin Megami Boson</p>
     <p class="meta">November 2026</p>
     <nav class="links" aria-label="Sections">
-      <a href="#home">The circuit</a>
+      <a href="#home">Calculation group</a>
       <a href="#method">Method</a>
-      <a href="#sibling">A sibling</a>
-      <a href="#stranger">A stranger</a>
-      <a href="#add">Added</a>
-      <a href="#far">36× apart</a>
-      <a href="#edge">The edge</a>
+      <a href="#sibling">9B into 4B</a>
+      <a href="#stranger">4B into 2B</a>
+      <a href="#add">4B beside 2B</a>
+      <a href="#far">27B beside 0.8B</a>
+      <a href="#edge">What transfers</a>
       <a href="#cost">Cost</a>
       <a class="back" href="../">All papers</a>
     </nav>
   </header>
+
+  <p class="col lead">Replacement restores only part of what a lesion removes, and it is where the donor’s weights are shown to matter. Added beside an intact model, the same neurons raise its arithmetic to 124% of baseline and 102% of the donor, but shuffled weights reach 114%, and across a 5× difference in width they do as well as the real ones. So the evidence that a circuit transfers comes from replacement, and most of what adding gains is added capacity.</p>
 
   <figure class="col" id="fig1">
     <div class="legend">
@@ -173,7 +176,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <span><i class="ln"></i>Baseline: the intact host</span>
       <span><i class="ln dot"></i>The donor’s own score</span>
     </div>
-    <div class="pairs"><div class="pair"><div class="ph"><b>A sibling’s group replaces the 4B’s own</b><span>Qwen3.5-9B into 4B, GSM8K</span></div><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">of baseline</div><div class="v">of donor</div></div><div class="bar graft" title="84.0%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:52.68%"><i style="width:46.88%"></i></div><div class="v">94%</div><div class="v">89%</div></div><div class="bar control" title="37.6%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:52.68%"><i style="width:20.98%"></i></div><div class="v">42%</div><div class="v">40%</div></div><div class="pd">Donor’s weights against shuffled: +52 points of baseline, p = 1.1 × 10<sup>−31</sup></div></div><div class="pair"><div class="ph"><b>A separately trained model’s group and heads replace the 2B’s own</b><span>Qwen3.5-4B into 2B, GSM8K</span></div><div class="bar graft" title="43.6%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:63.14%"><i style="width:31.14%"></i></div><div class="v">62%</div><div class="v">49%</div></div><div class="bar control" title="14.0%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:63.14%"><i style="width:10.00%"></i></div><div class="v">20%</div><div class="v">16%</div></div><div class="pd">Donor’s weights against shuffled: +42 points of baseline, p = 4.2 × 10<sup>−33</sup></div></div><div class="pair"><div class="ph"><b>The 4B’s group is added beside an intact 2B</b><span>Qwen3.5-4B into 2B, exact arithmetic</span></div><div class="bar graft" title="54.5%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:60.80%"><i style="width:61.93%"></i></div><div class="v">124%</div><div class="v">102%</div></div><div class="bar control" title="50.0%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:60.80%"><i style="width:56.82%"></i></div><div class="v">114%</div><div class="v">93%</div></div><div class="pd">Donor’s weights against shuffled: +10 points of baseline, p = 0.064</div></div><div class="pair"><div class="ph"><b>The 27B’s composed graft is added beside an intact 0.8B</b><span>Qwen3.8-27B into Qwen3.5-0.8B, exact arithmetic</span></div><div class="bar graft" title="40.0%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:94.26%"><i style="width:65.57%"></i></div><div class="v">131%</div><div class="v">70%</div></div><div class="bar control" title="40.5%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:94.26%"><i style="width:66.39%"></i></div><div class="v">133%</div><div class="v">70%</div></div><div class="pd">Donor’s weights against shuffled: −2 points of baseline, p = 1.0</div></div></div>
+    <div class="pairs"><div class="pair"><div class="ph"><b>Qwen3.5-9B’s group replaces Qwen3.5-4B’s own</b><span>the two share ancestry, GSM8K</span></div><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">of baseline</div><div class="v">of donor</div></div><div class="bar graft" title="84.0%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:52.68%"><i style="width:46.88%"></i></div><div class="v">94%</div><div class="v">89%</div></div><div class="bar control" title="37.6%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:52.68%"><i style="width:20.98%"></i></div><div class="v">42%</div><div class="v">40%</div></div><div class="pd">Donor’s weights against shuffled: +52 points of baseline, p = 1.1 × 10<sup>−31</sup></div></div><div class="pair"><div class="ph"><b>Qwen3.5-4B’s group and heads replace Qwen3.5-2B’s own</b><span>the two were trained separately, GSM8K</span></div><div class="bar graft" title="43.6%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:63.14%"><i style="width:31.14%"></i></div><div class="v">62%</div><div class="v">49%</div></div><div class="bar control" title="14.0%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:63.14%"><i style="width:10.00%"></i></div><div class="v">20%</div><div class="v">16%</div></div><div class="pd">Donor’s weights against shuffled: +42 points of baseline, p = 4.2 × 10<sup>−33</sup></div></div><div class="pair"><div class="ph"><b>Qwen3.5-4B’s group is added beside an intact Qwen3.5-2B</b><span>exact arithmetic</span></div><div class="bar graft" title="54.5%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:60.80%"><i style="width:61.93%"></i></div><div class="v">124%</div><div class="v">102%</div></div><div class="bar control" title="50.0%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:60.80%"><i style="width:56.82%"></i></div><div class="v">114%</div><div class="v">93%</div></div><div class="pd">Donor’s weights against shuffled: +10 points of baseline, p = 0.064</div></div><div class="pair"><div class="ph"><b>Qwen3.8-27B’s composed graft is added beside an intact Qwen3.5-0.8B</b><span>exact arithmetic</span></div><div class="bar graft" title="40.0%"><div class="l">Donor’s weights</div><div class="t" style="--base:50.00%;--donor:94.26%"><i style="width:65.57%"></i></div><div class="v">131%</div><div class="v">70%</div></div><div class="bar control" title="40.5%"><div class="l">Shuffled weights</div><div class="t" style="--base:50.00%;--donor:94.26%"><i style="width:66.39%"></i></div><div class="v">133%</div><div class="v">70%</div></div><div class="pd">Donor’s weights against shuffled: −2 points of baseline, p = 1.0</div></div></div>
     <figcaption><b>Figure 1.</b> How much of the circuit arrives at each step. Each bar shows the grafted host’s score as a percentage of the intact host (the baseline, solid line) alongside its percentage of the donor (dotted line). Steps 1 and 2 replace a lesioned circuit—step 2 pairs the neurons-and-heads graft with its matched shuffled control, while neurons alone reach 68% of baseline—and steps 3 and 4 add to an intact host.</figcaption>
   </figure>
 
@@ -211,7 +214,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   <text x="8" y="243" class="dl b">Donor stream, private</text>
   <text x="8" y="262" class="dl m">what the donor’s units write for one another</text>
 </svg></div>
-    <figcaption><b>Figure 2.</b> One grafted layer in Steps 2–4. Gray components are frozen; blue adapters are trained. Between sibling models of matching depth (Step 1), donor neurons read from and write directly to the host stream with the read map frozen; when depth and training history diverge (Steps 2–4), a persistent donor stream carries intermediate values from donor layer to donor layer without round-tripping through the host.</figcaption>
+    <figcaption><b>Figure 2.</b> One grafted layer in Steps 2–4. Gray components are frozen; blue adapters are trained. Between the 9B and the 4B, which share ancestry and depth (Step 1), donor neurons read from and write directly to the host stream with the read map frozen; when depth and training history diverge (Steps 2–4), a persistent donor stream carries intermediate values from donor layer to donor layer without round-tripping through the host.</figcaption>
   </figure>
 
   <section class="col">
@@ -224,7 +227,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <ul class="plain">
       <li><b>Read.</b> <i>A</i><sub>0</sub> is a frozen ridge regression from the host’s residual stream to the donor’s, fitted on paired activations over shared text. <i>U</i><sub>A</sub><i>V</i><sub>A</sub><sup>T</sup> is a low-rank trained correction (omitted in Step 1, rank 64 in Steps 2–4).</li>
       <li><b>Run.</b> <i>f</i><sub>D</sub> runs the donor’s frozen MLP neurons or attention heads. MLP neurons carry a trained gain α and soft threshold τ around their calibration mean; attention heads carry no internal trained parameters.</li>
-      <li><b>Keep the donor’s wiring.</b> Between sibling models in Step 1, donor neurons read and write directly in <i>x</i><sub>H</sub>. From Step 2 onward, donor outputs accumulate in the persistent donor-width stream <i>s</i><sub>D</sub>, preserving layer-to-layer donor connections in donor coordinates.</li>
+      <li><b>Keep the donor’s wiring.</b> Between the 9B and the 4B in Step 1, donor neurons read and write directly in <i>x</i><sub>H</sub>. From Step 2 onward, donor outputs accumulate in the persistent donor-width stream <i>s</i><sub>D</sub>, preserving layer-to-layer donor connections in donor coordinates.</li>
       <li><b>Write.</b> <i>B</i><sub>0</sub> is the fitted ridge map back to the host and <i>U</i><sub>B</sub><i>V</i><sub>B</sub><sup>T</sup> its rank-64 trained correction. When a graft is added beside an intact host, the gate β starts at zero so step-0 logits equal the intact host’s exactly.</li>
       <li><b>Train.</b> An equal-weight KL loss matches the donor’s next-token distribution on correct donor math solutions and the intact host’s distribution on general text. Gradients flow only into the interface, verified afterwards by a checksum on every host parameter.</li>
     </ul>
@@ -237,7 +240,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </section>
 
   <section class="col">
-    <h2 id="sibling">A sibling’s group in its place brings the 4B back to 94% of baseline, and shuffled weights to 42%</h2>
+    <h2 id="sibling">Qwen3.5-9B’s calculation group, in place of the 4B’s own, brings the 4B back to 94% of baseline, and shuffled weights to 42%</h2>
     <p>Qwen3.5-9B and the 4B share pretraining lineage and layer count (32 layers): each neuron in one has its closest co-firing match at the same depth in the other <a href="#r1">[1]</a>. Dropping the 9B’s 8,713 calculation neurons into the lesioned 4B through the fitted ridge maps alone—before any gradient step—recovers GSM8K to 60% of baseline (53.6% vs 89.6%). Training 445,490 write-side parameters (0.011% of the 4B, read map frozen) brings GSM8K to 94% of baseline (84.0%), which is 89% of the 9B donor’s 94.4%. Exact arithmetic returns to 79% of baseline (41.0% vs 52.0%) and 69% of the donor’s 59.0% (Figure 3).</p>
     <p>With shuffled donor weights and twice the trained parameters (both read and write corrections trained), the same setup reaches 42% of baseline (37.6%): the real donor weights solve 119 problems the shuffled control misses against 3 lost (McNemar p = 1.1 × 10<sup>−31</sup> <a href="#r5">[5]</a>). Grafting an equal count of the 9B’s prose neurons reaches 38% of baseline (33.6%). Neuron surgery <a href="#r6">[6]</a> documents the full ablation ladder for this step.</p>
   </section>
@@ -258,7 +261,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </figure>
 
   <section class="col">
-    <h2 id="stranger">A separately trained model’s group brings the 2B back to 68% of baseline, which is 54% of the donor</h2>
+    <h2 id="stranger">Qwen3.5-4B’s group, in place of the separately trained 2B’s own, brings the 2B back to 68% of baseline, which is 54% of the donor</h2>
     <p>Qwen3.5-2B (24 layers, width 2,048) was trained separately from the 4B (32 layers, width 2,560). Lesioning its 3,948 calculation neurons drops GSM8K to 1% of baseline (1.0% vs 70.0%). When the 4B’s 6,857 calculation neurons read and write directly through the 2B’s residual stream at each layer, exact arithmetic reaches 28% of baseline (12.5% vs 44.0%). Introducing the persistent donor stream <i>s</i><sub>D</sub> doubles exact arithmetic to 57% of baseline (25.0%, 47% of the 4B’s 53.5%; +30 gained vs 5 lost, p = 2.2 × 10<sup>−5</sup>) and lifts GSM8K to 68% of baseline (47.6%, 54% of the 4B’s 88.4%; Figure 4).</p>
     <p>To test whether upstream routing should move with the MLP circuit, we also lesioned the 2B’s 18 most math-selective attention and Gated DeltaNet heads and grafted 32 homologous heads from the 4B into the donor stream. Math next-token KL to the 4B fell 35% (0.0335 to 0.0217), GSM8K held at 62% of baseline (43.6%, p = 0.10 vs neurons alone)—42 points of baseline above its matched shuffled control at 20% (14.0%, p = 4.2 × 10<sup>−33</sup>)—and general-text KL from the 2B rose 1.7× (0.0388 to 0.0670).</p>
     <p>Because the 2B has only 8 query heads per full-attention layer, heads that route math tokens also carry general text: lesioning those 18 heads before grafting more than doubles general-text KL (0.092 to 0.227). Narrow hosts cannot spare attention heads, so Steps 3 and 4 leave the host untouched and add donor structures beside it.</p>
@@ -273,7 +276,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </figure>
 
   <section class="col">
-    <h2 id="add">Added beside an intact 2B, the 4B’s group lifts exact arithmetic to 124% of baseline and 102% of the donor</h2>
+    <h2 id="add">Added beside an intact 2B, the 4B’s group lifts exact arithmetic to 124% of baseline and 102% of the donor, and shuffled weights lift it to 114%</h2>
     <p>Running the 4B’s 6,857 calculation neurons beside an intact 2B starts with the write gate β at zero, so at step 0 the network is identically the 2B. Training updates 2,700,722 interface parameters (0.14% of the 2B) over 1,500 steps.</p>
     <p>Exact arithmetic rises from 44.0% to 54.5%—124% of baseline (+39 gained vs 18 lost, p = 0.0075) and 102% of the 4B donor’s 53.5% (p = 0.87 against the donor; Figure 5).</p>
     <p>With the 2B’s own calculation group still intact, the shuffled graft reaches 114% of baseline (50.0%) and a parameter-matched LoRA <a href="#r7">[7]</a> on the 2B’s MLPs (2,752,512 trained parameters, no donor) reaches 113% (49.5%). Neither control beats the intact 2B significantly (p = 0.14 and 0.18), while the real graft’s 10-point lead over shuffled (+14 vs 5, p = 0.064) is narrower than under lesioning because the host’s native circuit already handles the easier items: only the real donor weights clear both the intact 2B and the 4B donor.</p>
@@ -289,7 +292,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </figure>
 
   <section class="col">
-    <h2 id="far">Across a 36× size gap the 0.8B still gains, to 144% of its baseline arithmetic, and shuffled weights gain as much</h2>
+    <h2 id="far">Across a 36× size gap the 27B’s composed graft takes the 0.8B to 131% of its baseline arithmetic, and the same graft with shuffled weights to 133%</h2>
     <p>Qwen3.8-27B has 26.90B text parameters, 64 layers and residual width 5,120; Qwen3.5-0.8B has 0.75B parameters, 24 layers and width 1,024. Donor layer <i>m</i> runs inside host layer round(23<i>m</i> / 63), while the persistent donor stream stays 5,120 wide so the 27B’s units never pass intermediate states through the 1,024-wide host.</p>
     <p>Dense read and write maps between widths 5,120 and 1,024 across all 64 donor layers would require 839M parameters—more than the 0.8B host itself. We compress each fitted ridge map to rank 64 by weighting output rows by empirical root-Fisher sensitivity and input columns by activation standard deviation, preserving the directions each side uses most while cutting map storage 13.3× to 63M frozen parameters. Every arm trains for 1,600 steps on the same 1,291 packed windows of verified 27B math solutions and shared general text, updating 1.97M to 5.54M interface parameters (0.26% to 0.74% of the 0.8B). Zero evaluation items appear in training.</p>
     <p>We grafted the 27B’s calculation group whole, decomposed into functional structures, and recombined (Figure 6, Table 2). On exact arithmetic (0.8B baseline 30.5%, 27B donor 57.5%), the best graft is <b>Tube</b> (7,343 low-dimensional calculation neurons): it reaches 144% of baseline (44.0%, +33 vs 6, p = 1.4 × 10<sup>−5</sup>) and 77% of the 27B. It beats a host-only LoRA with more trained parameters (115% of baseline, 35.0%, p = 0.0029; LoRA vs baseline p = 0.19), edges the unfactored 22,025-neuron whole calculation group at one-third the neuron count (128% of baseline, 39.0%, p = 0.064), and matches standalone Qwen3.5-2B (141% of baseline, 43.0%, p = 0.89) at half its parameter count (0.92B vs 1.88B). On GSM8K (baseline 48.6%, donor 96.2%), <b>Gate</b> leads every arm at 119% of baseline (58.0%, p = 1.5 × 10<sup>−4</sup>) and 60% of the donor, beating LoRA (109%, 52.8%, p = 0.037) as well as Tube, Cloud and Ring (p ≤ 0.028).</p>
@@ -336,7 +339,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </section>
 
   <section class="col">
-    <h2 id="edge">The donor’s weights are worth 52 points of baseline between siblings, 42 between separately trained models, and nothing across a 5× difference in width</h2>
+    <h2 id="edge">The donor’s weights are worth 52 points of baseline between the 9B and the 4B, 42 between the 4B and the 2B, and nothing between the 27B and the 0.8B, whose widths differ by 5×</h2>
     <p>Figure 1 places all four steps on one scale. Replacing a lesioned circuit, the donor’s learned weights add 52 points of baseline over shuffled weights between the 9B and the 4B (1.6× in width) and 42 points between the separately trained 4B and 2B (1.25× in width). Added beside an intact 2B that keeps its own circuit, they add 10 points (p = 0.064) and carry arithmetic past the 4B donor itself (102% of donor). Across the 5× width gap from the 27B to the 0.8B, they add nothing over shuffled weights.</p>
     <p>A calculation circuit is therefore a portable module across models of comparable residual width, and linear portability breaks down between 1.6× and 5× width ratios even as wide frozen units continue to supply useful nonlinear capacity. Linear algebra sets a hard ceiling on what the read map can see: projecting from a 1,024-dimensional host stream into a 5,120-dimensional donor space spans a subspace of rank at most 1,024—one fifth of the donor’s directions—leaving every donor feature orthogonal to that subspace unreachable without changing weights. Replacing the linear read map with a small nonlinear encoder across the same 5× gap directly tests whether the barrier is linear rank.</p>
 
