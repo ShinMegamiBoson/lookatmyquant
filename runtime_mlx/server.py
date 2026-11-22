@@ -33,8 +33,10 @@ import threading
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 MAX_REQUEST_BYTES = 1 << 20
 MAX_CONNECTIONS = 8
@@ -298,6 +300,19 @@ class Engine:
     """Loads the model once and generates for one request at a time."""
 
     def __init__(self, args: argparse.Namespace):
+        # MLX arrays carry stream handles that are local to their creating thread.
+        # Load and execute on one persistent thread across all HTTP connections.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lamq-mlx")
+        try:
+            self._executor.submit(self._load, args).result()
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        self._executor.shutdown(wait=True, cancel_futures=True)
+
+    def _load(self, args: argparse.Namespace) -> None:
         import mlx.core as mx
 
         from .inkling import PromptCache
@@ -322,34 +337,49 @@ class Engine:
                 raise SystemExit(f"tokenizer has no {s}; is this an Inkling-2 model?")
             self.ids[k] = i
         self.prompt_cache = PromptCache(max_entries=args.prompt_cache) if args.prompt_cache else None
-        self.lock = threading.Lock()
         log(f"loaded {args.model} ({'with drafter' if self.drafter is not None else 'serial'}) in "
             f"{time.perf_counter() - t:.1f}s, {mx.get_active_memory() / 1e9:.2f} GB")
 
-    def prepare(self, req: dict) -> dict:
-        """Validate and tokenize a request (raises RequestError before any response bytes are sent)."""
+    def _apply_template(self, req: dict, *, tokenize: bool):
         messages = normalize_messages(req.get("messages"))
-        tools = req.get("tools") or None
+        tools = req.get("tools")
         if tools is not None and not isinstance(tools, list):
             raise RequestError(400, "tools must be an array")
         effort = req.get("reasoning_effort")
         if isinstance(effort, dict):
             effort = effort.get("effort")
-        if isinstance(effort, str) and effort.strip().lower() in EFFORTS:
+        if isinstance(effort, str):
             effort = effort.strip().lower()
-        elif not isinstance(effort, (int, float)) or isinstance(effort, bool):
-            effort = self.args.reasoning_effort
-        kw: dict[str, Any] = dict(tokenize=True, add_generation_prompt=True, reasoning_effort=effort)
+            if effort not in EFFORTS:
+                raise RequestError(400, "unknown reasoning_effort")
+        else:
+            effort = _number({"reasoning_effort": effort}, "reasoning_effort", self.args.reasoning_effort, low=0, high=0.99)
+        add_prompt = req.get("add_generation_prompt", True)
+        if type(add_prompt) is not bool:
+            raise RequestError(400, "add_generation_prompt must be a boolean")
+        kw: dict[str, Any] = dict(tokenize=tokenize, add_generation_prompt=add_prompt, reasoning_effort=effort)
         if tools:
             kw["tools"] = tools
         try:
-            enc = self.tok.apply_chat_template(messages, **kw)
+            return self.tok.apply_chat_template(messages, **kw), effort
         except Exception as e:  # jinja raise_exception() and friends
             raise RequestError(400, "chat template could not render messages and tools") from e
+
+    def render(self, req: dict) -> str:
+        return self._apply_template(req, tokenize=False)[0]
+
+    def tokenize(self, content: str, add_special: bool = False) -> list[int]:
+        return self.tok.encode(content, add_special_tokens=add_special)
+
+    def prepare(self, req: dict) -> dict:
+        """Validate and tokenize a request before sending any response bytes."""
+        enc, effort = self._apply_template(dict(req, add_generation_prompt=True), tokenize=True)
         if isinstance(enc, dict) or hasattr(enc, "input_ids"):
             enc = enc["input_ids"]
         ids = [int(x) for x in enc]
         ctx = self.args.context
+        if not ids:
+            raise RequestError(400, "chat template produced no tokens")
         if len(ids) >= ctx:
             raise RequestError(400, f"the request exceeds the available context size, try increasing it "
                                     f"(prompt {len(ids)} tokens, context {ctx})", "exceed_context_size_error")
@@ -362,58 +392,60 @@ class Engine:
             "max_tokens": min(max_tokens, ctx - len(ids)),
             "temp": _number(req, "temperature", self.args.temp, low=0, high=2),
             "top_p": _number(req, "top_p", self.args.top_p, low=0, high=1),
-            "top_k": _number(req, "top_k", 0, low=0, integer=True),
+            "top_k": min(_number(req, "top_k", 0, low=0, integer=True), self.m.lm_head.order_mx.size),
             "use_cache": req.get("cache_prompt", True) is not False,
         }
 
     def run(self, job: dict, emit: Callable[[str, Any], None], gone: Callable[[], bool]) -> tuple[dict, str]:
         """Generate for a prepared request, sending parsed events to `emit`. Returns `(usage, finish_reason)`."""
+        return self._executor.submit(self._run, job, emit, gone).result()
+
+    def _run(self, job: dict, emit: Callable[[str, Any], None], gone: Callable[[], bool]) -> tuple[dict, str]:
         import mlx.core as mx
 
         from .inkling import stream_dspark, stream_serial
 
         ids = job["ids"]
-        with self.lock:
-            if gone():
-                raise ClientGone()
-            stats: dict[str, Any] = {}
-            common = dict(max_tokens=job["max_tokens"], eos_ids={self.ids["eos"]}, temp=job["temp"], top_p=job["top_p"],
-                          top_k=job["top_k"], stats_out=stats, prefill_chunk=self.args.prefill_chunk,
-                          prompt_cache=self.prompt_cache if job["use_cache"] else None)
-            mx.reset_peak_memory()
-            t0 = time.perf_counter()
-            if self.drafter is not None:
-                gen = stream_dspark(self.m, self.drafter, ids, **common)
-            else:
-                gen = stream_serial(self.m, ids, **common)
-            parser = OutputParser(self.hf, self.ids)
-            n_gen, finish, last_check = 0, None, time.perf_counter()
-            try:
-                for chunk in gen:
-                    for t in chunk:
-                        n_gen += 1
-                        for ev in parser.feed(int(t)):
-                            emit(*ev)
-                        if parser.done or n_gen >= job["max_tokens"]:
-                            break
+        if gone():
+            raise ClientGone()
+        stats: dict[str, Any] = {}
+        common = dict(max_tokens=job["max_tokens"], eos_ids={self.ids["eos"]}, temp=job["temp"], top_p=job["top_p"],
+                      top_k=job["top_k"], stats_out=stats, prefill_chunk=self.args.prefill_chunk,
+                      prompt_cache=self.prompt_cache if job["use_cache"] else None)
+        mx.reset_peak_memory()
+        t0 = time.perf_counter()
+        if self.drafter is not None:
+            gen = stream_dspark(self.m, self.drafter, ids, **common)
+        else:
+            gen = stream_serial(self.m, ids, **common)
+        parser = OutputParser(self.hf, self.ids)
+        n_gen, finish, last_check = 0, None, time.perf_counter()
+        try:
+            for chunk in gen:
+                for t in chunk:
+                    n_gen += 1
+                    for ev in parser.feed(int(t)):
+                        emit(*ev)
                     if parser.done or n_gen >= job["max_tokens"]:
                         break
-                    if time.perf_counter() - last_check > 2.0:
-                        last_check = time.perf_counter()
-                        if gone():
-                            raise ClientGone()
-                for ev in parser.close():
-                    emit(*ev)
-                finish = parser.finish if parser.done else "length"
-            finally:
-                gen.close()
-                elapsed = time.perf_counter() - t0
-                reused = int(stats.get("prompt_cached_tokens", 0) or 0)
-                prompt_s = float(stats.get("prompt_s", 0.0) or 0.0)
-                log(f"prompt {len(ids)} tok (cached {reused}, prefill {prompt_s:.1f}s) | gen {n_gen} tok "
-                    f"({n_gen / max(elapsed - prompt_s, 1e-9):.1f} tok/s) | effort {job['effort']} temp {job['temp']} | "
-                    f"{finish or 'aborted'} | peak {mx.get_peak_memory() / 1e9:.2f} GB")
-                mx.clear_cache()
+                if parser.done or n_gen >= job["max_tokens"]:
+                    break
+                if time.perf_counter() - last_check > 2.0:
+                    last_check = time.perf_counter()
+                    if gone():
+                        raise ClientGone()
+            for ev in parser.close():
+                emit(*ev)
+            finish = parser.finish if parser.done else "length"
+        finally:
+            gen.close()
+            elapsed = time.perf_counter() - t0
+            reused = int(stats.get("prompt_cached_tokens", 0) or 0)
+            prompt_s = float(stats.get("prompt_s", 0.0) or 0.0)
+            log(f"prompt {len(ids)} tok (cached {reused}, prefill {prompt_s:.1f}s) | gen {n_gen} tok "
+                f"({n_gen / max(elapsed - prompt_s, 1e-9):.1f} tok/s) | effort {job['effort']} temp {job['temp']} | "
+                f"{finish or 'aborted'} | peak {mx.get_peak_memory() / 1e9:.2f} GB")
+            mx.clear_cache()
         usage = {"prompt_tokens": len(ids), "completion_tokens": n_gen, "total_tokens": len(ids) + n_gen,
                  "prompt_tokens_details": {"cached_tokens": reused}}
         return usage, finish
@@ -436,6 +468,8 @@ class BoundedHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address, handler):
         self._connections = threading.BoundedSemaphore(MAX_CONNECTIONS)
+        if ":" in address[0]:
+            self.address_family = socket.AF_INET6
         super().__init__(address, handler)
 
     def process_request(self, request, client_address):
@@ -490,8 +524,14 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 self._error(403, "browser origins are disabled")
                 return False
             if loopback:
-                hosts = self.headers.get_all("Host", [])
-                if len(hosts) != 1 or not _is_loopback(hosts[0].partition(":")[0].lower()):
+                try:
+                    hosts = self.headers.get_all("Host", [])
+                    authority = urlsplit(f"//{hosts[0]}") if len(hosts) == 1 else None
+                    valid_host = (authority is not None and authority.netloc == hosts[0]
+                                  and authority.username is None and _is_loopback(authority.hostname or ""))
+                except ValueError:
+                    valid_host = False
+                if not valid_host:
                     self._error(403, "local requests require a loopback Host")
                     return False
             if expected_auth is not None:
@@ -515,6 +555,11 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
 
         def _error(self, status: int, message: str, etype: str = "invalid_request_error") -> None:
             self._json(status, {"error": {"message": message, "type": etype, "code": status}})
+
+        def handle_expect_100(self):
+            if self._authorized():
+                self._error(417, "Expect is not supported")
+            return False
 
         def _gone(self) -> bool:
             try:
@@ -543,7 +588,13 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
             if not self._authorized():
                 return
             path = self.path.split("?")[0].rstrip("/")
-            if path not in ("/v1/chat/completions", "/chat/completions"):
+            utility = {"/apply-template": "render", "/tokenize": "tokenize"}.get(path)
+            if utility is not None:
+                operation = getattr(engine, utility, None)
+                if operation is None:
+                    self._error(404, "endpoint not found")
+                    return
+            elif path not in ("/v1/chat/completions", "/chat/completions"):
                 self._error(404, "endpoint not found")
                 return
             lengths = self.headers.get_all("Content-Length", [])
@@ -580,9 +631,29 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 self._error(503, "model is busy", "server_overloaded")
                 return
             try:
-                self._generate(req)
+                if utility is None:
+                    self._generate(req)
+                else:
+                    self._tokenizer_response(utility, operation, req)
             finally:
                 generation.release()
+
+        def _tokenizer_response(self, utility, operation, req):
+            try:
+                if utility == "render":
+                    result = {"prompt": operation(req)}
+                else:
+                    content, add_special = req.get("content"), req.get("add_special", False)
+                    if not isinstance(content, str) or type(add_special) is not bool:
+                        raise RequestError(400, "tokenize requires string content and boolean add_special")
+                    result = {"tokens": operation(content, add_special)}
+            except RequestError as e:
+                self._error(e.status, e.message, e.etype)
+            except Exception:
+                traceback.print_exc()
+                self._error(500, "server error", "server_error")
+            else:
+                self._json(200, result)
 
         def _generate(self, req: dict) -> None:
             try:
@@ -672,6 +743,7 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 ka.start()
                 usage, finish = engine.run(job, emit, lambda: broken.is_set() or self._gone())
                 started.set()
+                ka.join()
                 chunk({}, finish)
                 if include_usage:
                     chunk(None, usage=usage)
@@ -730,7 +802,8 @@ def serve(args: argparse.Namespace) -> int:
     model_id = args.model_id or str(args.model).rstrip("/").split("/")[-1]
     srv = BoundedHTTPServer((args.host, args.port), make_handler(engine, model_id, api_key=api_key, loopback=loopback))
     srv.daemon_threads = True
-    log(f"serving {model_id!r} on http://{args.host}:{args.port}/v1 (context {args.context}, "
+    address = f"[{args.host}]" if ":" in args.host else args.host
+    log(f"serving {model_id!r} on http://{address}:{srv.server_port}/v1 (context {args.context}, "
         f"reasoning_effort {args.reasoning_effort}, temp {args.temp})")
     try:
         srv.serve_forever()

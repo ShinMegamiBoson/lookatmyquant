@@ -120,6 +120,8 @@ curl http://localhost:8080/v1/chat/completions -H 'Content-Type: application/jso
 
 For a trusted single-user loopback server, `--prompt-cache N` keeps up to N prefilled KV snapshots (0 by default). An extension to an earlier prompt reuses its matching snapshot, and an identical retry prefills one token. The server disables reuse when requiring a bearer key or binding to a network address. In Python, pass `prompt_cache=PromptCache()` from `runtime_mlx.inkling` to `stream_dspark` or `stream_serial`.
 
+Use `POST /apply-template` to render a chat prompt or `POST /tokenize` with a `content` string to return token IDs.
+
 Inkling prefill uses one pass when the prompt fits the estimated MLX memory budget and chunks long prompts under memory pressure. Set `--prefill-chunk N` in `lamq generate`, `lamq chat`, or `lamq serve` to choose a chunk size, or set it to 0 for one pass.
 
 ## Run the compiler on SmolLM2-360M in three commands
