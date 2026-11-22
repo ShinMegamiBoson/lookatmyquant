@@ -16,6 +16,10 @@ Endpoints: `POST /v1/chat/completions` (streaming and not), `GET /v1/models`, `G
   (for example Pi) already treat as "compact the conversation and retry".
 
 One request is generated at a time. Concurrent generation requests receive HTTP 503.
+
+`--ui` also serves a browser chat page at `GET /`. Browser requests are otherwise refused; with `--ui`,
+a request whose `Origin` is exactly this server's own validated `Host` (and that the browser marks
+same-origin) is accepted, so the page can call the API while other sites stay blocked.
 """
 
 from __future__ import annotations
@@ -37,11 +41,20 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
+from pathlib import Path
 from urllib.parse import urlsplit
 
 MAX_REQUEST_BYTES = 1 << 20
 MAX_CONNECTIONS = 8
 REQUEST_TIMEOUT = 15
+UI_PAGE = Path(__file__).with_name("chat.html")
+UI_HEADERS = {
+    "Content-Security-Policy": ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                                "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-cache",
+}
 
 
 def _is_loopback(host: str) -> bool:
@@ -528,10 +541,14 @@ class BoundedHTTPServer(ThreadingHTTPServer):
             self._connections.release()
 
 
-def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback: bool = True):
-    """Bind HTTP transport to an engine with `prepare`, `run` and `args.context`."""
+def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback: bool = True, ui: bool = False):
+    """Bind HTTP transport to an engine with `prepare`, `run` and `args.context`.
+
+    `ui` serves the chat page at `GET /` and admits that page's same-origin requests.
+    """
     if not loopback and not api_key:
         raise ValueError("network listening requires an API key")
+    page = UI_PAGE.read_bytes() if ui else b""
     generation = threading.BoundedSemaphore(1)
     expected_auth = f"Bearer {api_key}".encode() if api_key else None
 
@@ -558,8 +575,18 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 deadline.cancel()
                 self.close_connection = True
 
-        def _authorized(self) -> bool:
-            if self.headers.get_all("Origin") is not None:
+        def _same_origin(self) -> bool:
+            # Only the bundled page's own requests: exactly one Origin naming this server's single Host.
+            # A rebinding name cannot pass, since loopback mode still requires a loopback Host below.
+            origins = self.headers.get_all("Origin", [])
+            hosts = self.headers.get_all("Host", [])
+            fetch_sites = self.headers.get_all("Sec-Fetch-Site", [])
+            return (ui and len(origins) == 1 and len(hosts) == 1 and len(fetch_sites) <= 1
+                    and origins[0].lower() == f"http://{hosts[0]}".lower()
+                    and (not fetch_sites or fetch_sites[0] == "same-origin"))
+
+        def _authorized(self, require_key: bool = True) -> bool:
+            if self.headers.get_all("Origin") is not None and not self._same_origin():
                 self._error(403, "browser origins are disabled")
                 return False
             if loopback:
@@ -573,7 +600,7 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 if not valid_host:
                     self._error(403, "local requests require a loopback Host")
                     return False
-            if expected_auth is not None:
+            if expected_auth is not None and require_key:
                 auth = self.headers.get_all("Authorization", [])
                 if len(auth) != 1 or not hmac.compare_digest(auth[0].encode(), expected_auth):
                     self._error(401, "valid bearer authentication required", "authentication_error")
@@ -611,10 +638,26 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
             if self._authorized():
                 self._error(405, "OPTIONS is not supported")
 
+        def _page(self) -> None:
+            body = page
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            for name, value in UI_HEADERS.items():
+                self.send_header(name, value)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
+            path = self.path.split("?")[0].rstrip("/")
+            if ui and path == "":
+                # The page is static and holds no secrets; the API it calls still requires the key.
+                if self._authorized(require_key=False):
+                    self._page()
+                return
             if not self._authorized():
                 return
-            path = self.path.split("?")[0].rstrip("/")
             if path in ("/health", "/v1/health"):
                 self._json(200, {"status": "ok"})
             elif path in ("/v1/models", "/models"):
@@ -826,6 +869,8 @@ def add_serve_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--prefill-chunk", type=int, default=-1, help="tokens per prefill chunk (-1 automatic, 0 one pass)")
     p.add_argument("--no-verify", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--no-warmup", action="store_true")
+    p.add_argument("--ui", action="store_true",
+                   help="serve a browser chat page at / and accept that page's same-origin requests")
 
 
 def serve(args: argparse.Namespace) -> int:
@@ -854,13 +899,15 @@ def serve(args: argparse.Namespace) -> int:
         args.prompt_cache = 0
     model_id = args.model_id or str(args.model).rstrip("/").split("/")[-1]
     with closing(engine_class(args)) as engine:
-        handler = make_handler(engine, model_id, api_key=api_key, loopback=loopback)
+        handler = make_handler(engine, model_id, api_key=api_key, loopback=loopback, ui=args.ui)
         with BoundedHTTPServer((args.host, args.port), handler) as srv:
             if not args.no_warmup:
                 engine.warmup()
             address = f"[{args.host}]" if ":" in args.host else args.host
             log(f"serving {model_id!r} on http://{address}:{srv.server_port}/v1 (context {args.context}, "
                 f"reasoning_effort {args.reasoning_effort}, temp {args.temp})")
+            if args.ui:
+                log(f"chat page on http://{address}:{srv.server_port}/")
             try:
                 srv.serve_forever()
             except KeyboardInterrupt:
