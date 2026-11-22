@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .formats import EXPERT_FIDS, FMT_PARAMS, NVFP4_FID
+from ..format_metadata import E2M1, EXPERT_FIDS, FMT_PARAMS, NVFP4_FID, e4m3_table_np
 
 LM_FMTS = ("lm6", "lm8")
 LINEAR_FMTS = set(FMT_PARAMS) | set(LM_FMTS)
@@ -156,8 +156,6 @@ def validate_packed_dir(packed_dir: str | Path, deep: bool = True) -> dict:
     if luts - LUT_NAMES:
         raise UnsupportedPackedFile(f"luts.npz: unknown tables {sorted(luts - LUT_NAMES)}")
     if luts & {"nvfp4_e2m1", "nvfp4_e4m3"}:  # upstream reads these when present; the kernels use formats.py's tables
-        from .formats import E2M1, e4m3_table_np
-
         lz = np.load(d / "luts.npz")
         if "nvfp4_e2m1" in luts and not np.array_equal(lz["nvfp4_e2m1"].astype(np.float32).reshape(-1), np.array(E2M1, np.float32)):
             raise UnsupportedPackedFile("luts.npz: nvfp4_e2m1 differs from the standard E2M1 table")

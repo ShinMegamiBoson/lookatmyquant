@@ -46,6 +46,7 @@ class TelemetryTests(unittest.TestCase):
         args = SimpleNamespace(model=Path("unused"), tokens=[4], max_new_tokens=2, context=2, device=0,
                                check_telemetry=True, json=None)
         with (
+            patch("runtime_cuda.inkling_cuda.driver.gpu_pci_bus_id", return_value="0000:c5:00.0"),
             patch("runtime_cuda.cli.benchmark_result",
                   return_value={"generated_tokens": [17], "decode_tokens_per_second": 15.1}) as run,
             patch("runtime_cuda.inkling_cuda.telemetry.read_sample", side_effect=samples),
