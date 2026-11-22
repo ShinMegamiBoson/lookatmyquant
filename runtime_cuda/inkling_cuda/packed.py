@@ -7,19 +7,11 @@ import math
 import numpy as np
 
 
-HASH_MULT = 0x9E3779B1
-EXPERT_FORMATS = ("ht1", "ht2", "ht3", "rtr1", "rtr2", "rtr3", "rtr4")
-FORMATS = {
-    "ht1": (1, 4, 512, HASH_MULT),
-    "ht2": (2, 4, 512, HASH_MULT),
-    "ht3": (3, 2, 1024, HASH_MULT),
-    "rtr1": (1, 1, 4096, 0),
-    "rtr2": (2, 1, 4096, 0),
-    "rtr3": (3, 1, 4096, 0),
-    "rtr4": (4, 1, 4096, 0),
-    "lm6": (6, 1, 64, 0),
-    "lm8": (8, 1, 256, 0),
-}
+from ..format_metadata import FMT_PARAMS, ID_TO_FMT
+
+EXPERT_FORMATS = tuple(ID_TO_FMT.values())
+FORMATS = {**FMT_PARAMS, "lm6": (6, 1, 64, 0), "lm8": (8, 1, 256, 0)}
+
 
 
 @lru_cache(maxsize=16)

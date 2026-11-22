@@ -114,21 +114,28 @@ def main():
             Wt = f.get_tensor(f"model.llm.layers.{L}.{TEACHER_LIN[name]}").to(dev).float()
             report(f"L{L} {name}", lm["fmt"], W, Wt, W_ctrl)
         for side, n in (("gu", 2304), ("dn", 1152)):
-            emap = arr[f"{side}_map"]
+            key = f"{side}_rg_map" if f"{side}_rg_map" in arr else f"{side}_map"
+            emap = arr[key]
+            emap = emap.reshape(emap.shape[0], -1, 2)
             si = t(arr[f"{side}_signs_in"].astype(np.float32), dev)
             Wt_all = teacher_experts(f, L, side, args.experts, dev)
             for j, e in enumerate(args.experts):
-                fid, loc = int(emap[e, 0]), int(emap[e, 1])
-                if fid == NVFP4_FID:  # no rotation: the decoded weight is the effective one
+                if len(emap[e]) == 1 and emap[e, 0, 0] == NVFP4_FID:
+                    loc = emap[e, 0, 1]
                     W = decode_nvfp4(*(t(arr[f"{side}_nvfp4_{p}"][loc], dev) for p in ("codes", "scales", "outer")))
                     report(f"L{L} expert {e} {side}", "nvfp4", W, Wt_all[j], torch.zeros_like(W))
                     continue
-                fmt = ID_TO_FMT[fid]
-                codes = t(arr[f"{side}_{fmt}_codes"][loc], dev)
-                scales = t(arr[f"{side}_{fmt}_scales"][loc], dev)
-                Q = decode_trellis(codes, scales, t(luts[fmt], dev), n, fmt)
+                parts, fmts = [], set()
+                for fid, loc in emap[e]:
+                    fmt = ID_TO_FMT[int(fid)]
+                    fmts.add(fmt)
+                    codes = t(arr[f"{side}_{fmt}_codes"][loc], dev)
+                    scales = t(arr[f"{side}_{fmt}_scales"][loc], dev)
+                    parts.append(decode_trellis(codes, scales, t(luts[fmt], dev), n, fmt))
+                Q = parts[0] if len(parts) == 1 else torch.cat(parts)
                 W = effective_weight(Q, si)
-                report(f"L{L} expert {e} {side}", fmt, W, Wt_all[j], effective_weight(Q, torch.ones_like(si)))
+                label = ",".join(sorted(fmts))
+                report(f"L{L} expert {e} {side}", label, W, Wt_all[j], effective_weight(Q, torch.ones_like(si)))
 
     # Embedding and LM head: packed rows are in bucket order; row p holds token order[p].
     for kind, tkey in (("embed", "model.llm.embed.weight"), ("head", "model.llm.unembed.weight")):

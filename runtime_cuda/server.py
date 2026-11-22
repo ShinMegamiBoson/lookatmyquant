@@ -9,6 +9,8 @@ from .inkling_cuda.serve import END, MODEL, TEXT, THINK, TOOL, Frames
 
 class Engine:
     def __init__(self, args):
+        if args.top_p != 1.:
+            raise ValueError("CUDA serving supports temperature and seed, with top_p fixed at 1")
         self.args = args
         self.lock = threading.Lock()
         self.stack = ExitStack()
@@ -36,21 +38,34 @@ class Engine:
     def tokenize(self, content, add_special=False):
         return self.tokenizer.encode(content, add_special_tokens=add_special)
 
-    def _render(self, req):
+    def _render(self, req, *, generation=False):
         from runtime_mlx.server import EFFORTS, RequestError, normalize_messages
 
         messages = normalize_messages(req.get("messages"))
-        tools = req.get("tools") or None
+        tools = req.get("tools")
+        if tools is not None and (not isinstance(tools, list) or any(
+            not isinstance(tool, dict) or not isinstance(tool.get("function"), dict)
+            or not isinstance(tool["function"].get("name"), str) for tool in tools
+        )):
+            raise RequestError(400, "tools must be a list of named functions")
+        add_generation_prompt = req.get("add_generation_prompt", True)
+        if type(add_generation_prompt) is not bool:
+            raise RequestError(400, "add_generation_prompt must be a boolean")
         template = req.get("chat_template_kwargs") or {}
         if not isinstance(template, dict):
             raise RequestError(400, "chat_template_kwargs must be an object")
         effort = req.get("reasoning_effort", template.get("reasoning_effort"))
         if isinstance(effort, dict):
             effort = effort.get("effort")
-        if getattr(self.args, "no_thinking", False) or template.get("enable_thinking") is False:
+        enable = template.get("enable_thinking")
+        if enable is not None and type(enable) is not bool:
+            raise RequestError(400, "enable_thinking must be a boolean")
+        if getattr(self.args, "no_thinking", False) or enable is False:
             effort = "none"
         elif effort is None:
             effort = self.args.reasoning_effort
+            if enable and effort == "none":
+                effort = "low"
         if isinstance(effort, str):
             effort = effort.strip().lower()
             if effort not in EFFORTS:
@@ -59,8 +74,8 @@ class Engine:
             raise RequestError(400, "Reasoning effort must be in [0, 0.99]")
         try:
             rendered = self.tokenizer.apply_chat_template(
-                messages, tools=tools, tokenize=False, reasoning_effort=effort,
-                add_generation_prompt=req.get("add_generation_prompt", True),
+                messages, tools=tools or None, tokenize=False, reasoning_effort=effort,
+                add_generation_prompt=generation or add_generation_prompt,
             )
         except Exception as error:
             raise RequestError(400, f"chat template error: {error}") from error
@@ -72,7 +87,7 @@ class Engine:
     def prepare(self, req):
         from runtime_mlx.server import RequestError
 
-        rendered, effort, messages = self._render(req)
+        rendered, effort, messages = self._render(req, generation=True)
         ids = self.tokenize(rendered)
         remaining = self.args.context - len(ids)
         if not ids or remaining < 1:

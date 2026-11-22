@@ -22,6 +22,12 @@ def _info(args):
 
     path = resolve_path(args.model, revision=args.revision)
     print(json.dumps({"path": str(path), "formats": validate_packed_dir(path)}, indent=2, sort_keys=True))
+    if args.device:
+        import torch
+
+        from .inkling.tuning import describe
+
+        print(describe(torch.device(args.device)))
     return 0
 
 
@@ -52,8 +58,10 @@ def benchmark(args):
     from .inkling_cuda.telemetry import TelemetryWatch, report
 
     if args.check_telemetry:
-        device = str(args.device).removeprefix("cuda:") if args.device != "cuda" else "0"
-        with TelemetryWatch(device) as monitor:
+        from . import _ordinal
+        from .inkling_cuda.driver import gpu_pci_bus_id
+
+        with TelemetryWatch(gpu_pci_bus_id(_ordinal(args.device))) as monitor:
             if monitor.samples[0]["issues"]:
                 result = {}
             else:
@@ -103,6 +111,7 @@ def main(argv=None):
     info = sub.add_parser("info", help="validate and inspect a packed model")
     info.add_argument("model")
     info.add_argument("--revision")
+    info.add_argument("--device", help="also show the Triton tuning for a CUDA device")
     info.set_defaults(fn=_info)
     bench = sub.add_parser("benchmark", help="report raw token IDs and timing, optionally gated by NVIDIA telemetry")
     bench.add_argument("model")

@@ -68,8 +68,10 @@ def open_model(path_or_repo, *, device="cuda", engine="auto", revision=None, dra
         with Cuda(ordinal) as cuda:
             model = DeviceModel(path, cuda)
             try:
-                yield LoadedModel(model, path, path_or_repo, engine, ordinal), tokenizer
+                loaded = LoadedModel(model, path, path_or_repo, engine, ordinal)
+                yield loaded, tokenizer
             finally:
+                loaded.target = None
                 model.close()
     else:
         import torch
@@ -78,8 +80,11 @@ def open_model(path_or_repo, *, device="cuda", engine="auto", revision=None, dra
 
         if not torch.cuda.is_available():
             raise RuntimeError("PyTorch could not find an NVIDIA CUDA device")
-        model = Inkling2LoopPacked(path, f"cuda:{ordinal}")
-        yield LoadedModel(model, path, path_or_repo, engine, ordinal), tokenizer
+        loaded = LoadedModel(Inkling2LoopPacked(path, f"cuda:{ordinal}"), path, path_or_repo, engine, ordinal)
+        try:
+            yield loaded, tokenizer
+        finally:
+            loaded.target = None
 
 
 def eos_ids(model: LoadedModel, tokenizer) -> set[int]:
@@ -167,6 +172,8 @@ def _triton_tokens(model, ids, limit, eos, blocked, temperature, seed, stats):
 def stream_tokens(model, ids, *, max_tokens, eos_ids=(), blocked_token=None, drafter=None, draft_block_size=2,
                   temperature=0., seed=None, stats_out=None):
     """Yield generated token IDs, including EOS when generated."""
+    if model.target is None:
+        raise RuntimeError("The CUDA model is closed")
     ids = list(ids)
     if not ids or type(max_tokens) is not int or max_tokens < 1 or len(ids) + max_tokens - 1 > model.context_limit:
         raise ValueError("Prompt and generation exceed the context limit or are empty")

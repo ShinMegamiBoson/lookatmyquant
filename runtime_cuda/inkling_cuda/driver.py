@@ -15,9 +15,37 @@ SIZE = ct.c_size_t
 F32 = ct.c_float
 
 
+def _driver():
+    return ct.WinDLL("nvcuda.dll") if os.name == "nt" else ct.CDLL("libcuda.so.1")
+
+
+def _call(lib, name, *args):
+    status = getattr(lib, name)(*args)
+    if status:
+        error = ct.c_char_p()
+        lib.cuGetErrorName(status, ct.byref(error))
+        label = error.value.decode() if error.value else str(status)
+        raise RuntimeError(f"{name} failed with {label}")
+
+
+def _pci_bus_id(lib, device):
+    bus_id = ct.create_string_buffer(32)
+    _call(lib, "cuDeviceGetPCIBusId", bus_id, I32(len(bus_id)), device)
+    return bus_id.value.decode()
+
+
+def gpu_pci_bus_id(ordinal):
+    """Map a CUDA ordinal, including CUDA_VISIBLE_DEVICES remapping, to the NVIDIA SMI device."""
+    lib = _driver()
+    _call(lib, "cuInit", U32(0))
+    device = I32()
+    _call(lib, "cuDeviceGet", ct.byref(device), I32(ordinal))
+    return _pci_bus_id(lib, device)
+
+
 class Cuda:
     def __init__(self, ordinal=0):
-        self.lib = ct.WinDLL("nvcuda.dll") if os.name == "nt" else ct.CDLL("libcuda.so.1")
+        self.lib = _driver()
         self.device = I32()
         self.context = PTR()
         self.previous = PTR()
@@ -39,12 +67,7 @@ class Cuda:
             raise
 
     def call(self, name, *args):
-        status = getattr(self.lib, name)(*args)
-        if status:
-            error = ct.c_char_p()
-            self.lib.cuGetErrorName(status, ct.byref(error))
-            label = error.value.decode() if error.value else str(status)
-            raise RuntimeError(f"{name} failed with {label}")
+        _call(self.lib, name, *args)
 
     @contextmanager
     def activate(self):
@@ -62,9 +85,7 @@ class Cuda:
         return name.value.decode()
 
     def pci_bus_id(self):
-        bus_id = ct.create_string_buffer(32)
-        self.call("cuDeviceGetPCIBusId", bus_id, I32(len(bus_id)), self.device)
-        return bus_id.value.decode()
+        return _pci_bus_id(self.lib, self.device)
 
     def memory(self):
         free, total = SIZE(), SIZE()
