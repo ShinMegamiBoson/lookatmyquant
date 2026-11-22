@@ -9,7 +9,12 @@
 <meta property="og:title" content="Grafting Neural Primitives Across Model Scales">
 <meta property="og:description" content="A larger model's calculation neurons restore 94% of a lesioned host's accuracy and lift an intact host's arithmetic to 124% of baseline (102% of donor); across 5× width, shuffled weights tie them at 133%.">
 <meta property="og:url" content="https://lookatmyquant.pages.dev/grafting/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://lookatmyquant.pages.dev/grafting/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Claudia as Godric the Grafted: a giant with many arms grafted onto her body, under a storm, beside a ruined castle.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lookatmyquant.pages.dev/grafting/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
@@ -44,6 +49,8 @@ body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.62 var(
 figure.wide { margin: 34px auto 38px; }
 figure.col { margin: 30px auto 34px; }
 section.wide { margin-top: 26px; margin-bottom: 30px; }
+.hero { max-width: 62rem; margin: 0 auto 36px; }
+.hero img { display: block; width: 100%; height: auto; max-height: 34rem; object-fit: cover; object-position: center 28%; border-radius: 6px; }
 header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
 h1 { font: 600 clamp(2rem, 5.4vw, 3.1rem)/1.08 var(--serif); letter-spacing: -0.015em; margin: 0; text-wrap: balance; max-width: 24ch; }
 .subtitle { font: 400 clamp(1.1rem, 2.5vw, 1.4rem)/1.34 var(--serif); color: var(--muted); margin: 0; max-width: 48ch; text-wrap: balance; }
@@ -138,6 +145,9 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 <!-- Written by build_paper.py. Every number comes from the experiments' result files; change the page there.
      The page follows one circuit, the calculation group, as it is moved further from its own model, and asks at each step how much of it arrived. -->
 <div class="wrap">
+  <figure class="hero">
+    <img src="hero.jpg" width="1600" height="900" alt="Claudia as Godric the Grafted: a giant with many arms grafted onto her body, under a storm, beside a ruined castle.">
+  </figure>
   <header class="title col">
     <h1>Grafting Neural Primitives Across Model Scales</h1>
     <p class="subtitle">A larger model’s calculation neurons restore 94% of a lesioned host’s accuracy and lift an intact host’s arithmetic to 124% of baseline (102% of donor); across 5× width, shuffled weights tie them at 133%.</p>
