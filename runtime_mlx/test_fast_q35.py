@@ -5,6 +5,7 @@ unpackers). Synthetic codes only; no model is loaded.
 """
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -66,6 +67,24 @@ class ProductTest(unittest.TestCase):
         for n in (512, 1024, 2560, 4096):
             self.run_case(n, "float", 2e-6)
             self.run_case(n, "half", 1e-3)
+
+    def test_chip_dispatch_with_short_scalar_table(self):
+        rng = np.random.default_rng(7)
+        n = 512
+        tr, ref = trellis_group(rng, 1, n, 2, np.array([0]))
+        symbols = rng.integers(0, 9, (1, n), dtype=np.uint32)
+        levels = np.arange(9, dtype=np.float32)
+        sc = {"codes": C.pack_symbols(symbols, 4), "bits": 4, "table": levels,
+              "rows": np.array([1]), "scales": np.ones(1, np.float32), "scalar": True}
+        x = rng.standard_normal(n).astype(np.float32)
+        expected = np.array([ref[0] @ x.astype(np.float64), levels[symbols[0]] @ x])
+        for name, sg, gather in [("Apple M1 Pro", 8, 1), ("Apple M4 Max", 16, 1), ("Apple M5 Max", 16, 2)]:
+            with self.subTest(name=name), patch.object(mx, "device_info", return_value={"device_name": name}):
+                prod = F.Product(n, [tr, sc], 2, "float")
+                self.assertEqual(prod.sg, sg)
+                self.assertIn((2, False, gather), prod.widths)
+                np.testing.assert_allclose(np.array(prod(mx.array(x))), expected, rtol=3e-5, atol=3e-5)
+                np.testing.assert_array_equal(np.array(prod.args[3])[-16:], np.pad(levels, (0, 7)))
 
 
 class RotationTest(unittest.TestCase):

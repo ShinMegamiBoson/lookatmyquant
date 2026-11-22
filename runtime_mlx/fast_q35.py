@@ -75,7 +75,7 @@ def width_code(k, g, scalar):
     return k | (g << 4) | (int(scalar) << 7)
 
 
-def _rows_fn(k, ch, kind, scalar=False, dense=False, g=1):
+def _rows_fn(k, ch, kind, scalar=False, dense=False, g=1, space="device"):
     """Metal source of the function that handles one threadgroup's rows of a group with k-bit symbols: their products
     with the input, or (dense) the weights themselves written, scaled, into a dense matrix of OUT_T.
 
@@ -90,9 +90,11 @@ def _rows_fn(k, ch, kind, scalar=False, dense=False, g=1):
     L = []
     a = L.append
     name = f"lamq_{'sc' if scalar else 'tr'}{k}_g{g}_ch{ch}" + ("_dense" if dense else "")
-    a(f"inline void {name}({'' if dense else 'const device float* x, '}const device uint* codes, uint wpr, uint rows, const device float* scales,")
-    a(f"                   const device int* map, const device {kind}* table, device {'OUT_T' if dense else 'float'}* y, uint n, uint tgl, uint ntg, uint simd, uint lane) {{")
-    a(f"    const device {vec}* tv = (const device {vec}*)table;")
+    # MLX binds short arrays in constant memory. Deduce each input's address space.
+    a("template <typename Scales, typename Map, typename Table>")
+    a(f"inline void {name}({'' if dense else 'const device float* x, '}const device uint* codes, uint wpr, uint rows, Scales scales,")
+    a(f"                   Map map, Table table, device {'OUT_T' if dense else 'float'}* y, uint n, uint tgl, uint ntg, uint simd, uint lane) {{")
+    a("    Table tv = table;" if slots(g) == 1 else f"    const {space} {vec}* tv = (const {space} {vec}*)table;")
     a(f"    const uint iters = n / {ch * 32};")
     a("    for (uint rb = tgl; rb * (SG * RPS) < rows; rb += ntg) {   // this threadgroup's row blocks: one table stays in its core's cache")
     a("    const uint r0 = (rb * SG + simd) * RPS;")
@@ -177,28 +179,35 @@ def chunk(n):
 _PRODUCTS = {}
 
 
-def _product_kernel(n, kind, widths, sg):
+def _product_kernel(n, kind, widths, sg, stage_tables):
     """One kernel for inputs of n columns: a threadgroup looks up its group and runs that group's width.
     widths: the (bits, scalar, weights per gather) triples that occur."""
-    key = (n, kind, widths, sg)
+    key = (n, kind, widths, sg, stage_tables)
     if key not in _PRODUCTS:
         ch = chunk(n)
-        fns = {w: _rows_fn(w[0], ch, kind, scalar=w[1], g=w[2]) for w in widths}
+        space = "threadgroup" if stage_tables else "device"
+        fns = {w: _rows_fn(w[0], ch, kind, scalar=w[1], g=w[2], space=space) for w in widths}
         header = f"#define RPS {RPS}u\n#define SG {sg}u\n" + "\n".join(src for _, src in fns.values())
         body = [f"const uint tg = threadgroup_position_in_grid.x, gi = (uint)group_of[2 * tg], tgl = (uint)group_of[2 * tg + 1];",
                 f"const device uint* d = dims + gi * {D};",
                 "const uint ntg = d[0], rows = d[1], wpr = d[2];",
                 "const device uint* c = codes + d[3];",
-                "const device float* sc = scales + d[4];",
-                "const device int* mp = map + d[4];",
-                f"const device {kind}* tb = tables + d[5];",
+                "auto sc = scales + d[4];",
+                "auto mp = map + d[4];",
+                "auto tb = tables + d[5];",
                 "const device float* xv = x + d[7];",
-                "const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup;",
-                "switch (d[6]) {"]
+                "const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup;"]
+        if stage_tables:
+            body += [f"threadgroup {kind} tt[{1 << L_STATE}];",
+                     f"const uint tlen = (d[6] & 128u) ? (1u << (d[6] & 15u)) : {1 << L_STATE}u;",
+                     "for (uint i = thread_position_in_threadgroup.x; i < tlen; i += threads_per_threadgroup.x) tt[i] = tb[i];",
+                     "threadgroup_barrier(mem_flags::mem_threadgroup);"]
+        table = "tt" if stage_tables else "tb"
+        body.append("switch (d[6]) {")
         for (k, scalar, g), (name, _) in fns.items():
-            body.append(f"    case {width_code(k, g, scalar)}u: {name}(xv, c, wpr, rows, sc, mp, tb, y, {n}u, tgl, ntg, simd, lane); break;")
+            body.append(f"    case {width_code(k, g, scalar)}u: {name}(xv, c, wpr, rows, sc, mp, {table}, y, {n}u, tgl, ntg, simd, lane); break;")
         body.append("}")
-        _PRODUCTS[key] = mx.fast.metal_kernel(name=f"lamq_product_{n}_{kind}_{sg}_{'_'.join(f'{k}{int(s)}{g}' for k, s, g in widths)}",
+        _PRODUCTS[key] = mx.fast.metal_kernel(name=f"lamq_product_{n}_{kind}_{sg}_{int(stage_tables)}_{'_'.join(f'{k}{int(s)}{g}' for k, s, g in widths)}",
                                               input_names=["x", "codes", "scales", "map", "tables", "dims", "group_of"],
                                               output_names=["y"], source="\n".join("    " + s for s in body), header=header)
     return _PRODUCTS[key]
@@ -232,7 +241,10 @@ class Product:
 
     def __init__(self, n, groups, size, kind=None, interleave=0, gather=None, sg=None, threadgroups=None):
         kind = kind or TABLE
-        sg = sg or SG
+        family = mx.device_info().get("device_name", "").removeprefix("Apple ").partition(" ")[0]
+        # M1 products exceed their pipeline limit at 512 threads. M5 runs faster with device tables.
+        sg = sg or (8 if family == "M1" else SG)
+        stage_tables = family in ("M1", "M4")
         threadgroups = threadgroups or THREADGROUPS
         self.n, self.size, self.kind, self.sg = n, size, kind, sg
         work = [g["codes"].shape[0] * (COST[4] if g.get("scalar") else COST[int(g["bits"])]) for g in groups]
@@ -244,12 +256,21 @@ class Product:
             k, scalar = int(g["bits"]), g.get("scalar", False)
             c = np.ascontiguousarray(g["codes"], dtype=np.uint32)
             rows, wpr = c.shape
-            assert wpr == n // 32 * k, (wpr, n, k)
-            wg = 1 if scalar else weights_per_gather(k, kind, gather)
+            if wpr != n // 32 * k:
+                raise ValueError("packed row length does not match its bit width")
+            wg = 1 if scalar or stage_tables else weights_per_gather(k, kind, gather)
             if scalar:
                 t = np.asarray(g["table"], dtype=dtype)
+                if not 1 <= k <= 8 or t.ndim != 1 or not 1 <= t.size <= 1 << k:
+                    raise ValueError("invalid scalar lookup table or bit width")
+                # The compiler permits short codebooks. The GPU addresses the full k-bit range.
+                if t.size < 1 << k:
+                    t = np.pad(t, (0, (1 << k) - t.size))
             else:
-                t = multi_table(np.asarray(g["table"], dtype=np.float32), k, wg, dtype)
+                values = np.asarray(g["table"], dtype=np.float32)
+                if values.shape != (1 << L_STATE,):
+                    raise ValueError("invalid trellis lookup table length")
+                t = multi_table(values, k, wg, dtype)
             t = np.concatenate([t, np.zeros((-len(t)) % 4, dtype)])   # each table on an 8-byte boundary at least
             # a threadgroup stays on one group (one table in its core's cache) and takes that group's row blocks in turn
             ntg = max(1, min(-(-rows // (RPS * sg)), round(threadgroups * work[len(dims) // D] / sum(work))))
@@ -265,7 +286,7 @@ class Product:
         self.args = [mx.array(np.concatenate(codes + [np.zeros(4, np.uint32)])), mx.array(np.concatenate(scales)), mx.array(np.concatenate(rowmap)),
                      mx.array(np.concatenate(tables)), mx.array(np.array(dims, dtype=np.uint32)), mx.array(self.order(group_of, interleave))]
         self.widths = tuple(sorted(widths))
-        self.kernel = _product_kernel(n, kind, self.widths, sg)
+        self.kernel = _product_kernel(n, kind, self.widths, sg, stage_tables)
         mx.eval(self.args)
 
     def __call__(self, x):
