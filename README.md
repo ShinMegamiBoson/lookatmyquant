@@ -98,6 +98,37 @@ for chunk in rt.stream("Solve 3x + 4y = 31 and 5x - 2y = 17.", max_tokens=256):
     print(chunk.text, end="", flush=True)
 ```
 
+## Run Inkling-2-Mini on NVIDIA GPUs
+
+`runtime_cuda` runs the packed Inkling-2-Mini files on NVIDIA GPUs with compute capability 8.0 or newer (Ampere onward). It reads the same files as `runtime_mlx`, trellis, Lloyd–Max and NVFP4 experts included, and decodes them inside Triton kernels. It has been run end to end on the 8.9 GB and 11.2 GB builds; the 5.4 GB and 12.8 GB builds use the same formats.
+
+```sh
+pip install -e ".[cuda]"
+python -m runtime_cuda generate shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB \
+    -p "What is 17 times 23? Show the steps." --stats
+python -m runtime_cuda info shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-11.2GB
+```
+
+```python
+from runtime_cuda import load, generate
+
+model, tok = load("shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB")
+print(generate(model, tok, "What is 17 times 23? Show the steps.", max_tokens=200))
+```
+
+On one RTX A4500 (20 GB, Ampere), greedy and one token at a time, a decode step is captured in a CUDA graph:
+
+| Build | Decode | 512-token prefill | Peak memory |
+|---|---:|---:|---:|
+| 8.9 GB | 57.8 tok/s (17.2 ms a token) | 249 tok/s | 10.6 GB |
+| 11.2 GB | 56.1 tok/s (17.8 ms a token) | 127 tok/s | 12.9 GB |
+
+The prefill of the NVFP4 experts is not yet tuned. Decoding is greedy; the DSpark drafter and sampling are not ported yet.
+
+Four checks tie the runtime to the quantizer and the original model. The decoders match the float64 NumPy references in `runtime_mlx/inkling/kernels.py`. Every decoded matrix matches the original checkpoint's weight to within its quantization error (`python -m runtime_cuda.check_weights`; one convention broken on purpose gives about 140%). The whole model matches transformers' own `Inkling2Loop` with the packed matrices decoded to float32 (`python -m runtime_cuda.compare`), and `runtime_mlx`'s synthetic test model runs through it. Exact agreement is not possible: a perturbation of 1e-7 flips near-tied expert choices and the change spreads through the 48 layer visits, so two correct implementations differ by a KL of about 1e-4 to 1e-3 on ordinary text. Against the original model (`python -m runtime_cuda.kl_eval`), on WikiText-2 and Python source rather than the text mix above, the 8.9 GB build is at a KL of 0.040 (English) and 0.031 (code) and the 11.2 GB build at 0.019 and 0.017.
+
+Kernel settings are measured per GPU (`python -m runtime_cuda.tune`). Tables for the RTX A4500, RTX 4090, L4 and RTX 5080 are in `runtime_cuda/inkling/tuning/`; other cards take the nearest measured card of their architecture, and `runtime_cuda/inkling/tuning/COVERAGE.md` lists what 42 common cards get. `runtime_cuda/SYNC.md` maps each file to its counterpart in `runtime_mlx` and lists what is not ported.
+
 ## Run the compiler on SmolLM2-360M in three commands
 
 Install the dependencies and download the model and WikiText-2. The code reads SmolLM2-360M's config when it starts, so do this first.
@@ -252,6 +283,8 @@ python pack_drafter.py path/to/drafter path/to/drafter-4bit
 | `lamq_export.py`, `runtime_mlx/` | The export format and the Apple Silicon runtime |
 | `runtime_mlx/fast_q35.py`, `block_q35.py`, `block_argmax_q35.py`, `pack_dense.py`, `modal_pack.py` | The runtime for packed Qwen3.5-4B and Qwen3.8-27B files: one token at a time, a block of 8 or 16 tokens in one pass, and the packer |
 | `runtime_mlx/inkling/`, `runtime_mlx/test_inkling.py` | Apple Silicon MLX runtime, 4 KB SRAM `ht2`/`ht3` Metal kernels, and 4-bit DSpark block-8 speculative drafter for packed Inkling-2-Mini models |
+| `runtime_cuda/`, `runtime_cuda/inkling/` | The CUDA runtime for packed Inkling-2-Mini models: Triton kernels, the model, per-GPU tuning, a float32 transformers reference, and the checks against it and the original |
+| `runtime_cuda/tune.py`, `remote_tune.sh`, `tuning_coverage.py`, `upstream_sync.py` | Measuring a GPU's kernel settings, on this machine or a rented one, what each card gets, and what changed in `runtime_mlx` since the last sync |
 | `runtime_mlx/drafter_q35.py`, `draft_vocab_q35.py`, `convert_dspine.py`, `check_drafter.py`, `bench_drafted.py`, `drafter/`, `modal_drafter.py`, `pack_drafter.py` | Speculative decoding with a DSpine drafter, Tencent DSpine conversion, drafter training, and the drafter stored at 4 bits |
 | `opgraph/` | The grammar: a model as a tensor network, and the rewrites and codes that act on it |
 | `run_completeness.py`, `make_report.py` | The check that nine published methods are reproduced exactly |
@@ -283,6 +316,8 @@ python tests/test_reallocation.py
 `runtime_mlx/test_core.py` checks the runtime against the quantizer's math. Run `python runtime_mlx/make_ref.py` first, which writes 1.6 GB of reference files.
 
 `runtime_mlx/test_fast_q35.py` and `runtime_mlx/test_block_q35.py` check the Qwen3.5 kernels against NumPy products of independently unpacked codes, with no model. When `LAMQ_Q35_PACKED` names a packed file, the second also checks a block of tokens against decoding them one at a time. When `LAMQ_Q38_PACKED` names the packed Qwen3.8-27B file, it runs the same checks on a model whose output head is stored apart from its embedding.
+
+`pytest runtime_cuda/` runs the CUDA runtime's tests. The kernel and format tests need only a GPU. The model tests also need the packed files in `models/` and the reference outputs that `python -m runtime_cuda.compare <packed dir> --save cache/oracle` writes, and skip without them; the comparison with transformers needs transformers from git main.
 
 ## What this repository leaves out
 
