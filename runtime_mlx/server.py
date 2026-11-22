@@ -95,8 +95,11 @@ class RequestError(Exception):
 # --------------------------------------------------------------------------- request -> template
 
 
-def declared_tool_names(tools: Any) -> set[str]:
-    """Validate OpenAI function declarations and return the names allowed in tool calls."""
+def request_tools(req: dict) -> tuple[list, set[str]]:
+    """Select the tools shown to the model and the names accepted in its response."""
+    if req.get("functions") is not None or req.get("function_call") is not None:
+        raise RequestError(400, "use tools and tool_choice for function calls")
+    tools = req.get("tools")
     if tools is not None and not isinstance(tools, list):
         raise RequestError(400, "tools must be an array")
     tool_names: set[str] = set()
@@ -106,7 +109,12 @@ def declared_tool_names(tools: Any) -> set[str]:
         if not isinstance(name, str) or not name:
             raise RequestError(400, "each tool must declare a named function")
         tool_names.add(name)
-    return tool_names
+    choice = req.get("tool_choice")
+    if choice == "none":
+        return [], set()
+    if choice is not None and choice != "auto":
+        raise RequestError(400, "supported tool_choice values are 'auto' and 'none'")
+    return tools or [], tool_names
 
 
 def normalize_messages(msgs: Any) -> list[dict]:
@@ -374,8 +382,7 @@ class Engine:
 
     def _apply_template(self, req: dict, *, tokenize: bool):
         messages = normalize_messages(req.get("messages"))
-        tools = req.get("tools")
-        tool_names = declared_tool_names(tools)
+        tools, tool_names = request_tools(req)
         effort = req.get("reasoning_effort")
         if isinstance(effort, dict):
             effort = effort.get("effort")

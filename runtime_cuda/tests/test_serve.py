@@ -101,6 +101,37 @@ def test_incoming_tools_and_history_arguments():
                 raise AssertionError("invalid tool declaration was accepted")
 
 
+def test_tool_choice_controls_template_and_response_on_both_backends():
+    output = [MODEL, "add_numbers", TOOL, '{"a":11,"b":17}', END, MODEL, TEXT, "28", END, EOS]
+    cuda, mlx, ids = adapters(output)
+    tools = [{"type": "function", "function": {"name": "add_numbers"}}]
+    request = {"messages": [MESSAGE], "tools": tools}
+    for settings in ({}, {"tool_choice": "auto"}, {"tool_choice": "none"}):
+        events, _, finish, _ = assert_same_response(cuda, mlx, {**request, **settings}, ids)
+        if settings.get("tool_choice") == "none":
+            assert (events, finish) == ([("content", "28")], "stop")
+            expected_tools = []
+        else:
+            assert finish == "tool_calls" and events[0][1]["function"]["name"] == "add_numbers"
+            expected_tools = tools
+        for tokenizer in (cuda.tokenizer, mlx.tok):
+            assert (tokenizer.apply_chat_template.call_args.kwargs.get("tools") or []) == expected_tools
+
+    for settings in (
+        {"tool_choice": "required"},
+        {"tool_choice": {"type": "function", "function": {"name": "add_numbers"}}},
+        {"function_call": "none"},
+        {"functions": [tools[0]["function"]]},
+    ):
+        for engine in (cuda, mlx):
+            try:
+                engine.prepare({**request, **settings})
+            except RequestError as error:
+                assert error.status == 400 and "tool_choice" in error.message
+            else:
+                raise AssertionError(f"unsupported tool selection was accepted: {settings}")
+
+
 def test_stream_emits_text_then_declared_tool():
     for header, body in (
         (["propose_edit"], ARGS),
@@ -180,6 +211,7 @@ def test_explicit_cuda_serve_switch_preserves_hard_no_thinking():
 if __name__ == "__main__":
     test_tool_calls_require_completed_declared_frame()
     test_incoming_tools_and_history_arguments()
+    test_tool_choice_controls_template_and_response_on_both_backends()
     test_stream_emits_text_then_declared_tool()
     test_stream_separates_reasoning_and_text_until_end_of_turn()
     test_default_and_request_reasoning_are_template_only()

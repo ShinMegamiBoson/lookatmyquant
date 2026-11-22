@@ -3,7 +3,7 @@ from contextlib import ExitStack, closing
 import threading
 
 from . import eos_ids, load_drafter, open_model, stream_tokens
-from runtime_mlx.server import ClientGone, EFFORTS, OutputParser, RequestError, SPECIAL, declared_tool_names, normalize_messages
+from runtime_mlx.server import ClientGone, EFFORTS, OutputParser, RequestError, SPECIAL, normalize_messages, request_tools
 
 
 class Engine:
@@ -42,8 +42,7 @@ class Engine:
 
     def _render(self, req, *, generation=False):
         messages = normalize_messages(req.get("messages"))
-        tools = req.get("tools")
-        tool_names = declared_tool_names(tools)
+        tools, tool_names = request_tools(req)
         add_generation_prompt = req.get("add_generation_prompt", True)
         if type(add_generation_prompt) is not bool:
             raise RequestError(400, "add_generation_prompt must be a boolean")

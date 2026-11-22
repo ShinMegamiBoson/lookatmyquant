@@ -108,6 +108,8 @@ for chunk in rt.stream("Solve 3x + 4y = 31 and 5x - 2y = 17.", max_tokens=256):
 
 **OpenAI-compatible server.** `lamq serve` puts a packed Inkling-2-Mini model behind `/v1/chat/completions`, streaming or not, so chat clients and coding agents can use it. Requests go through the model's own chat template, including `tools` and `reasoning_effort`; thinking comes back as `reasoning_content` and tool invocations as `tool_calls`.
 
+When a request lists tools, `"tool_choice": "auto"` lets the model choose whether to call one. This is the default. Set `"tool_choice": "none"` to disable calls for that turn. Requests that require a call or force a particular function receive HTTP 400.
+
 ```sh
 lamq serve shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-5.4GB \
     --drafter shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-drafter --port 8080
