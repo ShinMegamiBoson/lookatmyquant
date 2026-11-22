@@ -9,6 +9,8 @@ Supports ALL formats in our 9.5 GB Inkling-2-Mini build at full M5 Max memory ba
 from __future__ import annotations
 
 import math
+import os
+import re
 from functools import lru_cache
 
 import mlx.core as mx
@@ -73,6 +75,19 @@ def hadamard_factors_mx(n: int) -> tuple[mx.array, mx.array, mx.array, mx.array,
 @lru_cache(maxsize=256)
 def _meta_u32(*vals: int) -> mx.array:
     return mx.array(list(vals), dtype=mx.uint32)
+
+
+@lru_cache(maxsize=1)
+def _hw_sg() -> int:
+    """Simdgroups per threadgroup for the half-warp kernels.
+
+    M1-M3 GPUs cap these pipelines below 512 threads (M1 Pro reports 384), so they get 8 simdgroups.
+    """
+    env = os.environ.get("LAMQ_HW_SG")
+    if env:
+        return int(env)
+    m = re.match(r"applegpu_g(\d+)", str(mx.device_info().get("architecture", "")).lower())
+    return 16 if m and int(m.group(1)) >= 16 else 8
 
 
 @mx.compile
@@ -280,17 +295,18 @@ def trellis_matvec(
     x_div: int | None = None,
 ) -> mx.array:
     """Execute half-warp trellis matvec; returns float32[n_slots, m]."""
+    sg = _hw_sg()
     n_slots = int(expert_ids.shape[0])
     x_div_val = int(x_div) if x_div is not None else (n_slots if shared_x else 1)
     blocks_per_slot = (m + 3) // 4
     total_blocks = n_slots * blocks_per_slot
-    ntg = max(1, min(tg_count, (total_blocks + 31) // 32))
-    kern = make_halfwarp_trellis_kernel(k, n, g, lut_entries, hash_mult)
+    ntg = max(1, min(tg_count, (total_blocks + 2 * sg - 1) // (2 * sg)))
+    kern = make_halfwarp_trellis_kernel(k, n, g, lut_entries, hash_mult, sg=sg)
     meta = _meta_u32(m, n_slots, x_div_val, ntg)
     out = kern(
         inputs=[x_rot.reshape(-1), codes.reshape(-1), scales_f16.reshape(-1), lut_f16.reshape(-1), expert_ids, meta],
-        grid=(ntg * 16 * 32, 1, 1),
-        threadgroup=(16 * 32, 1, 1),
+        grid=(ntg * sg * 32, 1, 1),
+        threadgroup=(sg * 32, 1, 1),
         output_shapes=[(n_slots * m,)],
         output_dtypes=[mx.float32],
     )[0]
@@ -436,6 +452,7 @@ def trellis_dense_matmul(
     tg_count: int = 80,
 ) -> mx.array:
     """Dense matrix multiply x_rot[T, n] @ W.T -> [T, m] reading packed weights 1x per 8-token block."""
+    sg = _hw_sg()
     x2 = x_rot.reshape(-1, n)
     T = int(x2.shape[0])
     if T == 1:
@@ -447,7 +464,7 @@ def trellis_dense_matmul(
     c_flat = codes.reshape(-1)
     s_flat = scales_f16.reshape(-1)
     l_flat = lut_f16.reshape(-1)
-    ntg = max(1, min(tg_count, (m + 31) // 32))
+    ntg = max(1, min(tg_count, (m + 2 * sg - 1) // (2 * sg)))
     meta = _meta_u32(m, ntg)
     for t0 in range(0, T, 8):
         tb = min(8, T - t0)
@@ -457,11 +474,11 @@ def trellis_dense_matmul(
                 m, n, k, g, lut_entries, hash_mult, x_div=1, tg_count=tg_count,
             ))
         else:
-            kern = make_halfwarp_trellis_dense_bt_kernel(k, n, g, lut_entries, hash_mult, tb)
+            kern = make_halfwarp_trellis_dense_bt_kernel(k, n, g, lut_entries, hash_mult, tb, sg=sg)
             out = kern(
                 inputs=[x2[t0 : t0 + tb].reshape(-1), c_flat, s_flat, l_flat, meta],
-                grid=(ntg * 16 * 32, 1, 1),
-                threadgroup=(16 * 32, 1, 1),
+                grid=(ntg * sg * 32, 1, 1),
+                threadgroup=(sg * 32, 1, 1),
                 output_shapes=[(tb * m,)],
                 output_dtypes=[mx.float32],
             )[0]
@@ -679,6 +696,7 @@ def trellis_moe_grouped(
     tg_count: int = 80,
 ) -> mx.array:
     """Unique-expert grouped multi-token MoE matmul for `n_slots <= 64`, `n_experts <= 128`."""
+    sg = _hw_sg()
     n_slots = int(expert_ids.shape[0])
     n_experts = int(codes.shape[0])
     if n_slots > 64 or n_experts > 128:
@@ -686,12 +704,12 @@ def trellis_moe_grouped(
             x_rot, codes, scales_f16, lut_f16, expert_ids,
             m, n, k, g, lut_entries, hash_mult, x_div=x_div, tg_count=tg_count,
         )
-    kern = make_halfwarp_trellis_moe_grouped_kernel(k, n, g, lut_entries, hash_mult)
+    kern = make_halfwarp_trellis_moe_grouped_kernel(k, n, g, lut_entries, hash_mult, sg=sg)
     meta = _meta_u32(m, n_slots, x_div, tg_count, n_experts)
     out = kern(
         inputs=[x_rot.reshape(-1), codes.reshape(-1), scales_f16.reshape(-1), lut_f16.reshape(-1), expert_ids, meta],
-        grid=(tg_count * 16 * 32, 1, 1),
-        threadgroup=(16 * 32, 1, 1),
+        grid=(tg_count * sg * 32, 1, 1),
+        threadgroup=(sg * 32, 1, 1),
         output_shapes=[(n_slots * m,)],
         output_dtypes=[mx.float32],
     )[0]
@@ -790,17 +808,18 @@ def lm_matvec(
     tg_count: int = 80,
 ) -> mx.array:
     """Execute half-warp packed lm6/lm8 matvec on x_rot[T, n]; returns float32[T, m]."""
+    sg = _hw_sg()
     x2 = x_rot.reshape(-1, n)
     n_slots = int(x2.shape[0])
     blocks_per_slot = (m + 3) // 4
     total_blocks = n_slots * blocks_per_slot
-    ntg = max(1, min(tg_count, (total_blocks + 31) // 32))
-    kern = make_halfwarp_lm_kernel(k, n)
+    ntg = max(1, min(tg_count, (total_blocks + 2 * sg - 1) // (2 * sg)))
+    kern = make_halfwarp_lm_kernel(k, n, sg=sg)
     meta = _meta_u32(m, n_slots, ntg)
     out = kern(
         inputs=[x2.reshape(-1), codes_u8.reshape(-1), scales_f16.reshape(-1), levels_f32.reshape(-1), meta],
-        grid=(ntg * 16 * 32, 1, 1),
-        threadgroup=(16 * 32, 1, 1),
+        grid=(ntg * sg * 32, 1, 1),
+        threadgroup=(sg * 32, 1, 1),
         output_shapes=[(n_slots * m,)],
         output_dtypes=[mx.float32],
     )[0]
@@ -887,6 +906,7 @@ def lm_dense_matmul(
     tg_count: int = 80,
 ) -> mx.array:
     """Dense lm6/lm8 matmul reading packed weights 1x per 8-token block."""
+    sg = _hw_sg()
     x2 = x_rot.reshape(-1, n)
     T = int(x2.shape[0])
     if T == 1:
@@ -895,18 +915,18 @@ def lm_dense_matmul(
     c_flat = codes_u8.reshape(-1)
     s_flat = scales_f16.reshape(-1)
     l_flat = levels_f32.reshape(-1)
-    ntg = max(1, min(tg_count, (m + 31) // 32))
+    ntg = max(1, min(tg_count, (m + 2 * sg - 1) // (2 * sg)))
     meta = _meta_u32(m, ntg)
     for t0 in range(0, T, 8):
         tb = min(8, T - t0)
         if tb == 1:
             parts.append(lm_matvec(x2[t0 : t0 + 1], codes_u8, scales_f16, levels_f32, m, n, k, tg_count=tg_count))
         else:
-            kern = make_halfwarp_lm_dense_bt_kernel(k, n, tb)
+            kern = make_halfwarp_lm_dense_bt_kernel(k, n, tb, sg=sg)
             out = kern(
                 inputs=[x2[t0 : t0 + tb].reshape(-1), c_flat, s_flat, l_flat, meta],
-                grid=(ntg * 16 * 32, 1, 1),
-                threadgroup=(16 * 32, 1, 1),
+                grid=(ntg * sg * 32, 1, 1),
+                threadgroup=(sg * 32, 1, 1),
                 output_shapes=[(tb * m,)],
                 output_dtypes=[mx.float32],
             )[0]
@@ -1040,23 +1060,24 @@ def nvfp4_matvec(
     e4m3_lut: mx.array | None = None,
 ) -> mx.array:
     """Execute half-warp native NVFP4 MoE matvec on unrotated `x`; returns float32[n_slots, m]."""
+    sg = _hw_sg()
     n_slots = int(expert_ids.shape[0])
     blocks_per_slot = (m + 3) // 4
     total_blocks = n_slots * blocks_per_slot
-    ntg = max(1, min(tg_count, (total_blocks + 31) // 32))
+    ntg = max(1, min(tg_count, (total_blocks + 2 * sg - 1) // (2 * sg)))
     if e2m1_lut is None or e4m3_lut is None:
         e2m1_d, e4m3_d = nvfp4_luts_mx()
         e2m1_lut = e2m1_d if e2m1_lut is None else e2m1_lut
         e4m3_lut = e4m3_d if e4m3_lut is None else e4m3_lut
-    kern = make_halfwarp_nvfp4_kernel(n)
+    kern = make_halfwarp_nvfp4_kernel(n, sg=sg)
     meta = _meta_u32(m, n_slots, int(x_div), ntg)
     out = kern(
         inputs=[
             x.reshape(-1), codes_u32.reshape(-1), scales_u8.reshape(-1), outer_f32.reshape(-1),
             e2m1_lut, e4m3_lut, expert_ids, meta,
         ],
-        grid=(ntg * 16 * 32, 1, 1),
-        threadgroup=(16 * 32, 1, 1),
+        grid=(ntg * sg * 32, 1, 1),
+        threadgroup=(sg * 32, 1, 1),
         output_shapes=[(n_slots * m,)],
         output_dtypes=[mx.float32],
     )[0]
