@@ -81,3 +81,15 @@ def test_decode_steps_match_prefill(model, oracle, name, chunk):
     # chat_math (a 25-token system prompt) moves by ~2e-2 under 1e-7 noise; the others by ~1e-4. Measured: 8.9 GB
     # 1.1e-3; 11.2 GB 1.3e-2 / 7.3e-3, while en/code on the same NVFP4 decode path agree to ~1e-7 (a routing near-tie)
     assert kl.mean() < (3e-2 if name == "chat_math" else 2e-3) and top1.mean() == 1.0 and int(cache.pos.item()) == len(ids)
+
+
+def test_blocked_tokens_never_generated(model, oracle):
+    """`blocked` (what `--no-thinking` uses) must hold in the prefill pick and in every replay of the captured step,
+    which reads the blocked columns from memory allocated before the prompt runs."""
+    from runtime_cuda.inkling.generate import generate_serial
+
+    ids = oracle["chat_math"]["ids"]
+    free = generate_serial(model, ids, max_tokens=12, eos_ids=())
+    for k in (0, 1, 5):  # the prefill pick, the first and a later graph step
+        got = generate_serial(model, ids, max_tokens=12, eos_ids=(), blocked=[free[k]])
+        assert got[:k] == free[:k] and free[k] not in got, (k, free, got)

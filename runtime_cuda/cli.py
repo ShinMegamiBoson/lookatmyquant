@@ -3,7 +3,7 @@
     python -m runtime_cuda generate shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB -p "What is 17 * 23?" --stats
     python -m runtime_cuda info shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-11.2GB
 
-The same arguments as `lamq generate` where they apply; generation is greedy and serial (no drafter yet).
+The same arguments as `lamq generate` where they apply, plus `--no-thinking`; generation is greedy and serial (no drafter yet).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     st: dict = {}
     pieces = []
     for piece in stream(model, tok, prompt, max_tokens=args.max_tokens, chat=not args.raw, system=args.system,
-                        thinking=args.thinking, stats_out=st):
+                        thinking=args.thinking, no_thinking=args.no_thinking, stats_out=st):
         if args.json:
             pieces.append(piece)
         else:
@@ -62,7 +62,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("-p", "--prompt", default=None, help="prompt text ('-' or omitted: read stdin)")
     g.add_argument("--max-tokens", type=int, default=256)
     g.add_argument("--system", default=None, help="optional system message")
-    g.add_argument("--thinking", action="store_true", help="enable thinking in the chat template")
+    think = g.add_mutually_exclusive_group()
+    think.add_argument("--thinking", action="store_true", help="enable thinking in the chat template")
+    think.add_argument("--no-thinking", action="store_true",
+                       help="never open the thinking channel (without either flag the model still thinks briefly)")
     g.add_argument("--raw", action="store_true", help="feed the prompt as-is, without the chat template")
     g.add_argument("--json", action="store_true", help="print one JSON object with the text and statistics")
     g.add_argument("--stats", action="store_true", help="print throughput to stderr")

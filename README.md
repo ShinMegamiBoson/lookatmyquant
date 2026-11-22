@@ -116,6 +116,8 @@ model, tok = load("shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-8.9GB")
 print(generate(model, tok, "What is 17 times 23? Show the steps.", max_tokens=200))
 ```
 
+`generate` takes `lamq generate`'s `-p`, `--system`, `--thinking`, `--raw`, `--json` and `--stats`. With thinking off the model still opens a short thinking channel before it answers; `--no-thinking` (`no_thinking=True`) never lets it pick the token that opens that channel, so it usually answers directly (it can still write a few lines of reasoning as plain text).
+
 On one RTX A4500 (20 GB, Ampere), greedy and one token at a time, a decode step is captured in a CUDA graph:
 
 | Build | Decode | 512-token prefill | Peak memory |

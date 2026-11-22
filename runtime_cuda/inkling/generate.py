@@ -18,8 +18,9 @@ from .model import Inkling2Cache, Inkling2LoopPacked
 class GreedyDecodeGraph:
     """A captured greedy decode step bound to one cache. `tok` holds the input token and receives the output."""
 
-    def __init__(self, model: Inkling2LoopPacked, cache: Inkling2Cache, max_steps: int):
-        self.model, self.cache = model, cache
+    def __init__(self, model: Inkling2LoopPacked, cache: Inkling2Cache, max_steps: int, blocked: Sequence[int] = ()):
+        self.model, self.cache, self.blocked = model, cache, frozenset(int(t) for t in blocked)
+        self.cols = cols = model.blocked_columns(self.blocked)  # held: the graph reads this memory
         dev = model.device
         self.tok = torch.zeros(1, dtype=torch.long, device=dev)
         self.out = torch.zeros(max_steps + 1, dtype=torch.long, device=dev)
@@ -31,12 +32,12 @@ class GreedyDecodeGraph:
             s.wait_stream(torch.cuda.current_stream())
             with torch.cuda.stream(s):
                 for _ in range(2):
-                    model.argmax(model.decode_step(self.tok, scratch))
+                    model.argmax(model.decode_step(self.tok, scratch), cols)
             torch.cuda.current_stream().wait_stream(s)
             del scratch
             self.graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(self.graph):
-                nxt = model.argmax(model.decode_step(self.tok, cache))
+                nxt = model.argmax(model.decode_step(self.tok, cache), cols)
                 self.tok.copy_(nxt)
                 self.out.index_copy_(0, self.step, nxt)
                 self.step.add_(1)
@@ -54,10 +55,13 @@ def stream_serial(
     cache: Inkling2Cache | None = None,
     graph: GreedyDecodeGraph | None = None,
     sync_every: int = 8,
+    blocked: Sequence[int] = (),
     stats_out: dict[str, Any] | None = None,
 ) -> Iterator[list[int]]:
-    """Greedy single-token generation; yields lists of new token ids. Pass `cache` and `graph` to reuse a capture."""
+    """Greedy single-token generation; yields lists of new token ids. Pass `cache` and `graph` to reuse a capture.
+    Tokens in `blocked` are never generated."""
     eos = {int(x) for x in eos_ids}
+    blocked = frozenset(int(t) for t in blocked)
     need = len(prompt_ids) + max_tokens + sync_every
     if cache is None:
         cache = model.make_cache(max(1024, ((need + 255) // 256) * 256))
@@ -65,12 +69,14 @@ def stream_serial(
         cache.reset()
     if need > cache.capacity:
         raise ValueError(f"prompt + max_tokens needs {need} positions, cache holds {cache.capacity}")
-    if graph is None or graph.cache is not cache:
-        graph = GreedyDecodeGraph(model, cache, max_tokens + sync_every)
+    if graph is None or graph.cache is not cache or graph.blocked != blocked:
+        graph = GreedyDecodeGraph(model, cache, max_tokens + sync_every, blocked)
 
     torch.cuda.synchronize(model.device)
     t0 = time.perf_counter()
     logits = model.prefill(list(prompt_ids), cache)
+    if blocked:
+        logits[-1, sorted(blocked)] = float("-inf")
     first = int(logits[-1].argmax())
     t1 = time.perf_counter()
     yield [first]

@@ -660,9 +660,19 @@ class Inkling2LoopPacked:
     def logits(self, h: torch.Tensor) -> torch.Tensor:
         return softcap(self.ordered_logits(h)[:, self.lm_head.inv_order], self.cfg.final_logit_softcapping)
 
-    def argmax(self, h: torch.Tensor) -> torch.Tensor:
-        """Greedy next tokens without the 200K gather (softcap is monotonic)."""
-        return self.order[self.ordered_logits(h).argmax(-1)]
+    def blocked_columns(self, token_ids) -> torch.Tensor | None:
+        """Bucket-order columns of tokens `argmax` must never pick (None if there are none)."""
+        ids = sorted({int(t) for t in token_ids or ()})
+        if not ids:
+            return None
+        return self.lm_head.inv_order[torch.tensor(ids, device=self.device)]
+
+    def argmax(self, h: torch.Tensor, blocked: torch.Tensor | None = None) -> torch.Tensor:
+        """Greedy next tokens without the 200K gather (softcap is monotonic). `blocked` comes from `blocked_columns`."""
+        lg = self.ordered_logits(h)
+        if blocked is not None:
+            lg = lg.index_fill(-1, blocked, float("-inf"))
+        return self.order[lg.argmax(-1)]
 
     @torch.no_grad()
     def prefill(self, ids: list[int] | torch.Tensor, cache: Inkling2Cache, all_logits: bool = False, chunk: int = 1024):
