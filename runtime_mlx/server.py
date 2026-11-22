@@ -164,6 +164,10 @@ def normalize_messages(msgs: Any) -> list[dict]:
 # --------------------------------------------------------------------------- output parsing
 
 
+def _reject_json_constant(value: str):
+    raise ValueError(f"{value} is not a JSON number")
+
+
 class OutputParser:
     """Token-level parser for Inkling's output grammar.
 
@@ -172,13 +176,14 @@ class OutputParser:
         <|message_model|>NAME<|content_invoke_tool_json|>{json}<|end_message|> -> one tool call
         <|content_model_end_sampling|>                                         -> end of turn
 
-    Parsing stops after the first tool call: left to continue, the model tends to start a fresh
-    turn and repeat the call. `feed()` returns events `("reasoning"|"content", text)` and
+    Parsing stops after the first complete call to a declared function. Invalid tool
+    frames are skipped so later assistant text can still be returned. `feed()` returns events `("reasoning"|"content", text)` and
     `("tool", openai_tool_call)`.
     """
 
-    def __init__(self, tokenizer, ids: dict[str, int]):
+    def __init__(self, tokenizer, ids: dict[str, int], tool_names=()):
         self.tok = tokenizer
+        self.tool_names = frozenset(tool_names)
         self.I = ids
         self.other_roles = {ids["user"], ids["system"], ids["tool"]}
         self.state = "between"
@@ -220,16 +225,24 @@ class OutputParser:
                 self._emit(s, out)
 
     def _finish_tool(self, out: list) -> None:
-        raw = self._dec(self.tool_tokens).strip()
-        name, args = self.tool_name, None
         try:
-            obj = json.loads(raw)
-            if isinstance(obj, dict):
-                name = obj.get("name") or name
-                args = obj["args"] if "args" in obj else {k: v for k, v in obj.items() if k != "name"}
+            obj = json.loads(self._dec(self.tool_tokens), parse_constant=_reject_json_constant)
+            if not isinstance(obj, dict):
+                return
+            name = self.tool_name
+            if not name or ("name" in obj and ("args" in obj or "arguments" in obj)):
+                name = obj.get("name")
+                if self.tool_name and name != self.tool_name:
+                    return
+                args = obj.get("args", obj.get("arguments"))
+            else:
+                args = obj.get("arguments", obj)
+            if not isinstance(name, str) or name not in self.tool_names or not isinstance(args, dict):
+                return
+            arguments = json.dumps(args, ensure_ascii=False, allow_nan=False)
+            arguments.encode("utf-8")  # Reject unpaired surrogates before writing SSE.
         except (ValueError, RecursionError):
-            pass
-        arguments = json.dumps(args, ensure_ascii=False) if args is not None else raw
+            return
         out.append(("tool", {"id": "call_" + uuid.uuid4().hex[:24], "type": "function",
                              "function": {"name": name, "arguments": arguments}}))
         self.done, self.finish = True, "tool_calls"
@@ -241,9 +254,6 @@ class OutputParser:
         if t == I["eos"] or t in self.other_roles:
             if st in ("thinking", "text"):
                 self._flush(out)
-            elif st == "tool" and t == I["eos"]:
-                self._finish_tool(out)
-                return out
             self.done = True
             return out
         if st == "between":
@@ -258,7 +268,8 @@ class OutputParser:
             if t in (I["thinking"], I["text"]):
                 self._enter("thinking" if t == I["thinking"] else "text")
             elif t in (I["tool_json"], I["tool_text"]):
-                self.state, self.tool_tokens = "tool", []
+                self.state = "tool" if t == I["tool_json"] and self.tool_names else "discard_tool"
+                self.tool_tokens = []
                 self.tool_name = self._dec(self.header).strip()
             elif t == I["end"]:
                 self.state = "between"
@@ -280,10 +291,16 @@ class OutputParser:
                 self._enter("thinking" if t == I["thinking"] else "text")
             else:
                 self._push(t, out)
-        elif st == "tool":
+        elif st in ("tool", "discard_tool"):
             if t == I["end"]:
-                self._finish_tool(out)
-            else:
+                if st == "tool":
+                    self._finish_tool(out)
+                self.state = "between"
+            elif t == I["model"]:
+                self.state, self.header = "header", []
+            elif t in (I["text"], I["thinking"]):
+                self._enter("thinking" if t == I["thinking"] else "text")
+            elif st == "tool":
                 self.tool_tokens.append(t)
         return out
 
@@ -346,6 +363,13 @@ class Engine:
         tools = req.get("tools")
         if tools is not None and not isinstance(tools, list):
             raise RequestError(400, "tools must be an array")
+        tool_names = set()
+        for tool in tools or ():
+            fn = tool.get("function") if isinstance(tool, dict) and tool.get("type") == "function" else None
+            name = fn.get("name") if isinstance(fn, dict) else None
+            if not isinstance(name, str) or not name:
+                raise RequestError(400, "each tool must declare a named function")
+            tool_names.add(name)
         effort = req.get("reasoning_effort")
         if isinstance(effort, dict):
             effort = effort.get("effort")
@@ -362,7 +386,7 @@ class Engine:
         if tools:
             kw["tools"] = tools
         try:
-            return self.tok.apply_chat_template(messages, **kw), effort
+            return self.tok.apply_chat_template(messages, **kw), effort, tool_names
         except Exception as e:  # jinja raise_exception() and friends
             raise RequestError(400, "chat template could not render messages and tools") from e
 
@@ -374,7 +398,7 @@ class Engine:
 
     def prepare(self, req: dict) -> dict:
         """Validate and tokenize a request before sending any response bytes."""
-        enc, effort = self._apply_template(dict(req, add_generation_prompt=True), tokenize=True)
+        enc, effort, tool_names = self._apply_template(dict(req, add_generation_prompt=True), tokenize=True)
         if isinstance(enc, dict) or hasattr(enc, "input_ids"):
             enc = enc["input_ids"]
         ids = [int(x) for x in enc]
@@ -390,6 +414,7 @@ class Engine:
         return {
             "ids": ids,
             "effort": effort,
+            "tool_names": tool_names,
             "max_tokens": min(max_tokens, ctx - len(ids)),
             "temp": _number(req, "temperature", self.args.temp, low=0, high=2),
             "top_p": _number(req, "top_p", self.args.top_p, low=0, high=1),
@@ -419,7 +444,7 @@ class Engine:
             gen = stream_dspark(self.m, self.drafter, ids, **common)
         else:
             gen = stream_serial(self.m, ids, **common)
-        parser = OutputParser(self.hf, self.ids)
+        parser = OutputParser(self.hf, self.ids, job["tool_names"])
         n_gen, finish, last_check = 0, None, time.perf_counter()
         try:
             for chunk in gen:

@@ -47,9 +47,9 @@ class ByteTokenizer:
         return "".join(out) + buf.decode(errors="replace")
 
 
-def parse(text: str):
+def parse(text: str, tool_names=()):
     tok = ByteTokenizer()
-    p = OutputParser(tok, IDS)
+    p = OutputParser(tok, IDS, tool_names)
     events = []
     for t in tok.encode(text):
         events += p.feed(t)
@@ -68,14 +68,63 @@ def test_output_parser() -> None:
     assert (r, c, t, f) == ("First.\n\nSecond.", "café ☕ 日本 🎉", [], "stop"), (r, c, t, f)
 
     r, c, t, f = parse('<|message_model|><|content_thinking|>Read it.<|end_message|><|message_model|>read<|content_invoke_tool_json|>'
-                       '{"name":"read","args":{"path":"a b/ü.py"}}<|end_message|><|message_model|>bash<|content_invoke_tool_json|>{}')
+                       '{"name":"read","args":{"path":"a b/ü.py"}}<|end_message|><|message_model|>bash<|content_invoke_tool_json|>{}', {"read"})
     assert r == "Read it." and c == "" and f == "tool_calls"
     assert t == [{"name": "read", "arguments": '{"path": "a b/ü.py"}'}], "stops after the first tool call"
 
     assert parse("bare text, no header<|content_model_end_sampling|>")[1] == "bare text, no header"
     assert parse("<|message_model|><|content_text|>hi<|end_message|><|message_user|>imagined turn")[1] == "hi"
-    _, _, t, _ = parse("<|message_model|>bash<|content_invoke_tool_json|>not json<|end_message|>")
-    assert t == [{"name": "bash", "arguments": "not json"}], "unparseable arguments pass through raw"
+
+
+def test_tool_calls_require_a_complete_declared_json_frame() -> None:
+    model, tool, end, eos = (SPECIAL[k] for k in ("model", "tool_json", "end", "eos"))
+    text = model + SPECIAL["text"] + "Continuing normally." + end + eos
+    declared = {"read", "list"}
+    for header, body in (
+        ("read", '{"path":"x"}'),
+        ("read", '{"name":"read","args":{"path":"x"}}'),
+        ("read", '{"arguments":{"path":"x"}}'),
+        ("", '{"name":"read","arguments":{"path":"x"}}'),
+    ):
+        r, c, calls, finish = parse(model + header + tool + body + end, declared)
+        assert (r, c, calls, finish) == ("", "", [{"name": "read", "arguments": '{"path": "x"}'}], "tool_calls")
+
+    for header, body, marker, names in (
+        ("read", '{"path":"x"}', tool, set()),
+        ("other", '{"path":"x"}', tool, declared),
+        ("read", '{"name":"list","args":{}}', tool, declared),
+        ("read", "not JSON", tool, declared),
+        ("read", '{"name":"read","args":{}', tool, declared),
+        ("read", '["x"]', tool, declared),
+        ("read", '{"name":"read","args":null}', tool, declared),
+        ("read", '{"name":"read","args":[]}', tool, declared),
+        ("read", '{"value":NaN}', tool, declared),
+        ("read", '{"value":1e400}', tool, declared),
+        ("read", r'{"value":"\ud800"}', tool, declared),
+        ("read", '{"path":"x"}', SPECIAL["tool_text"], declared),
+    ):
+        assert parse(model + header + marker + body + end + text, names) == ("", "Continuing normally.", [], "stop")
+    incomplete = model + "read" + tool + '{"path":"x"}'
+    assert parse(incomplete, declared)[2:] == ([], "stop")
+    assert parse(incomplete + eos, declared)[2:] == ([], "stop")
+    assert parse(incomplete + text, declared)[1:] == ("Continuing normally.", [], "stop")
+
+
+def test_prepare_carries_only_declared_tool_names() -> None:
+    engine = Engine.__new__(Engine)
+    engine.args = SimpleNamespace(context=64, max_tokens=16, reasoning_effort="none", temp=0.0, top_p=1.0)
+    engine.tok = SimpleNamespace(apply_chat_template=lambda *args, **kwargs: [1, 2])
+    engine.m = SimpleNamespace(lm_head=SimpleNamespace(order_mx=SimpleNamespace(size=1024)))
+    req = {"messages": [{"role": "user", "content": "Hello."}]}
+    assert engine.prepare(req)["tool_names"] == set()
+    assert engine.prepare(dict(req, tools=[{"type": "function", "function": {"name": "read"}}]))["tool_names"] == {"read"}
+    for tools in ({}, [{}], [{"type": "function", "function": {"name": []}}]):
+        try:
+            engine.prepare(dict(req, tools=tools))
+        except RequestError as e:
+            assert e.status == 400
+        else:
+            raise AssertionError("invalid tool declaration")
 
 
 def test_normalize_messages() -> None:
@@ -152,7 +201,7 @@ def test_http_round_trip() -> None:
         assert st == 200 and msg["content"] == "Hello world" and msg["reasoning_content"] == "thinking"
         assert r["choices"][0]["finish_reason"] == "stop" and r["usage"]["prompt_tokens_details"]["cached_tokens"] == 4
 
-        st, ctype, data = call("POST", "/v1/chat/completions", {"messages": [{"role": "user", "content": "hi"}], "tools": [{}],
+        st, ctype, data = call("POST", "/v1/chat/completions", {"messages": [{"role": "user", "content": "hi"}], "tools": [{"type": "function", "function": {"name": "read"}}],
                                                                 "stream": True, "stream_options": {"include_usage": True}})
         assert st == 200 and ctype == "text/event-stream"
         lines = [ln[6:] for ln in data.decode().split("\n") if ln.startswith("data: ")]
@@ -252,6 +301,8 @@ def test_engine_keeps_a_model_thread_across_clients():
 
 def main() -> None:
     test_output_parser()
+    test_tool_calls_require_a_complete_declared_json_frame()
+    test_prepare_carries_only_declared_tool_names()
     test_normalize_messages()
     test_http_round_trip()
     test_network_auth_and_generation_admission()
