@@ -367,8 +367,8 @@ def test_tree_spec_and_kernels() -> None:
 
     for name, parents in TREE_TOPOLOGIES.items():
         spec = make_tree_spec(parents)
-        assert spec["T"] == 8 and spec["paths"][0] == [0], f"bad spec {name}"
-        assert len(spec["depth"]) == 8 and spec["depth"][0] == 0
+        assert spec["T"] == len(parents) and 1 <= spec["T"] <= 8 and spec["paths"][0] == [0], f"bad spec {name}"
+        assert len(spec["depth"]) == len(parents) and spec["depth"][0] == 0
 
     spec = make_tree_spec(TREE_TOPOLOGIES["4-3"])
     rng = np.random.default_rng(77)

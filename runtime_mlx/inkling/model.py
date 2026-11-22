@@ -28,6 +28,9 @@ from .fast_kernels import (
     FMT_ID,
     DenseStage,
     UnifiedMoESide,
+    _is_m4,
+    fp8_e4m3_quantize_f16_to_u8,
+    kv_h128_q4_quantize,
     block_attn_res_fused,
     block_attn_res_norm_rht_fast,
     build_fast_luts,
@@ -112,6 +115,8 @@ class Inkling2Config:
     moe_k_min: int = 8
     moe_ratio_thr: float = 0.0
     moe_renorm: bool = False
+    fp8_global_kv: bool = True
+    global_kv_mode: str = "fp8"
 
     @classmethod
     def from_json(cls, path: Path) -> "Inkling2Config":
@@ -149,6 +154,8 @@ class Inkling2Config:
             loop_end=lc.get("core_end", 18),
             loop_passes=lc.get("num_passes", 3),
             loop_gate_rank=lc.get("gate_rank", 64),
+            fp8_global_kv=(__import__("os").environ.get("LAMQ_FP8_GLOBAL_KV", "1") != "0"),
+            global_kv_mode=(lambda _os: _os.environ.get("LAMQ_GLOBAL_KV") or ("fp16" if _os.environ.get("LAMQ_FP8_GLOBAL_KV", "1") == "0" else "fp8"))(__import__("os")),
         )
 
     @property
@@ -283,8 +290,12 @@ class Inkling2Cache:
         # Generic fallback KV
         self.keys: list[mx.array | None] = [None] * n_slots
         self.values: list[mx.array | None] = [None] * n_slots
-        # Fast pre-allocated unified FP16 KV (`[2, 8, cap, 128]` -> 1 slice update per visit!)
+        # Fast pre-allocated unified FP16 / FP8-E4M3 global KV (`[2, 8, cap, 128]`)
         self.kv_f16: list[mx.array | None] = [None] * n_slots
+        self.kv_u8: list[mx.array | None] = [None] * n_slots
+        self.kv_is_fp8: list[bool] = [False] * n_slots
+        self.kv_q4_sc: list[mx.array | None] = [None] * n_slots
+        self.kv_mode: list[str] = ["fp16"] * n_slots
         self.kv_len: list[int] = [0] * n_slots
         self.kv_start: list[int] = [0] * n_slots
         self.kv_cap: list[int] = [0] * n_slots
@@ -371,10 +382,14 @@ class Inkling2Cache:
         for slot in range(len(self.keys)):
             if self._fast:
                 base = self._spec_base_kv_len[slot]
-                KV = self.kv_f16[slot]
+                is_q4 = self.kv_mode[slot] == "q4"
+                KV = self.kv_u8[slot] if (self.kv_is_fp8[slot] or is_q4) else self.kv_f16[slot]
                 if KV is not None:
                     gathered = KV[:, :, base : base + block_len, :][:, :, idx_mx, :]
                     KV[:, :, base : base + k_accept, :] = gathered
+                if is_q4 and self.kv_q4_sc[slot] is not None:
+                    sc_g = self.kv_q4_sc[slot][:, :, base : base + block_len, :][:, :, idx_mx, :]
+                    self.kv_q4_sc[slot][:, :, base : base + k_accept, :] = sc_g
                 new_len = base + k_accept
                 self.kv_len[slot] = new_len
                 self._compact_sliding_slot(slot, new_len)
@@ -423,11 +438,50 @@ class Inkling2Cache:
             self._spec_conv_pair[slot][conv_idx] = (prev, x_btc)
         self.conv_states[slot][conv_idx] = new_prev
 
-    def update_kv_f16(self, slot: int, kv_f16: mx.array, is_sliding: bool) -> tuple[mx.array, int, int, int]:
-        """Pre-allocated unified FP16 KV append. `kv_f16`: `[2, 8, T, 128]` float16. Returns `(KV_buf, kv_len, kv_start, kv_cap)`."""
+    def update_kv_f16(self, slot: int, kv_f16: mx.array, is_sliding: bool) -> tuple[mx.array, int, int, int, bool, mx.array | None]:
+        """Pre-allocated unified FP16 (sliding) or FP8 / H128-Q4 (global) KV append."""
         T = int(kv_f16.shape[2])
         cur = self.kv_len[slot]
         self.kv_is_sliding[slot] = is_sliding
+        mode = "fp16" if (is_sliding or not self._fast) else self.cfg.global_kv_mode
+        if mode == "fp8" and not self.cfg.fp8_global_kv:
+            mode = "fp16"
+        self.kv_mode[slot] = mode
+        use_fp8 = mode == "fp8"
+        self.kv_is_fp8[slot] = use_fp8
+        if mode == "q4":
+            kv_q4, kv_sc = kv_h128_q4_quantize(kv_f16)
+            need = cur + T
+            if self.kv_u8[slot] is None or need > self.kv_cap[slot]:
+                new_cap = ((need + 255) // 256) * 256
+                KV_new = mx.zeros((2, 8, new_cap, 64), dtype=mx.uint8)
+                SC_new = mx.zeros((2, 8, new_cap, 4), dtype=mx.float16)
+                if self.kv_u8[slot] is not None and cur > 0:
+                    KV_new[:, :, :cur, :] = self.kv_u8[slot][:, :, :cur, :]
+                    SC_new[:, :, :cur, :] = self.kv_q4_sc[slot][:, :, :cur, :]
+                self.kv_u8[slot] = KV_new
+                self.kv_q4_sc[slot] = SC_new
+                self.kv_cap[slot] = new_cap
+            KV_buf = self.kv_u8[slot]
+            SC_buf = self.kv_q4_sc[slot]
+            KV_buf[:, :, cur:need, :] = kv_q4
+            SC_buf[:, :, cur:need, :] = kv_sc
+            self.kv_len[slot] = need
+            return KV_buf, need, self.kv_start[slot], self.kv_cap[slot], False, SC_buf
+        if use_fp8:
+            kv_u8 = fp8_e4m3_quantize_f16_to_u8(kv_f16)
+            need = cur + T
+            if self.kv_u8[slot] is None or need > self.kv_cap[slot]:
+                new_cap = ((need + 255) // 256) * 256
+                KV_new = mx.zeros((2, 8, new_cap, 128), dtype=mx.uint8)
+                if self.kv_u8[slot] is not None and cur > 0:
+                    KV_new[:, :, :cur, :] = self.kv_u8[slot][:, :, :cur, :]
+                self.kv_u8[slot] = KV_new
+                self.kv_cap[slot] = new_cap
+            KV_buf = self.kv_u8[slot]
+            KV_buf[:, :, cur:need, :] = kv_u8
+            self.kv_len[slot] = need
+            return KV_buf, need, self.kv_start[slot], self.kv_cap[slot], True, None
         W = self.cfg.sliding_window_size
         if is_sliding and not self._spec_recording and cur + T > self.kv_cap[slot] and cur > W:
             shift = cur - W
@@ -450,7 +504,7 @@ class Inkling2Cache:
         KV_buf = self.kv_f16[slot]
         KV_buf[:, :, cur:need, :] = kv_f16
         self.kv_len[slot] = need
-        return KV_buf, need, self.kv_start[slot], self.kv_cap[slot]
+        return KV_buf, need, self.kv_start[slot], self.kv_cap[slot], False, None
 
     def update_kv(self, slot: int, k: mx.array, v: mx.array, is_sliding: bool) -> tuple[mx.array, mx.array]:
         if self.keys[slot] is None:
@@ -1445,7 +1499,7 @@ class PackedDecoderLayer:
         tree_mask = tree_spec["mask_mx"] if tree_spec is not None else None
 
         # 1. Attn input AttnRes + optional batched message gates + layernorm + 5-matrix batched RHT-2304
-        use_qkv_sg8 = 5 <= T <= 8
+        use_qkv_sg8 = (4 <= T <= 8) if _is_m4() else (5 <= T <= 8)
         if self.is_sliding:
             if messages is None:
                 if self.attn_in_q is not None:
@@ -1482,7 +1536,11 @@ class PackedDecoderLayer:
             y_qkv = None
         else:
             y_qkv = (
-                self.qkv_stage.matmul_rotated_sg8_f16(x_rot5, T=T, rb=1, sg=8, ntg=160)
+                (
+                    self.qkv_stage.matmul_rotated_sg8_f16(x_rot5, T=T)
+                    if _is_m4()
+                    else self.qkv_stage.matmul_rotated_sg8_f16(x_rot5, T=T, rb=1, sg=8, ntg=160)
+                )
                 if use_qkv_sg8
                 else self.qkv_stage.matmul_rotated_f16(x_rot5, T, W_cached=qkv_w_cached)
             )  # [T, 8576]
@@ -1534,13 +1592,13 @@ class PackedDecoderLayer:
             cache.set_conv_after(cache_slot, 0, kp, k_raw.reshape(1, T, 1024), new_kp)
             cache.set_conv_after(cache_slot, 1, vp, v_raw.reshape(1, T, 1024), new_vp)
 
-        KV_buf, kv_len, kv_start, kv_cap = cache.update_kv_f16(cache_slot, kv_f16, self.is_sliding)
+        KV_buf, kv_len, kv_start, kv_cap, kv_is_fp8, kv_q4_sc = cache.update_kv_f16(cache_slot, kv_f16, self.is_sliding)
 
         # 4. Fused Sinks + GQA+RelPos Flash-Decoding / FlashAttention-2 SDPA (1 launch!)
         attn_out = gqa_relpos_sinks_sdpa_fast(
             q, KV_buf, rel_st, self.rel_proj_t_f16, q_in, self.sink_w_f16,
             T, kv_len, kv_start, q_pos0, kv_cap, self.is_sliding,
-            tree_depth=tree_depth, tree_mask=tree_mask,
+            tree_depth=tree_depth, tree_mask=tree_mask, kv_fp8=kv_is_fp8, kv_q4_scales=kv_q4_sc,
         )
 
         # 5. Fused Gate*Attn + RHT-3072 -> O projection -> Post-Attn ShortConv4 (+ Residual)
@@ -1713,6 +1771,7 @@ class Inkling2LoopPackedMLX:
         ordered_only: bool = False,
         tap_visits: tuple[int, ...] = (),
         tree_spec: dict | None = None,
+        skip_logits: bool = False,
     ):
         cfg = self.cfg
         h = self.embed(input_ids)[0]  # [T, 2304]
@@ -1808,6 +1867,15 @@ class Inkling2LoopPackedMLX:
                 mx.async_eval(h)
 
         # 5. Final AttnRes + norm + unpadded lm_head
+        if skip_logits:
+            if visit in tap_set:
+                h = block_attn_res_fused(self.final_in_q, blocks_cat, n_blocks, h, norm_w=self.final_norm_w)[0]
+                captured[visit] = h
+            cache.seq_len += T
+            if tap_visits:
+                taps = mx.stack([captured[v] for v in tap_visits], axis=1)
+                return h, cache, taps
+            return h, cache
         if not all_logits and visit not in tap_set and T > 1:
             b_last = blocks_cat[:, -1:, :] if (blocks_cat is not None and n_blocks > 0) else blocks_cat
             h_in = block_attn_res_fused(self.final_in_q, b_last, n_blocks, h[-1:, :], norm_w=self.final_norm_w)[0][None, :, :]
@@ -1837,11 +1905,12 @@ class Inkling2LoopPackedMLX:
         ordered_only: bool = False,
         tap_visits: tuple[int, ...] = (),
         tree_spec: dict | None = None,
+        skip_logits: bool = False,
     ):
         if cache is None:
             cache = self.make_cache()
         if self._fast:
-            return self._forward_core_fast(input_ids, cache, all_logits=all_logits, argmax_only=argmax_only, ordered_only=ordered_only, tap_visits=tap_visits, tree_spec=tree_spec)
+            return self._forward_core_fast(input_ids, cache, all_logits=all_logits, argmax_only=argmax_only, ordered_only=ordered_only, tap_visits=tap_visits, tree_spec=tree_spec, skip_logits=skip_logits)
         cfg = self.cfg
         h = self.embed(input_ids)
         T = h.shape[1]
@@ -1903,6 +1972,16 @@ class Inkling2LoopPackedMLX:
             h = new_h
             visit += 1
 
+        if skip_logits:
+            if visit in tap_set:
+                h = block_attn_res(self.final_in_q, block_states, h)[0]
+                h = rms_norm(h, self.final_norm_w, cfg.rms_norm_eps)
+                captured[visit] = h[0].astype(mx.float32)
+            cache.seq_len += T
+            if tap_visits:
+                taps = mx.stack([captured[v] for v in tap_visits], axis=1)
+                return h, cache, taps
+            return h, cache
         h = block_attn_res(self.final_in_q, block_states, h)[0]
         h = rms_norm(h, self.final_norm_w, cfg.rms_norm_eps)
         if visit in tap_set:
@@ -1937,6 +2016,9 @@ class Inkling2LoopPackedMLX:
 
     def forward_all_argmax(self, input_ids: list[int] | np.ndarray | mx.array, cache: Inkling2Cache | None = None, tap_visits: tuple[int, ...] = (), tree_spec: dict | None = None):
         return self._forward_core(input_ids, cache=cache, all_logits=True, argmax_only=True, tap_visits=tap_visits, tree_spec=tree_spec)
+
+    def forward_prefill_chunk(self, input_ids: list[int] | np.ndarray | mx.array, cache: Inkling2Cache | None = None, tap_visits: tuple[int, ...] = ()):
+        return self._forward_core(input_ids, cache=cache, tap_visits=tap_visits, skip_logits=True)
 
 
 class Inkling2MLXModel:

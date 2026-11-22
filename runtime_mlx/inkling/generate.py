@@ -10,8 +10,17 @@ import mlx.core as mx
 import numpy as np
 
 from .drafter import TREE_TOPOLOGIES, DSparkDrafterMLX
-from .fast_kernels import make_tree_spec
+from .fast_kernels import _is_m4, make_tree_spec
 from .model import Inkling2LoopPackedMLX, Inkling2MLXModel, logits_to_probs, softcap
+
+
+def _safe_wired_limit() -> int:
+    info = mx.device_info()
+    rec = int(info.get("max_recommended_working_set_size", 0))
+    mem = int(info.get("memory_size", 0))
+    if 0 < mem <= 18_500_000_000:
+        return min(rec, 10_000_000_000)
+    return rec
 
 
 def _unwrap_model(model: Inkling2LoopPackedMLX | Inkling2MLXModel) -> Inkling2LoopPackedMLX:
@@ -353,6 +362,8 @@ def stream_serial(
     temp: float = 0.0,
     top_p: float = 1.0,
     top_k: int = 0,
+    prefill_chunk_size: int = 256,
+    prefix_state: dict[str, Any] | None = None,
     stats_out: dict[str, Any] | None = None,
 ) -> Iterator[list[int]]:
     """Stream single-token serial generation from a packed Inkling-2-Mini model."""
@@ -361,7 +372,9 @@ def stream_serial(
     m = _unwrap_model(model)
     eos = set(int(x) for x in eos_ids)
     greedy = temp <= 0.0
-    old_wire = mx.set_wired_limit(mx.device_info()["max_recommended_working_set_size"])
+    ids_list = list(prompt_ids)
+    chunk_sz = max(1, int(prefill_chunk_size))
+    old_wire = mx.set_wired_limit(_safe_wired_limit())
     t0: float | None = None
     t1: float | None = None
     emitted = 0
@@ -370,12 +383,19 @@ def stream_serial(
     try:
         cache = m.make_cache()
         t0 = time.perf_counter()
+        pos = 0
+        while len(ids_list) - pos > chunk_sz:
+            h_chk, cache = m.forward_prefill_chunk(ids_list[pos : pos + chunk_sz], cache=cache)
+            mx.eval(h_chk)
+            mx.clear_cache()
+            pos += chunk_sz
+        tail_ids = ids_list[pos:]
         if greedy:
-            nxt_mx, cache = m.forward_argmax(list(prompt_ids), cache=cache)
+            nxt_mx, cache = m.forward_argmax(tail_ids, cache=cache)
             nxt_mx = nxt_mx[0, -1]
             nxt = int(nxt_mx)
         else:
-            ord_logits, cache = m.forward_ordered_logits(list(prompt_ids), cache=cache)
+            ord_logits, cache = m.forward_ordered_logits(tail_ids, cache=cache)
             nxt_mx = _sample_ordered_gpu(
                 ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
             )
@@ -424,6 +444,9 @@ def stream_serial(
     finally:
         if next_pending is not None:
             mx.eval(next_pending)
+        if prefix_state is not None and "cache" in locals():
+            prefix_state["cache"] = cache
+            prefix_state["pos"] = cache.seq_len
         if stats_out is not None and t0 is not None and t1 is not None:
             t2 = time.perf_counter()
             decode_s = max(t2 - t1, 1e-9)
@@ -448,6 +471,26 @@ def stream_serial(
         mx.set_wired_limit(old_wire)
 
 
+def _copy_loop_pass1_to_pass2(cache) -> None:
+    """Copy Pass-1 KV/conv slots (24..35) to Pass-2 slots (36..47) after 2-loop chunk prefill."""
+    for j in range(12):
+        s_src, s_dst = 24 + j, 36 + j
+        cache.kv_len[s_dst] = cache.kv_len[s_src]
+        cache.kv_start[s_dst] = cache.kv_start[s_src]
+        cache.kv_cap[s_dst] = cache.kv_cap[s_src]
+        cache.kv_is_sliding[s_dst] = cache.kv_is_sliding[s_src]
+        cache.kv_is_fp8[s_dst] = cache.kv_is_fp8[s_src]
+        if hasattr(cache, "kv_mode"):
+            cache.kv_mode[s_dst] = cache.kv_mode[s_src]
+        if cache.kv_u8[s_src] is not None:
+            cache.kv_u8[s_dst] = mx.array(cache.kv_u8[s_src])
+        if cache.kv_f16[s_src] is not None:
+            cache.kv_f16[s_dst] = mx.array(cache.kv_f16[s_src])
+        if hasattr(cache, "kv_q4_sc") and cache.kv_q4_sc[s_src] is not None:
+            cache.kv_q4_sc[s_dst] = mx.array(cache.kv_q4_sc[s_src])
+        cache.conv_states[s_dst] = [mx.array(c) if c is not None else None for c in cache.conv_states[s_src]]
+
+
 def stream_dspark(
     model: Inkling2LoopPackedMLX | Inkling2MLXModel,
     drafter: DSparkDrafterMLX,
@@ -466,6 +509,9 @@ def stream_dspark(
     ngram: bool = False,
     ngram_max_draft: int = 8,
     ngram_min_match: int = 5,
+    prefill_chunk_size: int = 256,
+    draft_shortlist_buckets: int | None = None,
+    prefix_state: dict[str, Any] | None = None,
     stats_out: dict[str, Any] | None = None,
 ) -> Iterator[list[int]]:
     """Stream hybrid N-gram + DSpark speculative decoding (exact greedy, tight-margin greedy, or exact unbiased `temp > 0`)."""
@@ -482,7 +528,11 @@ def stream_dspark(
     stochastic = temp > 0.0
     tap_ids = drafter.target_layer_ids  # (5, 23, 41, 48)
     fixed_block = None if draft_len is None else max(2, min(int(draft_len), drafter.block_size))
-    cur_block = fixed_block if fixed_block is not None else min(6, drafter.block_size)
+    is_m4 = _is_m4()
+    _os = __import__("os")
+    low_blk = min((int(_os.environ.get("LAMQ_M4_LOW_BLK", "3")) if is_m4 else 6), drafter.block_size)
+    high_blk = min((int(_os.environ.get("LAMQ_M4_HIGH_BLK", "4")) if is_m4 else drafter.block_size), drafter.block_size)
+    cur_block = fixed_block if fixed_block is not None else low_blk
     ngram_cap = max(2, min(int(ngram_max_draft), 8))
     tree_spec = make_tree_spec(TREE_TOPOLOGIES[tree]) if tree is not None else None
     tree_parents_mx = mx.array(np.array(TREE_TOPOLOGIES[tree][1:], dtype=np.int32)) if tree is not None else None
@@ -493,11 +543,15 @@ def stream_dspark(
     if stochastic:
         draft_head_sampler = m.lm_head.get_draft_head_sampler(temp=temp, top_p=top_p, top_k=top_k)
     elif tree_spec is not None:
-        draft_head_topk = m.lm_head.get_draft_head_topk()
+        nb = draft_shortlist_buckets if draft_shortlist_buckets is not None else 5
+        draft_head_topk = m.lm_head.get_draft_head_topk(max_buckets=nb)
     else:
-        draft_head = m.lm_head.get_draft_head_argmax()
+        nb = draft_shortlist_buckets if draft_shortlist_buckets is not None else 5
+        draft_head = m.lm_head.get_draft_head_argmax(max_buckets=nb)
 
-    old_wire = mx.set_wired_limit(mx.device_info()["max_recommended_working_set_size"])
+    ids_list = list(prompt_ids)
+    chunk_sz = max(1, int(prefill_chunk_size))
+    old_wire = mx.set_wired_limit(_safe_wired_limit())
     t0: float | None = None
     t1: float | None = None
     t2: float | None = None
@@ -510,24 +564,55 @@ def stream_dspark(
     ngram_accepted = 0
     ngram_first_rejects = 0
     try:
-        drafter.reset()
-        cache = m.make_cache()
         t0 = time.perf_counter()
+        if prefix_state is not None and prefix_state.get("cache") is not None and prefix_state.get("pos", 0) > 0:
+            cache = prefix_state["cache"]
+            pos = int(prefix_state["pos"])
+        else:
+            drafter.reset()
+            cache = m.make_cache()
+            pos = 0
+        fast_pf = (__import__("os").environ.get("LAMQ_FAST_PREFILL") == "1") and (m.cfg.loop_passes == 3)
+        if fast_pf and (len(ids_list) - pos > chunk_sz):
+            orig_lp = m.cfg.loop_passes
+            m.cfg.loop_passes = 2
+            pf_taps = (tap_ids[0], tap_ids[1], 35)
+            try:
+                while len(ids_list) - pos > chunk_sz:
+                    _, cache, c_taps = m.forward_prefill_chunk(ids_list[pos : pos + chunk_sz], cache=cache, tap_visits=pf_taps)
+                    mx.eval(c_taps)
+                    ct4 = mx.stack([c_taps[:, 0], c_taps[:, 1], c_taps[:, 2], c_taps[:, 2]], axis=1)
+                    drafter.push_context(ct4, start_pos=pos)
+                    mx.eval(drafter.f_rnn)
+                    mx.clear_cache()
+                    pos += chunk_sz
+                _copy_loop_pass1_to_pass2(cache)
+            finally:
+                m.cfg.loop_passes = orig_lp
+        else:
+            while len(ids_list) - pos > chunk_sz:
+                _, cache, c_taps = m.forward_prefill_chunk(ids_list[pos : pos + chunk_sz], cache=cache, tap_visits=tap_ids)
+                mx.eval(c_taps)
+                drafter.push_context(c_taps, start_pos=pos)
+                mx.eval(drafter.f_rnn)
+                mx.clear_cache()
+                pos += chunk_sz
+        tail_ids = ids_list[pos:]
         if stochastic:
-            first_ord_logits, cache, taps = m.forward_ordered_logits(list(prompt_ids), cache=cache, tap_visits=tap_ids)
+            first_ord_logits, cache, taps = m.forward_ordered_logits(tail_ids, cache=cache, tap_visits=tap_ids)
             first_mx = _sample_ordered_gpu(
                 first_ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
             )
             mx.eval(first_mx, taps)
             first = int(first_mx)
         else:
-            first_mx, cache, taps = m.forward_argmax(list(prompt_ids), cache=cache, tap_visits=tap_ids)
+            first_mx, cache, taps = m.forward_argmax(tail_ids, cache=cache, tap_visits=tap_ids)
             first_mx = first_mx[0, -1]
             mx.eval(first_mx, taps)
             first = int(first_mx)
         t1 = time.perf_counter()
 
-        drafter.push_context(taps, start_pos=0)
+        drafter.push_context(taps, start_pos=pos)
         ngram_idx = NgramDraftIndex(prompt_ids) if ngram else None
         if ngram_idx is not None:
             ngram_idx.extend([first])
@@ -807,8 +892,9 @@ def stream_dspark(
                 ewma_accept = 0.7 * ewma_accept + 0.3 * len(raw)
                 if adaptive:
                     if tree_spec is None and fixed_block is None:
-                        # Adapt between block 6 (best on medium/high-entropy) and block 8 (best on high-acceptance spans)
-                        cur_block = drafter.block_size if ewma_accept >= 3.6 else min(6, drafter.block_size)
+                        # Ensure upgrade threshold is always strictly below low_blk so low_blk=3 can climb to high_blk=4
+                        up_thr = (min(3.3, low_blk - 0.45) if is_m4 else 3.6)
+                        cur_block = high_blk if ewma_accept >= up_thr else low_blk
                     if dspark_rounds >= 5 and ewma_accept < 1.35:
                         serial_cooldown = serial_burst_len
                         serial_burst_len = min(16, serial_burst_len * 2)
