@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recursive Self-Improvement at 4B via Self-Play Weight Editing</title>
+<meta name="description" content="Qwen3.5-4B is given a new rule in plain English and must write it into its own weights without changing how it answers similar prompts. After one round in which it trains its own weights on its own unlabeled attempts, with no teacher model, it gets 46.6% of test prompt pairs right across 60 unseen rules, up from 36.5%.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Recursive Self-Improvement at 4B via Self-Play Weight Editing">
+<meta property="og:description" content="Qwen3.5-4B is given a new rule in plain English and must write it into its own weights without changing how it answers similar prompts. After one round in which it trains its own weights on its own unlabeled attempts, with no teacher model, it gets 46.6% of test prompt pairs right across 60 unseen rules, up from 36.5%.">
+<meta property="og:url" content="https://lookatmyquant.pages.dev/self-editing/">
+<meta property="og:image" content="https://lookatmyquant.pages.dev/self-editing/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Two line charts: the share of the gap to the prompted score each self-editor leaves open across generations, and across ten rule requests written into one checkpoint.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lookatmyquant.pages.dev/self-editing/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+:root {
+  --bg: #FFFFFF; --ink: #1A1E24; --muted: #5B6370; --faint: #8C939E; --line: #E2E5EA; --soft: #F4F6F8; --link: #1F56C4;
+  --ours: #206CCE; --ours-soft: #5B9BE6; --rival: #EB6834; --other: #737B88;
+  --serif: "Source Serif 4", Charter, Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+    --ours: #4C96F3; --ours-soft: #85B8F8; --rival: #E06B3C; --other: #8D96A5; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.64 var(--serif); }
+.wrap { padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px)); padding-block: 52px 92px; }
+.col { max-width: 44rem; margin: 0 auto; }
+.wide { max-width: 62rem; margin: 0 auto; }
+figure.wide { margin: 32px auto 38px; }
+figure.col { margin: 28px auto 34px; }
+section.wide { margin-top: 26px; margin-bottom: 32px; }
+header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 38px; }
+h1 { font: 600 clamp(2.0rem, 4.8vw, 2.85rem)/1.1 var(--serif); letter-spacing: -0.015em; margin: 0; max-width: 32ch; text-wrap: balance; }
+.subtitle { font: 400 clamp(1.06rem, 2.3vw, 1.32rem)/1.38 var(--serif); color: var(--muted); margin: 0; max-width: 52ch; text-wrap: balance; }
+.authors { font: 500 1.04rem/1.4 var(--sans); margin: 4px 0 0; }
+.meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+.links a { font: 500 0.9rem var(--sans); color: var(--bg); background: var(--ink); text-decoration: none; padding: 6px 14px; border-radius: 999px; }
+.links a.back { color: var(--ink); background: var(--bg); box-shadow: inset 0 0 0 1px var(--faint); }
+h2 { font: 600 clamp(1.32rem, 4.6vw, 1.56rem)/1.22 var(--serif); margin: 52px 0 14px; text-wrap: balance; letter-spacing: -0.005em; }
+p { margin: 0 0 14px; }
+a { color: var(--link); text-underline-offset: 2px; }
+b, strong { font-weight: 600; }
+ul.plain { padding-left: 1.25em; margin: 0 0 16px; }
+ul.plain li { margin-bottom: 8px; }
+figure { display: grid; gap: 12px; min-width: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; gap: 22px; } }
+figcaption, .tcap { font: 400 0.94rem/1.5 var(--sans); color: var(--muted); }
+figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
+.eq { font: 400 0.97rem/1.85 var(--serif); background: var(--soft); border-radius: 6px; padding: 12px 18px; margin: 0 0 16px; overflow-x: auto; white-space: nowrap; }
+.callout { background: var(--soft); border-left: 3px solid var(--ours); border-radius: 0 6px 6px 0; padding: 14px 18px; margin: 18px 0; font: 400 0.96rem/1.55 var(--sans); }
+sub, sup { font-size: 0.72em; line-height: 0; }
+.diagram { max-width: 42rem; margin: 0 auto; width: 100%; }
+.diagram svg { display: block; width: 100%; height: auto; }
+.scroll-x { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font: 400 0.89rem/1.4 var(--sans); font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 9px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-weight: 600; color: var(--ink); border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr.group td { font: 600 0.76rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 13px; }
+tr.hl td { background: color-mix(in srgb, var(--ours) 8%, transparent); }
+.note { font: 400 0.82rem/1.35 var(--sans); color: var(--muted); }
+pre.bib { font: 400 0.82rem/1.5 var(--mono); background: var(--soft); border-radius: 6px; padding: 15px 18px; overflow-x: auto; margin: 0; }
+ol.refs { padding-left: 1.4em; font: 400 0.91rem/1.5 var(--sans); color: var(--muted); }
+ol.refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
+ol.refs li b { color: var(--ink); font-weight: 600; }
+footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="title col">
+    <h1>Recursive Self-Improvement at 4B via Self-Play Weight Editing</h1>
+    <p class="subtitle">Qwen3.5-4B is given a new rule in plain English and must write it into its own weights without changing how it answers similar prompts. After one round in which it trains its own weights on its own unlabeled attempts, with no teacher model, it gets 46.6% of test prompt pairs right across 60 unseen rules, up from 36.5%.</p>
+    <p class="authors">Shin Megami Boson</p>
+    <p class="meta">November 2026</p>
+    <nav class="links" aria-label="Sections">
+      <a href="#cliff">Repairing a damaged matrix, 2B to 27B</a>
+      <a href="#method">How the 4B edits itself</a>
+      <a href="#cohorts">The 80 test tasks</a>
+      <a href="#lineage">Training the editor once or twice</a>
+      <a href="#merging">Merging two generations into one checkpoint</a>
+      <a href="#continual">Ten rule requests in a row</a>
+      <a href="#defensible">Limits</a>
+      <a class="back" href="../">All papers</a>
+    </nav>
+  </header>
+
+  <section class="col">
+    <p>Can a language model make itself better at editing its own weights, and then use the better editor to improve itself again? Fan et al. <a href="#r1">[1]</a> gave Qwen3.5 models raw Python access to their own tensors and found that only the 27B could repair a deliberately damaged weight matrix; the 2B, 4B and 9B all scored 0.0%. Other self-adaptation and self-improvement methods train on human-labeled examples, call external verifiers, or keep the editing policy fixed <a href="#r2">[2]</a> <a href="#r3">[3]</a> <a href="#r4">[4]</a> <a href="#r10">[10]</a>. We study the question at 4B with no teacher model, no human labels or task graders during training or selection, and no rule in the system prompt when the edited model is tested.</p>
+    <p>Each task gives Qwen3.5-4B <a href="#r5">[5]</a> a rule in plain English, such as “define a ⊛ b = 2a² − 3b + 5” or “start veterinary answers with [VET-NOTE]”. Working in a Python workspace, the model trains a rank-16 LoRA <a href="#r8">[8]</a> into its own weights. The edited model must follow the rule on prompts where it applies and answer sibling prompts, where it does not apply, as it did before. Each rule is scored on 16 (target, sibling) prompt pairs, and a pair passes only if both answers are right. We report the share of passing pairs as the <b>paired pass rate</b>.</p>
+    <p>The model then improves the editor itself, in the self-play sense of <a href="#r11">[11]</a>: it reviews its own editing attempts, keeps the ones its own checks rate as clean, and trains a LoRA update to its own weights on them. We spend 32 self-play tasks in two ways. Trained once on its attempts at all 32, the untrained editor becomes Gen 1 (32 tasks), which raises the paired pass rate on 60 test rules from 36.5% to 46.6% (350 to 447 of 960 test pairs), and on the 12 rules written after every method was frozen from 45.3% to 60.9%. Trained instead on its attempts at 16 tasks, it becomes Gen 1 (16 tasks), at 43.4%; that editor’s attempts at the other 16 tasks train Gen 2, whose best checkpoint passes 38.8%. Letting Gen 1 (16 tasks) and Gen 2 each make an edit, and keeping the one the model’s own check prefers, reaches 46.4%, level with one round on all 32 tasks.</p>
+  </section>
+
+  <figure class="wide" id="fig1">
+    <div class="grid2">
+<div><svg viewBox="0 0 456 336" role="img" aria-label="Panel A: share of the gap to the prompted score that each editor leaves open on the 60 test rules, log scale." style="width:100%;height:auto;display:block;font-family:var(--sans);">
+<text x="44" y="16" font-size="13.2" font-weight="600" fill="var(--ink)">A. Share of the gap to the prompted score still open</text>
+<line x1="44.0" y1="41.31" x2="212.0" y2="41.31" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="45.31" font-size="12" fill="var(--muted)" text-anchor="end">100%</text>
+<line x1="44.0" y1="94.72" x2="212.0" y2="94.72" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="98.72" font-size="12" fill="var(--muted)" text-anchor="end">70%</text>
+<line x1="44.0" y1="145.11" x2="212.0" y2="145.11" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="149.11" font-size="12" fill="var(--muted)" text-anchor="end">50%</text>
+<line x1="44.0" y1="198.52" x2="212.0" y2="198.52" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="202.52" font-size="12" fill="var(--muted)" text-anchor="end">35%</text>
+<line x1="44.0" y1="248.91" x2="212.0" y2="248.91" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="252.91" font-size="12" fill="var(--muted)" text-anchor="end">25%</text>
+<line x1="44.0" y1="282.33" x2="212.0" y2="282.33" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="286.33" font-size="12" fill="var(--muted)" text-anchor="end">20%</text>
+<line x1="44.0" y1="294.0" x2="44.0" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="44.0" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">Base</text>
+<line x1="100.0" y1="294.0" x2="100.0" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="100.0" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">Gen 0</text>
+<line x1="156.0" y1="294.0" x2="156.0" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="156.0" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">Gen 1</text>
+<line x1="212.0" y1="294.0" x2="212.0" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="212.0" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">Gen 2</text>
+<polyline points="156.0,156.23 212.0,135.22" fill="none" stroke="var(--ours-soft)" stroke-width="2.0" stroke-dasharray="5,4"/>
+<line x1="156.0" y1="172.04" x2="212.0" y2="172.04" stroke="var(--ours)" stroke-width="1.6" stroke-dasharray="2,3"/>
+<polyline points="44.0,41.31 100.0,125.94 156.0,156.23 212.0,170.92" fill="none" stroke="var(--ours-soft)" stroke-width="2.4"/>
+<polyline points="100.0,125.94 156.0,172.04" fill="none" stroke="var(--ours)" stroke-width="3.0"/>
+<circle cx="44.0" cy="41.31" r="3.6" fill="var(--ours-soft)"/>
+<circle cx="100.0" cy="125.94" r="3.6" fill="var(--ours-soft)"/>
+<circle cx="156.0" cy="156.23" r="3.6" fill="var(--ours-soft)"/>
+<circle cx="212.0" cy="170.92" r="3.6" fill="var(--ours-soft)"/>
+<circle cx="212.0" cy="135.22" r="4" fill="var(--bg)" stroke="var(--ours-soft)" stroke-width="2"/>
+<polygon points="156.0,166.54 161.5,172.04 156.0,177.54 150.5,172.04" fill="var(--ours)" stroke="var(--bg)" stroke-width="1.2"/>
+<line x1="216.0" y1="135.22" x2="224.0" y2="135.22" stroke="var(--ours-soft)" stroke-width="1.1"/>
+<text x="228.0" y="139.22" font-size="12" font-weight="400" fill="var(--ours-soft)">Gen 2 alone (53.4%)</text>
+<line x1="216.0" y1="170.92" x2="224.0" y2="170.92" stroke="var(--ours-soft)" stroke-width="1.1"/>
+<text x="228.0" y="174.92" font-size="12" font-weight="600" fill="var(--ours-soft)">Gen 1 + Gen 2, best of two (42.1%)</text>
+<line x1="216.0" y1="172.04" x2="224.0" y2="189.92" stroke="var(--ours)" stroke-width="1.1"/>
+<text x="228.0" y="193.92" font-size="12" font-weight="600" fill="var(--ours)">Gen 1, 32 tasks (41.8%)</text>
+</svg></div>
+<div><svg viewBox="0 0 456 336" role="img" aria-label="Panel B: share of the gap to the eight-rule prompt still open after each of ten rule requests written into one checkpoint, log scale." style="width:100%;height:auto;display:block;font-family:var(--sans);">
+<text x="44" y="16" font-size="13.2" font-weight="600" fill="var(--ink)">B. Share of the gap to the eight-rule prompt still open</text>
+<line x1="44.0" y1="41.31" x2="230.0" y2="41.31" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="45.31" font-size="12" fill="var(--muted)" text-anchor="end">100%</text>
+<line x1="44.0" y1="94.72" x2="230.0" y2="94.72" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="98.72" font-size="12" fill="var(--muted)" text-anchor="end">70%</text>
+<line x1="44.0" y1="145.11" x2="230.0" y2="145.11" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="149.11" font-size="12" fill="var(--muted)" text-anchor="end">50%</text>
+<line x1="44.0" y1="198.52" x2="230.0" y2="198.52" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="202.52" font-size="12" fill="var(--muted)" text-anchor="end">35%</text>
+<line x1="44.0" y1="248.91" x2="230.0" y2="248.91" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="252.91" font-size="12" fill="var(--muted)" text-anchor="end">25%</text>
+<line x1="44.0" y1="282.33" x2="230.0" y2="282.33" stroke="var(--line)" stroke-width="1"/>
+<text x="37.0" y="286.33" font-size="12" fill="var(--muted)" text-anchor="end">20%</text>
+<line x1="44.0" y1="294.0" x2="44.0" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="44.0" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">Step 0</text>
+<line x1="81.2" y1="294.0" x2="81.2" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="81.2" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">2</text>
+<line x1="118.4" y1="294.0" x2="118.4" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="118.4" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">4</text>
+<line x1="155.6" y1="294.0" x2="155.6" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="155.6" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">6</text>
+<line x1="192.8" y1="294.0" x2="192.8" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="192.8" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">8</text>
+<line x1="230.0" y1="294.0" x2="230.0" y2="299.0" stroke="var(--muted)" stroke-width="1"/>
+<text x="230.0" y="313.0" font-size="12" fill="var(--ink)" text-anchor="middle">Step 10</text>
+<polyline points="44.0,41.31 62.6,39.8 81.2,65.92 99.8,71.35 118.4,65.92 137.0,41.31 155.6,137.74 174.2,97.56 192.8,39.8 211.4,65.92 230.0,97.56" fill="none" stroke="var(--faint)" stroke-width="1.6" stroke-dasharray="4,4"/>
+<polyline points="44.0,41.31 62.6,67.71 81.2,67.71 99.8,97.56 118.4,97.56 137.0,97.56 155.6,97.56 174.2,97.56 192.8,97.56 211.4,97.56 230.0,97.56" fill="none" stroke="var(--other)" stroke-width="1.8" stroke-dasharray="6,4"/>
+<polyline points="44.0,41.31 62.6,41.31 81.2,67.71 99.8,67.71 118.4,67.71 137.0,67.71 155.6,99.78 174.2,140.64 192.8,137.74 211.4,137.74 230.0,149.71" fill="none" stroke="var(--other)" stroke-width="2.1"/>
+<polyline points="44.0,41.31 62.6,67.71 81.2,67.71 99.8,67.71 118.4,67.71 137.0,67.71 155.6,67.71 174.2,99.78 192.8,99.78 211.4,99.78 230.0,99.78" fill="none" stroke="var(--ours-soft)" stroke-width="2.4"/>
+<polyline points="44.0,41.31 62.6,67.71 81.2,67.71 99.8,97.56 118.4,97.56 137.0,134.89 155.6,134.89 174.2,188.72 192.8,188.72 211.4,273.56 230.0,273.56" fill="none" stroke="var(--ours)" stroke-width="3.0"/>
+<circle cx="44.0" cy="41.31" r="3.4" fill="var(--ours)"/>
+<circle cx="62.6" cy="67.71" r="3.4" fill="var(--ours)"/>
+<circle cx="81.2" cy="67.71" r="3.4" fill="var(--ours)"/>
+<circle cx="99.8" cy="97.56" r="3.4" fill="var(--ours)"/>
+<circle cx="118.4" cy="97.56" r="4.2" fill="var(--bg)" stroke="var(--ours)" stroke-width="2.2"/>
+<circle cx="137.0" cy="134.89" r="3.4" fill="var(--ours)"/>
+<circle cx="155.6" cy="134.89" r="3.4" fill="var(--ours)"/>
+<circle cx="174.2" cy="188.72" r="3.4" fill="var(--ours)"/>
+<circle cx="192.8" cy="188.72" r="4.2" fill="var(--bg)" stroke="var(--ours)" stroke-width="2.2"/>
+<circle cx="211.4" cy="273.56" r="3.4" fill="var(--ours)"/>
+<circle cx="230.0" cy="273.56" r="3.4" fill="var(--ours)"/>
+<line x1="234.0" y1="96.06" x2="242.0" y2="96.06" stroke="var(--other)" stroke-width="1.1"/>
+<text x="246.0" y="100.06" font-size="12" font-weight="400" fill="var(--other)">Gen 1, no replay (68.7%)</text>
+<line x1="234.0" y1="99.06" x2="242.0" y2="115.06" stroke="var(--faint)" stroke-width="1.1"/>
+<text x="246.0" y="119.06" font-size="12" font-weight="400" fill="var(--faint)">Sequential LoRA (68.7%)</text>
+<line x1="234.0" y1="99.78" x2="242.0" y2="134.06" stroke="var(--ours-soft)" stroke-width="1.1"/>
+<text x="246.0" y="138.06" font-size="12" font-weight="400" fill="var(--ours-soft)">Gen 2 (67.7%)</text>
+<line x1="234.0" y1="149.71" x2="242.0" y2="153.06" stroke="var(--other)" stroke-width="1.1"/>
+<text x="246.0" y="157.06" font-size="12" font-weight="400" fill="var(--other)">Gen 0 (48.5%)</text>
+<line x1="234.0" y1="273.56" x2="242.0" y2="273.56" stroke="var(--ours)" stroke-width="1.1"/>
+<text x="246.0" y="277.56" font-size="12" font-weight="600" fill="var(--ours)">Gen 1 (21.2%)</text>
+</svg></div>
+</div>
+    <figcaption><b>Figure 1.</b> Share of the gap still open between unedited Qwen3.5-4B (100%) and the same model with the rule in its system prompt (0%, the prompted score), on a log axis. <b>Left:</b> the 60 test rules. The light line follows the recursive chain: Gen 0 is the untrained editor, Gen 1 (16 tasks) trained on its attempts at 16 self-play tasks, and Gen 2 trained on Gen 1’s attempts at 16 more, either alone (dashed) or making one edit beside Gen 1’s, with the model’s own check keeping one (solid). The dark line is Gen 0 trained once on its attempts at all 32 tasks, carried across as a dotted line for comparison. <b>Right:</b> ten rule requests in a row, eight real and two impossible (hollow circles at steps 4 and 8), each written into the same checkpoint, against a system prompt holding all eight rules. The editors are earlier versions of Gen 0, Gen 1 (32 tasks) and Gen 2; all but sequential LoRA and “no replay” replay prompts from their earlier accepted edits.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="cliff">1. With typed operators, Qwen3.5-4B repairs a damaged weight matrix and recovers 85% of its math accuracy</h2>
+    <p>Small models may fail at weight editing because raw tensor writes are the wrong interface, not because they are small. Following Fan et al. <a href="#r1">[1]</a>, we overwrote eight rows of one middle-layer <code>mlp.down_proj</code> matrix with Gaussian noise of 200 times the matrix’s standard deviation. This drops accuracy on 200 DeepScaleR <a href="#r6">[6]</a> competition math problems, with up to 16,384 reasoning tokens, to 0.0% at 2B, 4B, 9B and 27B.</p>
+    <p>With raw Python access, every size scored 0.0% in our paired runs: the models changed 29 to 60 tensors while exploring and damaged layers that had been fine. We replaced raw writes with four typed operators, each limited in rank and in KL divergence from the original weights. Before submitting, the model tests whether a patch to one matrix does as well as everything it touched while exploring, and a sequential probability ratio test on 256 reserve problems decides whether the edit is kept. With these operators the 4B, 9B and 27B each found and repaired the damaged matrix (Table 1). Qwen3.5-4B touched 29 matrices, kept only the damaged layer-15 projection, and recovered 32.0% accuracy, 85.3% of its clean 37.5% (<i>p</i> = 5.4 × 10<sup>−20</sup>). In a separate test on its undamaged weights, Qwen3.5-9B raised its own math accuracy from 45.0% to 60.5% (<i>p</i> = 1.7 × 10<sup>−5</sup>, KL = 0.0059 nats), above the unedited 27B’s 56.0%.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 1.</b> Repairing a damaged weight matrix in Qwen3.5 models of four sizes: accuracy on 200 DeepScaleR problems with up to 16,384 reasoning tokens. “Matrices touched → kept” counts the matrices the model changed while exploring and the ones it kept after testing a single-matrix patch. The last column is a separate test in which each model edits its own undamaged weights to raise its math accuracy.</p>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Model</th><th class="num">Clean</th><th class="num">Damaged</th><th class="num">Fan et al. [1]</th><th class="num">Raw Python, our runs</th><th class="num">Typed operators</th><th>Matrices touched → kept</th><th class="num">Undamaged model, self-edit</th></tr></thead>
+      <tbody>
+        <tr><td>Qwen3.5-2B</td><td class="num">8.0%</td><td class="num">0.0%</td><td class="num">0.0%</td><td class="num">0.0%</td><td class="num">5.0%* <span class="note">(62.5% of clean)</span></td><td>1 → 1 (<code>L11.down_proj</code>)</td><td class="num">6.5% → 7.5%</td></tr>
+        <tr class="hl"><td><b>Qwen3.5-4B</b></td><td class="num">37.5%</td><td class="num">0.0%</td><td class="num">0.0%</td><td class="num">0.0%</td><td class="num"><b>32.0%</b> <span class="note">(85.3%, <i>p</i> = 5.4e−20)</span></td><td>29 → 1 (<code>L15.down_proj</code>)</td><td class="num">34.5% → 34.5% <span class="note">(withdrew)</span></td></tr>
+        <tr><td>Qwen3.5-9B</td><td class="num">51.5%</td><td class="num">0.0%</td><td class="num">0.0%</td><td class="num">0.0%</td><td class="num"><b>46.5%</b> <span class="note">(90.3%, <i>p</i> = 1.0e−28)</span></td><td>60 → 1 (<code>L15.down_proj</code>)</td><td class="num"><b>45.0% → 60.5%</b> <span class="note">(<i>p</i> = 1.7e−5)</span></td></tr>
+        <tr><td>Qwen3.5-27B</td><td class="num">61.0%</td><td class="num">0.0%</td><td class="num">33.0% <span class="note">(20 tensors)</span></td><td class="num">0.0%</td><td class="num"><b>62.5%</b> <span class="note">(102.5%, <i>p</i> = 2.4e−38)</span></td><td>54 → 1 (<code>L30.down_proj</code>)</td><td class="num">56.0% → 56.0% <span class="note">(withdrew)</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note" style="margin-top:6px;">*The 2B repaired the damaged matrix on its fourth turn (5.0% at 16,384 tokens, <i>p</i> = 9.8 × 10<sup>−4</sup>), but the reserve test, which runs at 4,096 tokens, rejected the edit because 99.6% of the 2B’s valid answers are longer than that.</p>
+  </section>
+
+  <section class="col">
+    <h2 id="method">2. The editing task: write a plain-English rule into the weights and leave sibling prompts unchanged</h2>
+    <p>Repairing a damaged matrix restores what the model already knew. Writing a new rule asks more, because the edit must add a behavior and leave neighboring behaviors alone. Each episode gives the editor a rule <i>S</i> and four unlabeled seed prompts: two where <i>S</i> applies and two siblings where it must not. In up to four turns of a Python workspace, the editor reads how the unedited model θ<sub>0</sub> answers when given <i>S</i> in its prompt, writes at least 16 training prompts and 8 sibling prompts, trains a rank-16 task LoRA Δ<i>W</i><sub>task</sub> with a KL penalty on the siblings, compares its candidates, and ends with <code>finish("SUBMIT", slot)</code> or <code>finish("WITHDRAW")</code>. When θ<sub>0</sub> given <i>S</i> gets the rule wrong, the editor can compute the target answers itself in Python.</p>
+  </section>
+
+  <figure class="col" id="fig2">
+    <div class="diagram"><svg viewBox="0 0 600 226" role="img" aria-label="One round of self-editing: the editor writes a task LoRA, the edited model is tested without the rule in its prompt, the unedited model checks the answers without labels, and the editor trains itself on its clean attempts to become the next generation.">
+      <defs>
+        <marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path d="M0 1 10 5 0 9z" fill="var(--other)"/></marker>
+        <marker id="mb" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0 1 10 5 0 9z" fill="var(--ours)"/></marker>
+      </defs>
+      <rect x="14" y="20" width="166" height="68" rx="6" fill="var(--soft)" stroke="var(--ours)" stroke-width="1.8"/>
+      <text x="97" y="45" font-family="var(--sans)" font-size="13.5" font-weight="600" fill="var(--ink)" text-anchor="middle">Editor, Gen k</text>
+      <text x="97" y="64" font-family="var(--sans)" font-size="11.5" fill="var(--muted)" text-anchor="middle">Qwen3.5-4B + editor LoRA</text>
+      <text x="97" y="79" font-family="var(--sans)" font-size="11" fill="var(--ours)" text-anchor="middle">Python workspace, 4 turns</text>
+
+      <line x1="180" y1="54" x2="226" y2="54" stroke="var(--ours)" stroke-width="2.2" marker-end="url(#mb)"/>
+      <rect x="228" y="20" width="168" height="68" rx="6" fill="var(--soft)" stroke="var(--other)" stroke-width="1.5"/>
+      <text x="312" y="45" font-family="var(--sans)" font-size="13.5" font-weight="600" fill="var(--ink)" text-anchor="middle">Edited model θ*</text>
+      <text x="312" y="64" font-family="var(--sans)" font-size="11.5" fill="var(--muted)" text-anchor="middle">θ₀ + rank-16 task LoRA</text>
+      <text x="312" y="79" font-family="var(--sans)" font-size="11" fill="var(--muted)" text-anchor="middle">tested without the rule</text>
+
+      <line x1="396" y1="54" x2="438" y2="54" stroke="var(--other)" stroke-width="1.8" marker-end="url(#ma)"/>
+      <rect x="440" y="20" width="146" height="68" rx="6" fill="var(--soft)" stroke="var(--other)" stroke-width="1.5"/>
+      <text x="513" y="45" font-family="var(--sans)" font-size="13" font-weight="600" fill="var(--ink)" text-anchor="middle">Label-free check</text>
+      <text x="513" y="63" font-family="var(--sans)" font-size="11" fill="var(--muted)" text-anchor="middle">targets: θ₀ given rule</text>
+      <text x="513" y="78" font-family="var(--sans)" font-size="11" fill="var(--muted)" text-anchor="middle">siblings: θ₀ without it</text>
+
+      <path d="M513 88 L513 158 L398 158" fill="none" stroke="var(--ours)" stroke-width="2.2" marker-end="url(#mb)"/>
+      <rect x="192" y="128" width="204" height="62" rx="6" fill="var(--soft)" stroke="var(--ours)" stroke-width="1.8"/>
+      <text x="294" y="152" font-family="var(--sans)" font-size="13" font-weight="600" fill="var(--ink)" text-anchor="middle">Self-training, Gen k → k+1</text>
+      <text x="294" y="170" font-family="var(--sans)" font-size="11" fill="var(--muted)" text-anchor="middle">editor picks its clean attempts</text>
+      <text x="294" y="184" font-family="var(--sans)" font-size="11" fill="var(--ours)" text-anchor="middle">kept only if validation improves</text>
+      <path d="M192 158 L97 158 L97 90" fill="none" stroke="var(--ours)" stroke-width="2.2" marker-end="url(#mb)"/>
+    </svg></div>
+    <figcaption><b>Figure 2.</b> One round of self-editing on a single Qwen3.5-4B model. The same weights serve as editor, edited model θ* and unedited reference θ<sub>0</sub>; switching between them takes 4–6 ms and restores the original weights bit for bit, which we check on every shard.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p>Self-play has no answer key and no task grader. The unedited model θ<sub>0</sub> scores each candidate θ* by comparing answers:</p>
+    <div class="eq">
+      <i>R</i>(θ*; <i>S</i>) = (Pass<sub>pair</sub>(θ*) − Pass<sub>pair</sub>(θ<sub>0</sub>)) − 0.5 · Bleed<sub>sibling</sub>(θ*) − 2 max(0, KL<sub>anchor</sub> − 0.04) − 0.02
+    </div>
+    <p>A pair passes when θ*’s answer to the target prompt agrees with θ<sub>0</sub> given <i>S</i> and its answer to the sibling prompt agrees with θ<sub>0</sub> without <i>S</i>. Bleed is the share of sibling prompts whose answers the edit changed. The editor must also refuse impossible rules. When two samples from θ<sub>0</sub> given <i>S</i> at <i>T</i> = 0.35 disagree (agreement below 0.40, as for a rule asking for SHA-256 digests or physical random numbers), or when θ<sub>0</sub> already follows <i>S</i> on 85% of prompts, the task counts as a trap: withdrawing earns +0.22 and editing anyway costs −0.25 − 0.5 · Bleed.</p>
+    <p>A first study on 24 unseen tasks (288 test pairs and 6 traps) compared putting editing know-how in the editor’s prompt with training it into the editor’s weights. A LoRA trained on target prompts alone, with no siblings, changed 37.5% of sibling answers and passed 23.6% of pairs. The untrained editor passed 26.0%. Giving it a four-rule playbook distilled from self-play, in its prompt, passed 25.4%, because the untrained 4B often describes tool calls in prose instead of running them. After one round of self-play training the editor passed 33.3% (better on 51 pairs and worse on 30; pair sign test <i>p</i> = 0.013, per-task permutation <i>p</i> = 0.26). On a rule requiring the warning <code>[Risk-Warning: Capital at risk]</code> on finance answers, θ<sub>0</sub> given the rule left the warning out of every answer. The trained editor noticed, computed the target answers itself in Python, quadrupled its sibling set on its third turn, and reached 56.2%.</p>
+
+    <h2 id="cohorts">3. The test set: 60 rules and 20 traps, written in four cohorts</h2>
+    <p>Three quarters of the 80 test tasks are rules from four families: a new binary operator such as <code>a ⊛ b = 2a² − 3b + 5</code>, with <code>+, −, *</code> unchanged on sibling prompts; a scoped marker such as <code>[VET-NOTE]</code> on veterinary answers but not on houseplant answers; a Python API migration such as <code>pydantic</code> v1 to v2 or <code>itertools.batched</code>, with JavaScript and SQL siblings untouched; and extraction of two untagged fields into a fixed format. The other quarter are traps the editor should refuse: rules that ask for cryptographic digests (SHA-256, SHA-512, BLAKE2b, SHA3-256), physical random counts, or behavior θ<sub>0</sub> already has. Each rule is graded on 16 (target, sibling) pairs plus 8 general factual questions whose answers must not change, 40 prompts in all. None of the 80 test tasks overlaps the 48 tasks used for self-play and validation.</p>
+    <p>The test tasks were written in four cohorts over four rounds of development, and each cohort was hashed with SHA-256 before its first evaluation (Table 2). Cohorts 1 and 2 were opened before the editors in Table 3 were trained, and Cohort 3 before the best-of-two selection, the router and the merged checkpoint were built. Cohort 4 was written and opened only after every method was frozen, so it is the only set that no design choice could have been tuned to.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 2.</b> The 128 tasks: 48 for self-play and validation, with no answer key or grader, and 80 for testing, graded against written answers and never used in training or selection.</p>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Set</th><th class="num">Tasks (rules + traps)</th><th class="num">Test pairs</th><th>Used for</th></tr></thead>
+      <tbody>
+        <tr class="group"><td colspan="4">Self-play and validation (no answer key, no grader)</td></tr>
+        <tr><td>Self-play batches A and B</td><td class="num">32 (26 + 6)</td><td class="num">—</td><td>Gen 0’s attempts at batch A train Gen 1 (16 tasks), whose attempts at batch B train Gen 2; Gen 0’s attempts at both batches train Gen 1 (32 tasks)</td></tr>
+        <tr><td>Validation</td><td class="num">16 (10 + 6)</td><td class="num">—</td><td>The label-free check that decides whether a newly trained editor replaces the current one</td></tr>
+        <tr class="group"><td colspan="4">Test cohorts (graded against written answers)</td></tr>
+        <tr><td>Cohort 1</td><td class="num">32 (24 + 8)</td><td class="num">384</td><td>Written in round 1</td></tr>
+        <tr><td>Cohort 2</td><td class="num">16 (12 + 4)</td><td class="num">192</td><td>Written in round 2</td></tr>
+        <tr><td>Cohort 3</td><td class="num">16 (12 + 4)</td><td class="num">192</td><td>Written in round 3, opened after the editors were frozen</td></tr>
+        <tr><td>Cohorts 1–3</td><td class="num">64 (48 + 16)</td><td class="num">768</td><td>Every test task opened before the last methods were built</td></tr>
+        <tr class="hl"><td><b>Cohort 4</b></td><td class="num">16 (12 + 4)</td><td class="num">192</td><td>Written in round 4 and opened once, after every method was frozen</td></tr>
+        <tr class="hl"><td><b>All 80</b></td><td class="num">80 (60 + 20)</td><td class="num">960</td><td>Cohorts 1–4</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="lineage">4. Training the editor once on 32 tasks lifts it from 36.5% to 46.6%; training it twice on the same tasks reaches no higher</h2>
+    <p>The editors below differ only in whose attempts they trained on and how many times. All use the same prompts and the same validation check, and each produces one Qwen3.5-4B checkpoint per test task, tested without the rule in its prompt.</p>
+    <ul class="plain">
+      <li><b>Gen 0</b> is untrained Qwen3.5-4B acting as editor.</li>
+      <li><b>Gen 1 (16 tasks)</b> is Gen 0 after one round on its own attempts at the 16 batch-A tasks. Failed workspace turns are cut from each transcript first. The workspace then lists the attempts with no code errors, an explicit submit and at least 75% sibling agreement on prompts the editor wrote itself, ranked by reward with the four families taken in turn, plus one or two attempts that correctly refused an impossible rule, weighted at a quarter. Gen 0 picks from these lists and trains a rank-16 LoRA across all 36 layers into itself.</li>
+      <li><b>Gen 1 (32 tasks)</b> is the same round run on Gen 0’s attempts at all 32 tasks. It sees the same tasks as Gen 2 but never learns from an improved editor, which makes it the control for recursion.</li>
+      <li><b>Gen 2</b> is the second round: Gen 1 (16 tasks) attempts the 16 batch-B tasks and trains itself on those attempts plus a replay of its batch-A attempts. We built two variants: BiOrthoMerge, which adds the new update after projecting it away from Gen 1’s singular subspaces <a href="#r9">[9]</a>, and LayerSplitReplay, which trains only layers 12–35 with replay. A third, which merges Gen 1 and Gen 2 by their activations, is in Section 5.</li>
+      <li><b>Best of two</b> makes two edits per task and keeps the one the model’s own label-free check prefers on the dev prompts both editors wrote. Gen 1 + Gen 2, best of two, takes one edit from Gen 1 (16 tasks) and one from a Gen 2 variant chosen per task by a small router. Gen 1 (32 tasks), best of two, runs that editor twice, at <i>T</i> = 0 and <i>T</i> = 0.45.</li>
+    </ul>
+    <p>One round helps (Table 3). On the 60 test rules, Gen 1 (16 tasks) passes 43.4% of pairs against Gen 0’s 36.5%, and Gen 1 (32 tasks) passes 46.6%: better than Gen 0 on 234 pairs and worse on 137 (pair sign test <i>p</i> = 2.7 × 10<sup>−7</sup>, per-task permutation <i>p</i> = 0.08). On the 12 rules of Cohort 4, written after every method was frozen, Gen 1 (32 tasks) passes 60.9% against Gen 0’s 45.3%.</p>
+    <p>A second round did not help. The best Gen 2 checkpoint, BiOrthoMerge, passes 38.8%: below Gen 1 (16 tasks), which it started from, and 7.8 points below Gen 1 (32 tasks), which trained on the same 32 tasks. The transcripts show why the generations differ. Gen 1 (16 tasks) learned to copy θ<sub>0</sub>’s prompted answers as targets: it reaches 86% on API migration and 30% on new operators but 0.8% on scoped markers, where θ<sub>0</sub> given the rule drops the marker. The Gen 2 variants learned to compute targets in Python, which raised scoped markers to 16% and extraction to 69% but cost them API migration (56–63%) and new operators (12–15%).</p>
+    <p>Because the two generations are good at different families, a second edit helps when it comes from the other generation. Gen 1 + Gen 2, best of two, passes 46.4%, 2.9 points above Gen 1 (16 tasks) alone but level with a single edit from Gen 1 (32 tasks) (better on 135 pairs, worse on 137). On Cohorts 1–3 it leads Gen 1 (32 tasks), 49.6% to 43.0%; on Cohort 4 it trails, 33.3% to 60.9%. A second edit from the same editor makes things worse: Gen 1 (32 tasks), best of two, passes 39.9%, 6.7 points below its own single edit, because the model’s check misjudges arithmetic and keeps the wrong edit (Section 7). Gen 1 + Gen 2, best of two, beats it by 6.5 points (better on 157 pairs, worse on 95; per-task <i>p</i> = 0.15).</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 3.</b> Paired pass rate on the rules (%, higher is better) for every editor on each test cohort, on Cohorts 1–3 together, and on all 80 tasks. Each editor produces one Qwen3.5-4B checkpoint per task, tested without the rule in its prompt. Bleed is the share of sibling prompts the edit changed, and trap withdrawals the share of trap tasks the editor refused. The last column gives the pass rate on API migration, scoped markers, new operators and extraction across all four cohorts.</p>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Editor</th><th class="num">Edits<br>per task</th><th class="num">Cohort 1<br><span class="note">32 tasks</span></th><th class="num">Cohort 2<br><span class="note">16 tasks</span></th><th class="num">Cohort 3<br><span class="note">16 tasks</span></th><th class="num">Cohorts 1–3<br><span class="note">64 tasks</span></th><th class="num">Cohort 4<br><span class="note">16, written last</span></th><th class="num">All 80</th><th class="num">Bleed /<br><span class="note">trap withdrawals</span></th><th class="num" style="white-space:normal">API / Marker /<br>Operator / Extraction</th></tr></thead>
+      <tbody>
+        <tr class="group"><td colspan="10">No editor</td></tr>
+        <tr><td>Unedited Qwen3.5-4B (θ<sub>0</sub>)</td><td class="num">0</td><td class="num">5.7%</td><td class="num">13.5%</td><td class="num">2.6%</td><td class="num">6.9%</td><td class="num">9.9%</td><td class="num">7.5%</td><td class="num">0.6% / 100%</td><td class="num">29 / 0 / 1 / 0</td></tr>
+        <tr><td>LoRA on target prompts only</td><td class="num">1</td><td class="num">22.9%</td><td class="num">15.1%</td><td class="num">38.5%</td><td class="num">24.9%</td><td class="num">20.8%</td><td class="num">24.1%</td><td class="num">26.2% / 15%</td><td class="num">59 / 10 / 5 / 22</td></tr>
+        <tr class="group"><td colspan="10">One edit per task</td></tr>
+        <tr><td>Gen 0: untrained editor</td><td class="num">1</td><td class="num">39.6%</td><td class="num">28.1%</td><td class="num">29.7%</td><td class="num">34.2%</td><td class="num">45.3%</td><td class="num">36.5%</td><td class="num">2.6% / 90%</td><td class="num">51 / 10 / 21 / 64</td></tr>
+        <tr><td>Gen 1 (16 tasks)</td><td class="num">1</td><td class="num">56.0%</td><td class="num">28.1%</td><td class="num">42.7%</td><td class="num">45.7%</td><td class="num">34.4%</td><td class="num">43.4%</td><td class="num">4.0% / 90%</td><td class="num">86 / 1 / 30 / 56</td></tr>
+        <tr class="hl"><td><b>Gen 1 (32 tasks)</b></td><td class="num">1</td><td class="num">50.5%</td><td class="num">29.7%</td><td class="num">41.2%</td><td class="num">43.0%</td><td class="num"><b>60.9%</b></td><td class="num"><b>46.6%</b></td><td class="num">3.5% / 80%</td><td class="num">68 / 18 / <b>42</b> / 58</td></tr>
+        <tr><td>Gen 2: BiOrthoMerge</td><td class="num">1</td><td class="num">39.6%</td><td class="num"><b>39.6%</b></td><td class="num">33.3%</td><td class="num">38.0%</td><td class="num">41.7%</td><td class="num">38.8%</td><td class="num">5.0% / 85%</td><td class="num">63 / 12 / 12 / <b>69</b></td></tr>
+        <tr><td>Gen 2: LayerSplitReplay</td><td class="num">1</td><td class="num">43.8%</td><td class="num">35.9%</td><td class="num">18.2%</td><td class="num">35.4%</td><td class="num">32.3%</td><td class="num">34.8%</td><td class="num"><b>1.5%</b> / 80%</td><td class="num">56 / 16 / 15 / 52</td></tr>
+        <tr><td>Gen 1 and Gen 2 merged by activations</td><td class="num">1</td><td class="num">34.4%</td><td class="num">26.6%</td><td class="num">34.4%</td><td class="num">32.4%</td><td class="num">25.0%</td><td class="num">30.9%</td><td class="num">1.7% / 85%</td><td class="num">53 / 11 / 34 / 26</td></tr>
+        <tr><td>Gen 1 or Gen 2, picked by a router</td><td class="num">1</td><td class="num"><b>60.2%</b></td><td class="num">21.9%</td><td class="num">32.3%</td><td class="num">43.6%</td><td class="num">34.9%</td><td class="num">41.9%</td><td class="num">2.8% / 90%</td><td class="num"><b>91</b> / 1 / 30 / 45</td></tr>
+        <tr class="group"><td colspan="10">Best of two edits, kept by the model’s own check</td></tr>
+        <tr><td>Gen 1 (32 tasks), best of two</td><td class="num">2</td><td class="num">40.1%</td><td class="num">28.6%</td><td class="num">41.2%</td><td class="num">37.5%</td><td class="num">49.5%</td><td class="num">39.9%</td><td class="num">2.3% / 90%</td><td class="num">61 / <b>28</b> / 8 / 63</td></tr>
+        <tr><td>Gen 1 + Gen 2, best of two</td><td class="num">2</td><td class="num">52.9%</td><td class="num">35.9%</td><td class="num"><b>56.8%</b></td><td class="num"><b>49.6%</b></td><td class="num">33.3%</td><td class="num">46.4%</td><td class="num">2.1% / <b>95%</b></td><td class="num">84 / 12 / 27 / 63</td></tr>
+        <tr class="group"><td colspan="10">Prompted score</td></tr>
+        <tr><td>Rule in the system prompt, no edit</td><td class="num">—</td><td class="num">78.6%</td><td class="num">58.8%</td><td class="num">76.0%</td><td class="num">73.0%</td><td class="num">80.7%</td><td class="num">74.6%</td><td class="num">6.8% / 100%</td><td class="num">89 / 40 / 76 / 92</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="merging">5. Merged into one checkpoint, Gen 1 and Gen 2 gain on new operators and scoped markers but fall to 30.9% overall</h2>
+    <p>Best of two costs two edits per task, so we also tried to fold both generations into one standard Qwen3.5-4B checkpoint. Projecting Gen 2’s update away from Gen 1’s singular subspaces (BiOrthoMerge: Δ<i>W</i><sub>⊥</sub> = (<i>I</i> − <i>U</i><sub>1</sub><i>U</i><sub>1</sub><sup>T</sup>) Δ<i>W</i><sub>2</sub> (<i>I</i> − <i>V</i><sub>1</sub><i>V</i><sub>1</sub><sup>T</sup>)) still cut Gen 1’s new-operator score from 30.4% to 11.7%. The cause is rank: <i>V</i><sub>1</sub> spans 16 of 2,560 input dimensions (0.6%), so Δ<i>W</i><sub>2</sub> still acts on 99.4% of the hidden states Gen 1 relies on.</p>
+    <p>A merge fitted to activations avoids this. RegMean <a href="#r7">[7]</a> chooses the merged update that best reproduces each generation’s outputs on that generation’s own inputs. Every editing episode starts with the same 600-token system prompt, which dominates the activation Gram matrices. Once we exclude it, the activations <i>A</i><sub>1</sub> of Gen 1’s episodes and <i>A</i><sub>2</sub> of Gen 2’s overlap with a normalized Frobenius cosine of 0.0012 across all 168 linear layers. We solve the anchored least-squares problem exactly with the Woodbury identity on an <i>M</i> × <i>M</i> system (<i>M</i> ≤ 1,536, against <i>d</i><sub>in</sub> = 9,216):</p>
+    <div class="eq">
+      Δ<i>W</i>* = Δ<i>W</i><sub>1</sub> + [ 0, &nbsp; (Δ<i>W</i><sub>2</sub> − Δ<i>W</i><sub>1</sub>) <i>A</i><sub>2</sub><sup>T</sup> ] ( <i>A</i><i>A</i><sup>T</sup> + λ <i>I</i><sub><i>M</i></sub> )<sup>−1</sup> <i>A</i>, &nbsp;&nbsp; rank(Δ<i>W</i>*) ≤ rank(Δ<i>W</i><sub>1</sub>) + rank(Δ<i>W</i><sub>2</sub>)
+    </div>
+    <p>The merged checkpoint passes 33.8% on new operators, above every checkpoint it was merged from (Gen 1: 30.4%), and 10.8% on scoped markers (Gen 1: 0.8%) at 1.7% bleed. It solves two new-operator tasks on which all of those checkpoints scored 0.0%, at 100.0% and 81.2%. It falls behind on API migration (53%, against Gen 1’s 86%) and extraction (26%, against BiOrthoMerge’s 69%), and it submits an edit on 31.7% of rule tasks, where Gen 1 submits on 53.3%. Its overall pass rate is 30.9%, below Gen 0. It also had the highest validation score of any checkpoint (42.0%), so the label-free validation check did not catch the drop. Leaving withdrawn episodes out of <i>A</i><sub>1</sub> and <i>A</i><sub>2</sub> would test whether the extra withdrawals come from them.</p>
+    <p>A router is the other way to use both generations with one edit per task. It reads the model’s layer-24 hidden state for the rule and picks Gen 1 (16 tasks) or a Gen 2 variant, fitted by ridge regression on the 48 self-play and validation tasks. Raw hidden states for different rules point in nearly the same direction (mean pairwise cosine 0.83); subtracting their mean before normalizing brings that to −0.03 and makes the regression usable. The router sent 58 of the 80 test tasks to Gen 1 and passed 41.9%, slightly below Gen 1 alone (43.4%). On API migration it reached 90.8%, above the 89.2% the model reaches with the rule in its prompt.</p>
+
+    <h2 id="continual">6. Asked for ten rules in a row, Gen 1 wrote five into one checkpoint, and all five still pass 87.5–100% at the end</h2>
+    <p>Rules written into a model are triggered by different user inputs, so they can share one checkpoint more easily than whole editors can (Section 5). An earlier version of Gen 1 (32 tasks) received ten unseen rule requests in a row: eight real rules, and impossible ones at steps 4 and 8. Each accepted edit went into the same Qwen3.5-4B checkpoint, tested without any rule in its prompt, and before each edit the editor replayed synthetic prompts from its earlier accepted edits, with no labels (Figure 1, right). It wrote five of the eight real rules (four extraction formats and the finance warning) and declined the other three (two API migrations and a new operator) and both impossible ones. Each rule it wrote added about 12 points to the pass rate over all eight, which reached 61.7%. The first rule still passed 100% of its pairs after four later edits, and every factual answer was kept.</p>
+    <p>Every alternative stopped lower. Sequential LoRA training without the editor swung between 0.0% and 37.5%, ended at 25.0% and kept none of the first rule (<i>p</i> = 4.7 × 10<sup>−6</sup>). The same Gen 1 editor without replay stopped at 25.0% (<i>p</i> ≤ 2.5 × 10<sup>−11</sup>), and an earlier Gen 0 with replay at 40.6% (<i>p</i> ≤ 0.0056). An earlier Gen 2 with replay wrote two rules, made an edit for one impossible rule, and reached 25.8%. The eight-rule system prompt passes 78.1% but changes 9.38% of sibling answers, 12 times the edited checkpoint’s 0.78%.</p>
+
+    <h2 id="defensible">7. Limits</h2>
+    <ul class="plain">
+      <li><b>Self-improvement here is one round deep.</b> No Gen 2 editor beat Gen 1 (32 tasks), which trained on the same tasks, either on the test cohorts or on the ten-rule stream.</li>
+      <li><b>The fresh cohort is small, and it disagrees with Cohorts 1–3 about the second round.</b> On Cohort 4’s 12 rules, Gen 1 (16 tasks) scores 34.4% and Gen 1 + Gen 2, best of two, 33.3%, both below Gen 0’s 45.3%, while Gen 1 (32 tasks) rises to 60.9%. With 12 rules the per-task test is weak even for that 15.6-point gain over Gen 0 (<i>p</i> = 0.17).</li>
+      <li><b>Pair-level p-values overstate the confidence.</b> The 16 pairs within a rule are not independent. Per-task permutation tests over the 60 rules give <i>p</i> = 0.08 for Gen 1 (32 tasks) against Gen 0, and 0.15 to 0.25 for the other gains in Section 4. Every editor was trained and evaluated once.</li>
+      <li><b>The label-free check limits what both rounds can show.</b> If the test answers are used to pick the best of Gen 0, Gen 1 (16 tasks), both Gen 2 variants and the merge for each task, the editors pass 72.0% of pairs, close to the prompted score of 74.6%. Without labels the check falls short in two measured ways. On new operators θ<sub>0</sub> misgrades arithmetic and rejected good edits on 10 of 15 tasks, which is why Gen 1 (32 tasks), best of two, drops from 41.7% to 7.9% on operators; checking candidates by running the Python expressions the editor wrote in its first turn would remove this. On two extraction tasks in Cohort 4, the router sent each task to the Gen 2 editor that declined to edit, while the other Gen 2 editor passed every test pair.</li>
+      <li><b>The editor works inside a fixed scaffold.</b> It chooses among pre-filtered lists of its own clean attempts, with example code in its prompt, on four fixed task families. We do not claim open-ended task invention.</li>
+    </ul>
+
+    <h2 id="cost">8. Cost: $194 of GPU time</h2>
+    <p>Every run used rented NVIDIA H100 80GB GPUs on Modal, plus two H200s for the 27B runs in Section 1: $92.42 for the four-size repair study, $6.90 for the first 24-task self-play study, and $94.58 for the four rounds of self-editing ($18.80, $19.01, $31.65 and $25.12). Dataset manifests are hashed with SHA-256, and replaying the unedited model gave 0 of 4 mismatches within a run and 0 of 64 across rounds. Twenty unit tests check that the 128 tasks are disjoint, that the Woodbury merge matches a dense float64 RegMean to within 10<sup>−6</sup>, the chat-template indexing that excludes the system prompt, the router, and the label-free best-of-two selection.</p>
+
+    <h2 id="refs">References</h2>
+    <ol class="refs">
+      <li id="r1"><b>Language Models Can Rewrite Their Own Weights.</b> Fan et al., 2026. <a href="https://arxiv.org/abs/2611.21885">arXiv:2611.21885</a></li>
+      <li id="r2"><b>Self-Adapting Language Models (SEAL).</b> Zweiger et al., 2025. <a href="https://arxiv.org/abs/2506.10943">arXiv:2506.10943</a></li>
+      <li id="r3"><b>Agentic Test-Time Training (Agentic-TTT).</b> 2026. <a href="https://arxiv.org/abs/2610.12002">arXiv:2610.12002</a></li>
+      <li id="r4"><b>Transformer-Squared: Self-Adaptive LLMs.</b> Sun et al., 2025. <a href="https://arxiv.org/abs/2501.06252">arXiv:2501.06252</a></li>
+      <li id="r5"><b>Qwen3.5 Technical Report &amp; Model Family.</b> Qwen Team, 2026. <a href="https://huggingface.co/Qwen/Qwen3.5-4B">huggingface.co/Qwen/Qwen3.5-4B</a></li>
+      <li id="r6"><b>DeepScaleR: Surpassing O1-Preview with a 1.5B Model by Scaling RL.</b> Luo et al., 2025.</li>
+      <li id="r7"><b>Dataless Knowledge Fusion by Merging Weights of Language Models (RegMean).</b> Jin et al., ICLR 2023. <a href="https://arxiv.org/abs/2212.09849">arXiv:2212.09849</a></li>
+      <li id="r8"><b>LoRA: Low-Rank Adaptation of Large Language Models.</b> Hu et al., ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></li>
+      <li id="r9"><b>Editing Models with Task Arithmetic.</b> Ilharco et al., ICLR 2023. <a href="https://arxiv.org/abs/2212.04089">arXiv:2212.04089</a></li>
+      <li id="r10"><b>SOAR: Self-Improving Language Models for Hard Math via Promotion Curricula.</b> Sundaram et al., ICML 2026. <a href="https://arxiv.org/abs/2601.18778">arXiv:2601.18778</a></li>
+      <li id="r11"><b>Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models (SPIN).</b> Chen et al., ICML 2024. <a href="https://arxiv.org/abs/2401.01335">arXiv:2401.01335</a></li>
+    </ol>
+
+    <h2 id="citation">Citation</h2>
+    <pre class="bib">@misc{boson2026recursive4b,
+  title  = {Recursive Self-Improvement at 4B via Self-Play Weight Editing},
+  author = {{Shin Megami Boson}},
+  year   = {2026},
+  month  = nov
+}</pre>
+
+    <footer>Recursive Self-Improvement at 4B via Self-Play Weight Editing · November 2026 · <a href="../">All papers</a></footer>
+  </section>
+</div>
+</body>
+</html>

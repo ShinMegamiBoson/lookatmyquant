@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>LookAtMyQuant</title>
-<meta name="description" content="Papers by Shin Megami Boson on compressing language models and on the structures inside them: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, and moving groups of neurons between models.">
+<meta name="description" content="Papers by Shin Megami Boson on compressing language models, on the structures inside them, and on models that edit their own weights: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, moving groups of neurons between models, and a 4B model that trains itself to be a better editor of its own weights.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="LookAtMyQuant">
-<meta property="og:description" content="Papers by Shin Megami Boson on compressing language models and on the structures inside them: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, and moving groups of neurons between models.">
+<meta property="og:description" content="Papers by Shin Megami Boson on compressing language models, on the structures inside them, and on models that edit their own weights: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, moving groups of neurons between models, and a 4B model that trains itself to be a better editor of its own weights.">
 <meta property="og:url" content="https://lookatmyquant.pages.dev/">
 <meta property="og:image" content="https://lookatmyquant.pages.dev/compiler/og.jpg">
 <meta property="og:image:width" content="1200">
@@ -58,7 +58,7 @@ footer { margin-top: 56px; font: 400 0.88rem/1.5 var(--sans); color: var(--muted
 <div class="wrap">
   <header class="title col">
     <h1>LookAtMyQuant</h1>
-    <p class="subtitle">Papers on compressing language models and on the structures inside them</p>
+    <p class="subtitle">Papers on compressing language models, on the structures inside them, and on models that edit their own weights</p>
     <p class="authors">Shin Megami Boson</p>
     <nav class="links" aria-label="Code and models">
       <a href="https://github.com/ShinMegamiBoson/lookatmyquant">Code</a>
@@ -76,6 +76,10 @@ footer { margin-top: 56px; font: 400 0.88rem/1.5 var(--sans); color: var(--muted
       <li><a href="https://qwen-neuron-map.pages.dev/"><img src="thumbs/encyclopedia.jpg" width="640" height="400" alt=""><div><h3>Encyclopedia of LLM homologies</h3><p>30 language models, each drawn from its own MLP neurons and laid out on one shared map of 323 families of structure</p><p class="when">November 2026</p></div></a></li>
       <li><a href="https://qwen-neuron-map.pages.dev/surgery/"><img src="thumbs/surgery.jpg" width="640" height="400" alt=""><div><h3>Neuron surgery</h3><p>A model’s calculation neurons can be replaced by another model’s with 0.011% of its parameters trained</p><p class="when">November 2026</p></div></a></li>
       <li><a href="grafting/"><img src="thumbs/grafting.jpg" width="640" height="400" alt=""><div><h3>Grafting Neural Primitives Across Models</h3><p>Can a smaller Qwen model use a larger model’s arithmetic neurons? We replaced Qwen3.5-4B’s disabled calculation neurons with neurons from Qwen3.5-9B. The 4B then solved 82.4% of GSM8K word problems, reaching 92% of the intact 4B’s score and 87% of the 9B donor’s. Shuffling the same graft’s weights cut accuracy to 37.6%.</p><p class="when">November 2026</p></div></a></li>
+    </ul>
+    <h2>Self-improvement</h2>
+    <ul class="papers">
+      <li><a href="self-editing/"><img src="thumbs/self-editing.jpg" width="640" height="400" alt=""><div><h3>Recursive Self-Improvement at 4B via Self-Play Weight Editing</h3><p>Qwen3.5-4B is given a new rule in plain English and must write it into its own weights without changing how it answers similar prompts. After one round in which it trains its own weights on its own unlabeled attempts, with no teacher model, it gets 46.6% of test prompt pairs right across 60 unseen rules, up from 36.5%.</p><p class="when">November 2026</p></div></a></li>
     </ul>
     <footer>Shin Megami Boson · 2026</footer>
   </main>
