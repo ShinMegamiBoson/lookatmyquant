@@ -514,7 +514,11 @@ def stream_dspark(
     prefix_state: dict[str, Any] | None = None,
     stats_out: dict[str, Any] | None = None,
 ) -> Iterator[list[int]]:
-    """Stream hybrid N-gram + DSpark speculative decoding (exact greedy, tight-margin greedy, or exact unbiased `temp > 0`)."""
+    """Stream hybrid N-gram + DSpark speculative decoding (exact greedy, tight-margin greedy, or exact unbiased `temp > 0`).
+
+    Note: default FP8 global KV (`LAMQ_GLOBAL_KV=fp8`; set `LAMQ_GLOBAL_KV=fp16` or `LAMQ_FP8_GLOBAL_KV=0` to disable)
+    and batched `T>1` verify vs serial `T=1` accumulation order can occasionally differ on near-tied greedy tokens.
+    """
     if temp < 0.0:
         raise ValueError(f"temp must be >= 0, got {temp}")
     eff_margin = _compile_margin(max_logit_gap, min_prob_ratio)

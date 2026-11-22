@@ -1614,8 +1614,8 @@ def _emit_sg8_moe_mma(ha, fid: int, n: int, nb_tiles: int):
 
 
 @lru_cache(maxsize=64)
-def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, rb: int = 2, nb: int = 2, lpr: int | None = None):
-    """Unified 1-launch MoE kernel supporting ALL formats {ht1,ht2,ht3,rtr1..rtr4}.
+def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, rb: int = 2, nb: int = 2, n_rg: int = 1, lpr: int | None = None):
+    """Unified 1-launch MoE kernel supporting ALL formats {ht1,ht2,ht3,rtr1..rtr4,nvfp4}, row-group splitting (`n_rg`), and optional `lpr`.
 
     Modes:
       - `t1`: T=1 (8 active slots, 1 token/expert, zero compaction, half-warp c1)
@@ -1648,7 +1648,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                         f"inline void umoe_pp7_c{c_val}("
                         "const device half* x_raw, const device uint* ecodes, const device uchar* env_scales, float eouter, "
                         "const threadgroup half* tg_e2m1, const threadgroup half* tg_e4m3, "
-                        "device float* y, uint r0, uint m_rows, uint x_div, uint packed, uint hl) {"
+                        "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint packed, uint hl) {"
                     )
                     for b in range(c_val):
                         ha(f"    const uint s{b} = (packed >> {b * 8}u) & 0xFFu;")
@@ -1685,7 +1685,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                         while st >= 1:
                             ha(f"            sv{b} += simd_shuffle_xor(sv{b}, {st}u);")
                             st //= 2
-                        ha(f"            if (hl == 0u && rb0 + r < m_rows) y[(ulong)s{b} * m_rows + rb0 + r] = sv{b} * eouter;")
+                        ha(f"            if (hl == 0u && rb0 + r < m_rows) y[(ulong)s{b} * y_stride + rb0 + r] = sv{b} * eouter;")
                     ha("        }")
                     ha("    }")
                     ha("}")
@@ -1695,7 +1695,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                     "const device half* x, const device uint* ecodes, const device half* escales, "
                     "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
                     "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
-                    "device float* y, uint r0, uint m_rows, uint x_div, uint packed, uint hl) {"
+                    "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint packed, uint hl) {"
                 )
                 for b in range(c_val):
                     ha(f"    const uint s{b} = (packed >> {b * 8}u) & 0xFFu;")
@@ -1737,7 +1737,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                     while st >= 1:
                         ha(f"            sv{b} += simd_shuffle_xor(sv{b}, {st}u);")
                         st //= 2
-                    ha(f"            if (hl == 0u && rb0 + r < m_rows) y[(ulong)s{b} * m_rows + rb0 + r] = sv{b} * sc;")
+                    ha(f"            if (hl == 0u && rb0 + r < m_rows) y[(ulong)s{b} * y_stride + rb0 + r] = sv{b} * sc;")
                 ha("        }")
                 ha("    }")
                 ha("}")
@@ -1748,6 +1748,8 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         a("const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup;")
         a(f"const uint hw = lane >> {shift_lane}u, hl = lane & {mask_lane}u, tid = simd * 32u + lane;")
         a("const uint m_rows = meta[0], x_div = meta[1], ntg = meta[2];")
+        if n_rg > 1:
+            a(f"const uint rg_sz = m_rows / {n_rg}u;")
         if has_ht1:
             a(f"threadgroup half4 tg_ht1[512]; for (uint idx = tid; idx < 512u; idx += {sg * 32}u) tg_ht1[idx] = half4(lut_ht1[4u*idx], lut_ht1[4u*idx+1u], lut_ht1[4u*idx+2u], lut_ht1[4u*idx+3u]);")
         else:
@@ -1776,23 +1778,32 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         a("    if (gb >= total_blocks) continue;")
         a("    const uint u = gb / blocks_per_u, r0 = (gb - u * blocks_per_u) * RPS;")
         a("    const uint ec = plan[1u + u], eid = ec & 0xFFu, cnt = ec >> 8u, p0 = plan[65u + u];")
-        a("    const uint fid = exp_fid[eid];")
-        a("    const device uint* ecodes = codes + exp_code_off[eid];")
-        a("    const device half* escales = scales + exp_scale_off[eid];")
+        if n_rg > 1:
+            a(f"    const uint rg = r0 / rg_sz, r_loc = r0 - rg * rg_sz, idx_rg = eid * {n_rg}u + rg;")
+            a("    const uint fid = exp_fid[idx_rg], m_grp = rg_sz;")
+            a("    const device uint* ecodes = codes + exp_code_off[idx_rg];")
+            a("    const device half* escales = scales + exp_scale_off[idx_rg];")
+            a("    device float* y_ptr = y + rg * rg_sz;")
+        else:
+            a("    const uint r_loc = r0, m_grp = m_rows;")
+            a("    const uint fid = exp_fid[eid];")
+            a("    const device uint* ecodes = codes + exp_code_off[eid];")
+            a("    const device half* escales = scales + exp_scale_off[eid];")
+            a("    device float* y_ptr = y;")
         a("    switch (fid) {")
         for fid in fids:
             a(f"        case {fid}u:")
             if fid == 7:
                 a("            { const device uchar* env_s = nv_scales + exp_nv_scale_off[eid]; const float eout = nv_outer[eid];")
-                a("              if (cnt == 1u) umoe_pp7_c1(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y, r0, m_rows, x_div, p0, hl);")
-                a("              else if (cnt == 2u) umoe_pp7_c2(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y, r0, m_rows, x_div, p0, hl);")
-                a("              else if (cnt == 3u) umoe_pp7_c3(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y, r0, m_rows, x_div, p0, hl);")
-                a("              else umoe_pp7_c4(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y, r0, m_rows, x_div, p0, hl); }")
+                a("              if (cnt == 1u) umoe_pp7_c1(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
+                a("              else if (cnt == 2u) umoe_pp7_c2(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
+                a("              else if (cnt == 3u) umoe_pp7_c3(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
+                a("              else umoe_pp7_c4(x_raw, ecodes, env_s, eout, tg_e2m1, tg_e4m3, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl); }")
             else:
-                a(f"            if (cnt == 1u) umoe_pp{fid}_c1(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y, r0, m_rows, x_div, p0, hl);")
-                a(f"            else if (cnt == 2u) umoe_pp{fid}_c2(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y, r0, m_rows, x_div, p0, hl);")
-                a(f"            else if (cnt == 3u) umoe_pp{fid}_c3(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y, r0, m_rows, x_div, p0, hl);")
-                a(f"            else umoe_pp{fid}_c4(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y, r0, m_rows, x_div, p0, hl);")
+                a(f"            if (cnt == 1u) umoe_pp{fid}_c1(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
+                a(f"            else if (cnt == 2u) umoe_pp{fid}_c2(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
+                a(f"            else if (cnt == 3u) umoe_pp{fid}_c3(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
+                a(f"            else umoe_pp{fid}_c4(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y_ptr, r_loc, m_grp, m_rows, x_div, p0, hl);")
             a("            break;")
         a("    }")
         a("}")
@@ -1801,7 +1812,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
         tag = "_".join(str(f) for f in fids)
         return mx.fast.metal_kernel(
-            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}",
+            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}",
             input_names=in_names,
             output_names=["y"],
             header="\n".join(H),
@@ -1926,7 +1937,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                 "inline void umoe_f7_c1("
                 "const device half* x_raw, const device uint* ecodes, const device uchar* env_scales, float eouter, "
                 "const threadgroup half* tg_e2m1, const threadgroup half* tg_e4m3, "
-                "device float* y, uint r0, uint m_rows, uint x_div, uint s0, uint hl) {"
+                "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint s0, uint hl) {"
             )
             ha(f"    const device half* xp0 = x_raw + (ulong)((x_div == 1u) ? s0 : (s0 / x_div)) * {n}u;")
             ha("    float acc0[RPS]; for (uint r = 0; r < RPS; r++) acc0[r] = 0.0f;")
@@ -1956,7 +1967,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             while st >= 1:
                 ha(f"        sv0 += simd_shuffle_xor(sv0, {st}u);")
                 st //= 2
-            ha("        if (hl == 0u && r0 + r < m_rows) y[(ulong)s0 * m_rows + r0 + r] = sv0 * eouter;")
+            ha("        if (hl == 0u && r0 + r < m_rows) y[(ulong)s0 * y_stride + r0 + r] = sv0 * eouter;")
             ha("    }")
             ha("}")
             continue
@@ -1965,7 +1976,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             "const device half* x, const device uint* ecodes, const device half* escales, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
             "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
-            "device float* y, uint r0, uint m_rows, uint x_div, uint s0, uint hl) {"
+            "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint s0, uint hl) {"
         )
         ha(f"    const device half* xp0 = x + (ulong)((x_div == 1u) ? s0 : (s0 / x_div)) * {n}u;")
         ha("    float acc0[RPS]; for (uint r = 0; r < RPS; r++) acc0[r] = 0.0f;")
@@ -2001,7 +2012,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         while st >= 1:
             ha(f"        sv0 += simd_shuffle_xor(sv0, {st}u);")
             st //= 2
-        ha("        if (hl == 0u && r0 + r < m_rows) y[(ulong)s0 * m_rows + r0 + r] = sv0 * sc;")
+        ha("        if (hl == 0u && r0 + r < m_rows) y[(ulong)s0 * y_stride + r0 + r] = sv0 * sc;")
         ha("    }")
         ha("}")
 
@@ -2012,6 +2023,8 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
     a(f"const uint hw = lane >> {shift_lane}u, hl = lane & {mask_lane}u;")
     a("const uint tid = simd * 32u + lane;")
     a("const uint m_rows = meta[0], n_slots = meta[1], x_div = meta[2], ntg = meta[3];")
+    if n_rg > 1:
+        a(f"const uint rg_sz = m_rows / {n_rg}u;")
     if has_ht1:
         a(f"threadgroup half4 tg_ht1[512]; for (uint idx = tid; idx < 512u; idx += {sg * 32}u) tg_ht1[idx] = half4(lut_ht1[4u*idx], lut_ht1[4u*idx+1u], lut_ht1[4u*idx+2u], lut_ht1[4u*idx+3u]);")
     else:
@@ -2042,15 +2055,24 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
     a("    const uint u = tg_valid[ui];")
     a("    const uint r0 = (gb - ui * blocks_per_u) * RPS;")
     a("    const uint eid = expert_ids[u];")
-    a("    const uint fid = exp_fid[eid];")
-    a("    const device uint* ecodes = codes + exp_code_off[eid];")
-    a("    const device half* escales = scales + exp_scale_off[eid];")
+    if n_rg > 1:
+        a(f"    const uint rg = r0 / rg_sz, r_loc = r0 - rg * rg_sz, idx_rg = eid * {n_rg}u + rg;")
+        a("    const uint fid = exp_fid[idx_rg], m_grp = rg_sz;")
+        a("    const device uint* ecodes = codes + exp_code_off[idx_rg];")
+        a("    const device half* escales = scales + exp_scale_off[idx_rg];")
+        a("    device float* y_ptr = y + rg * rg_sz;")
+    else:
+        a("    const uint r_loc = r0, m_grp = m_rows;")
+        a("    const uint fid = exp_fid[eid];")
+        a("    const device uint* ecodes = codes + exp_code_off[eid];")
+        a("    const device half* escales = scales + exp_scale_off[eid];")
+        a("    device float* y_ptr = y;")
     a("    switch (fid) {")
     for fid in fids:
         if fid == 7:
-            a("        case 7u: umoe_f7_c1(x_raw, ecodes, nv_scales + exp_nv_scale_off[eid], nv_outer[eid], tg_e2m1, tg_e4m3, y, r0, m_rows, x_div, u, hl); break;")
+            a("        case 7u: umoe_f7_c1(x_raw, ecodes, nv_scales + exp_nv_scale_off[eid], nv_outer[eid], tg_e2m1, tg_e4m3, y_ptr, r_loc, m_grp, m_rows, x_div, u, hl); break;")
         else:
-            a(f"        case {fid}u: umoe_f{fid}_c1(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y, r0, m_rows, x_div, u, hl); break;")
+            a(f"        case {fid}u: umoe_f{fid}_c1(x, ecodes, escales, tg_ht1, tg_ht2, tg_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y_ptr, r_loc, m_grp, m_rows, x_div, u, hl); break;")
     a("    }")
     a("}")
 
@@ -2059,7 +2081,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_umoe_t1_n{n}_f{tag}_r{rps}_s{sg}",
+        name=f"ink_umoe_t1_n{n}_f{tag}_r{rps}_s{sg}_rg{n_rg}",
         input_names=in_names,
         output_names=["y"],
         header="\n".join(H),
@@ -2242,6 +2264,7 @@ def _make_unified_moe_prefill_mpp_kernel(
     tile_t: int = 32,
     k_tile: int = 32,
     sg: int = 4,
+    n_rg: int = 1,
 ):
     """M5 Neural Accelerator (`mpp::tensor_ops::matmul2d`) format-homogeneous prefill MoE kernel (10 KB SRAM, 1.50x faster)."""
     assert n % k_tile == 0 and (m_tile * k_tile) % (16 * sg * 32) == 0
@@ -2318,7 +2341,7 @@ def _make_unified_moe_prefill_mpp_kernel(
             "const threadgroup half4* tg_ht4, const threadgroup half2* tg_ht2, "
             "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
             "const threadgroup uint* tg_xrow, const threadgroup uint* tg_out_slot, device float* y, "
-            "uint fid, uint rbase, uint m_rows, uint cnt, uint tid) {"
+            "uint fid, uint rbase, uint m_rows, uint y_stride, uint cnt, uint tid) {"
         )
         ha(f"    constexpr auto desc = matmul2d_descriptor({m_tile}, {n_sub}, {k_tile}, false, true, false, matmul2d_descriptor::mode::multiply_accumulate);")
         ha(f"    matmul2d<desc, execution_simdgroups<{sg}>> op;")
@@ -2352,9 +2375,9 @@ def _make_unified_moe_prefill_mpp_kernel(
         ha("            if (t_loc < cnt && row < m_rows) {")
         if has_nv:
             ha("                const float sc = (fid == 7u) ? eouter : (float)escales[row];")
-            ha("                y[(ulong)tg_out_slot[t_loc] * m_rows + row] = cT[i] * sc;")
+            ha("                y[(ulong)tg_out_slot[t_loc] * y_stride + row] = cT[i] * sc;")
         else:
-            ha("                y[(ulong)tg_out_slot[t_loc] * m_rows + row] = cT[i] * (float)escales[row];")
+            ha("                y[(ulong)tg_out_slot[t_loc] * y_stride + row] = cT[i] * (float)escales[row];")
         ha("            }")
         ha("        }")
         ha("    }")
@@ -2367,7 +2390,20 @@ def _make_unified_moe_prefill_mpp_kernel(
         "const uint tid = thread_position_in_threadgroup.x;",
         "const uint m_rows = meta[0], x_div = meta[1];",
         "const uint eid = units[u * 3u + 0u], base = units[u * 3u + 1u], cnt = units[u * 3u + 2u];",
-        "const uint fid = exp_fid[eid], rbase = rb_tg * MTILE;",
+    ]
+    if n_rg > 1:
+        L += [
+            f"const uint rg_sz = m_rows / {n_rg}u, r_glob = rb_tg * MTILE, rg = r_glob / rg_sz;",
+            f"const uint rbase = r_glob - rg * rg_sz, m_grp = rg_sz, idx_rg = eid * {n_rg}u + rg;",
+            "const uint fid = exp_fid[idx_rg];",
+            "device float* y_ptr = y + rg * rg_sz;",
+        ]
+    else:
+        L += [
+            "const uint fid = exp_fid[eid], rbase = rb_tg * MTILE, m_grp = m_rows;",
+            "device float* y_ptr = y;",
+        ]
+    L += [
         "const device half4* t_ht1 = (const device half4*)lut_ht1; const device half4* t_ht2 = (const device half4*)lut_ht2;",
         "const device half4* tv_rtr1 = (const device half4*)lut_rtr1; const device half2* tv_rtr2 = (const device half2*)lut_rtr2; const device half2* tv_rtr3 = (const device half2*)lut_rtr3;",
         "threadgroup half tg_w[MTILE * KTILE];",
@@ -2392,8 +2428,8 @@ def _make_unified_moe_prefill_mpp_kernel(
         "    tg_out_slot[tid] = base + tid;" if sorted_out else "    tg_out_slot[tid] = slot_order[base + tid];",
         "}",
         "threadgroup_barrier(mem_flags::mem_threadgroup);",
-        "const device uint* ec = codes + exp_code_off[eid];",
-        "const device half* es = scales + exp_scale_off[eid];",
+        "const device uint* ec = codes + exp_code_off[" + ("idx_rg" if n_rg > 1 else "eid") + "];",
+        "const device half* es = scales + exp_scale_off[" + ("idx_rg" if n_rg > 1 else "eid") + "];",
     ]
     if has_nv:
         L.append("const device half* xin = (fid == 7u) ? x_raw : x;")
@@ -2405,13 +2441,13 @@ def _make_unified_moe_prefill_mpp_kernel(
         x_arg = "x"
     for idx_n, n_sub in enumerate(adaptive_n):
         cond = f"if (cnt <= {n_sub}u)" if idx_n == 0 else (f"else if (cnt <= {n_sub}u)" if idx_n < len(adaptive_n) - 1 else "else")
-        L.append(f"{cond} umoe_mpp_n{n_sub}({x_arg}, ec, es, {nv_call}tg_w, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_xrow, tg_out_slot, y, fid, rbase, m_rows, cnt, tid);")
+        L.append(f"{cond} umoe_mpp_n{n_sub}({x_arg}, ec, es, {nv_call}tg_w, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_xrow, tg_out_slot, y_ptr, fid, rbase, m_grp, m_rows, cnt, tid);")
     in_names = ["x", "codes", "scales", "exp_fid", "exp_code_off", "exp_scale_off", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "units", "unit_count", "meta", "slot_order"]
     if has_nv:
         in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_umoe_prefill_mpp_n{n}_f{tag}_si{int(sorted_in)}_so{int(sorted_out)}_m{m_tile}_t{tile_t}",
+        name=f"ink_umoe_prefill_mpp_n{n}_f{tag}_si{int(sorted_in)}_so{int(sorted_out)}_m{m_tile}_t{tile_t}_rg{n_rg}",
         input_names=in_names,
         output_names=["y"],
         header="\n".join(H),
@@ -2427,6 +2463,7 @@ def _make_unified_moe_prefill_v2_kernel(
     sorted_out: bool = False,
     sg: int = 8,
     rb: int = 2,
+    n_rg: int = 1,
 ):
     """Non-MPP fallback format-homogeneous prefill MoE kernel (`SG=8, RB=2, tile_t=32`, TG SRAM X_tile + LUT)."""
     steps = n // 32
@@ -2500,7 +2537,7 @@ def _make_unified_moe_prefill_v2_kernel(
                     "const device half* my_xp, const device uint* ecodes, const device uchar* env_scales, float eouter, "
                     "threadgroup half* tg_x, const threadgroup half* tg_e2m1, const threadgroup half* tg_e4m3, "
                     "const threadgroup uint* tg_out_slot, device float* y, "
-                    "uint rbase, uint m_rows, uint cnt, uint tid, uint lane) {"
+                    "uint rbase, uint m_rows, uint y_stride, uint cnt, uint tid, uint lane) {"
                 )
                 ha("    const uint tok_i = tid >> 3, vec_k = tid & 7u, vk_q = vec_k >> 1, vk_h = vec_k & 1u;")
                 ha("    const uint qid = lane / 4u, fm = (qid & 4u) + ((lane / 2u) % 4u), fn = (qid & 2u) * 2u + (lane % 2u) * 2u;")
@@ -2549,8 +2586,8 @@ def _make_unified_moe_prefill_v2_kernel(
                 ha(f"            for (uint b = 0; b < {nb_val}u; b++) {{")
                 ha("                const uint ta = 8u * b + fn, tb = ta + 1u;")
                 ha("                const float2 d = ELEMS_F2(Acc[i][b].thread_elements()) * eouter;")
-                ha("                if (ta < cnt) y[(ulong)tg_out_slot[ta] * m_rows + row] = d.x;")
-                ha("                if (tb < cnt) y[(ulong)tg_out_slot[tb] * m_rows + row] = d.y;")
+                ha("                if (ta < cnt) y[(ulong)tg_out_slot[ta] * y_stride + row] = d.x;")
+                ha("                if (tb < cnt) y[(ulong)tg_out_slot[tb] * y_stride + row] = d.y;")
                 ha("            }")
                 ha("        }")
                 ha("    }")
@@ -2566,7 +2603,7 @@ def _make_unified_moe_prefill_v2_kernel(
                 "threadgroup half* tg_x, const threadgroup half4* tg_ht4, const threadgroup half2* tg_ht2, "
                 "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
                 "const threadgroup uint* tg_out_slot, device float* y, "
-                "uint rbase, uint m_rows, uint cnt, uint tid, uint lane) {"
+                "uint rbase, uint m_rows, uint y_stride, uint cnt, uint tid, uint lane) {"
             )
             ha("    const uint tok_i = tid >> 3, vec_k = tid & 7u, vk_q = vec_k >> 1, vk_h = vec_k & 1u;")
             ha("    const uint qid = lane / 4u, fm = (qid & 4u) + ((lane / 2u) % 4u), fn = (qid & 2u) * 2u + (lane % 2u) * 2u;")
@@ -2618,8 +2655,8 @@ def _make_unified_moe_prefill_v2_kernel(
             ha(f"            for (uint b = 0; b < {nb_val}u; b++) {{")
             ha("                const uint ta = 8u * b + fn, tb = ta + 1u;")
             ha("                const float2 d = ELEMS_F2(Acc[i][b].thread_elements()) * sc;")
-            ha("                if (ta < cnt) y[(ulong)tg_out_slot[ta] * m_rows + row] = d.x;")
-            ha("                if (tb < cnt) y[(ulong)tg_out_slot[tb] * m_rows + row] = d.y;")
+            ha("                if (ta < cnt) y[(ulong)tg_out_slot[ta] * y_stride + row] = d.x;")
+            ha("                if (tb < cnt) y[(ulong)tg_out_slot[tb] * y_stride + row] = d.y;")
             ha("            }")
             ha("        }")
             ha("    }")
@@ -2631,7 +2668,20 @@ def _make_unified_moe_prefill_v2_kernel(
         "const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup, tid = simd * 32u + lane;",
         "const uint m_rows = meta[0], x_div = meta[1];",
         "const uint eid = units[u * 3u + 0u], base = units[u * 3u + 1u], cnt = units[u * 3u + 2u];",
-        "const uint fid = exp_fid[eid], rbase = rb_tg * (SG * 8u * RB) + simd * (8u * RB);",
+    ]
+    if n_rg > 1:
+        L += [
+            f"const uint rg_sz = m_rows / {n_rg}u, r_tg = rb_tg * (SG * 8u * RB), rg = r_tg / rg_sz;",
+            f"const uint rbase = (r_tg - rg * rg_sz) + simd * (8u * RB), m_grp = rg_sz, idx_rg = eid * {n_rg}u + rg;",
+            "const uint fid = exp_fid[idx_rg];",
+            "device float* y_ptr = y + rg * rg_sz;",
+        ]
+    else:
+        L += [
+            "const uint fid = exp_fid[eid], rbase = rb_tg * (SG * 8u * RB) + simd * (8u * RB), m_grp = m_rows;",
+            "device float* y_ptr = y;",
+        ]
+    L += [
         "const device half4* t_ht1 = (const device half4*)lut_ht1; const device half4* t_ht2 = (const device half4*)lut_ht2;",
         "const device half2* tv_rtr1 = (const device half2*)lut_rtr1; const device half2* tv_rtr2 = (const device half2*)lut_rtr2; const device half2* tv_rtr3 = (const device half2*)lut_rtr3;",
         "threadgroup half tg_x[64 * XSTR];",
@@ -2659,19 +2709,20 @@ def _make_unified_moe_prefill_v2_kernel(
         L.append("const uint my_orig = (tok_i < cnt) ? slot_order[base + tok_i] : 0u;")
         L.append("const uint my_xrow = (x_div == 1u) ? my_orig : (my_orig >> 3);")
         L.append(f"const device half* my_xp = (tok_i < cnt) ? ({xbase_expr} + (ulong)my_xrow * {n}u + 4u * vec_k) : {xbase_expr};")
-    L.append("const device uint* ec = codes + exp_code_off[eid]; const device half* es = scales + exp_scale_off[eid];")
+    idx_expr = "idx_rg" if n_rg > 1 else "eid"
+    L.append(f"const device uint* ec = codes + exp_code_off[{idx_expr}]; const device half* es = scales + exp_scale_off[{idx_expr}];")
     L.append("switch (fid) {")
     for fid in fids:
         L.append(f"    case {fid}u:")
         if fid == 7:
             L.append("        { const device uchar* env_s = nv_scales + exp_nv_scale_off[eid]; const float eout = nv_outer[eid];")
-            L.append("          if (cnt <= 8u) umoe_v2_f7_nb1(my_xp, ec, env_s, eout, tg_x, tg_e2m1, tg_e4m3, tg_out_slot, y, rbase, m_rows, cnt, tid, lane);")
-            L.append("          else if (cnt <= 16u) umoe_v2_f7_nb2(my_xp, ec, env_s, eout, tg_x, tg_e2m1, tg_e4m3, tg_out_slot, y, rbase, m_rows, cnt, tid, lane);")
-            L.append("          else umoe_v2_f7_nb4(my_xp, ec, env_s, eout, tg_x, tg_e2m1, tg_e4m3, tg_out_slot, y, rbase, m_rows, cnt, tid, lane); }")
+            L.append("          if (cnt <= 8u) umoe_v2_f7_nb1(my_xp, ec, env_s, eout, tg_x, tg_e2m1, tg_e4m3, tg_out_slot, y_ptr, rbase, m_grp, m_rows, cnt, tid, lane);")
+            L.append("          else if (cnt <= 16u) umoe_v2_f7_nb2(my_xp, ec, env_s, eout, tg_x, tg_e2m1, tg_e4m3, tg_out_slot, y_ptr, rbase, m_grp, m_rows, cnt, tid, lane);")
+            L.append("          else umoe_v2_f7_nb4(my_xp, ec, env_s, eout, tg_x, tg_e2m1, tg_e4m3, tg_out_slot, y_ptr, rbase, m_grp, m_rows, cnt, tid, lane); }")
         else:
-            L.append(f"        if (cnt <= 8u) umoe_v2_f{fid}_nb1(my_xp, ec, es, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_out_slot, y, rbase, m_rows, cnt, tid, lane);")
-            L.append(f"        else if (cnt <= 16u) umoe_v2_f{fid}_nb2(my_xp, ec, es, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_out_slot, y, rbase, m_rows, cnt, tid, lane);")
-            L.append(f"        else umoe_v2_f{fid}_nb4(my_xp, ec, es, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_out_slot, y, rbase, m_rows, cnt, tid, lane);")
+            L.append(f"        if (cnt <= 8u) umoe_v2_f{fid}_nb1(my_xp, ec, es, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_out_slot, y_ptr, rbase, m_grp, m_rows, cnt, tid, lane);")
+            L.append(f"        else if (cnt <= 16u) umoe_v2_f{fid}_nb2(my_xp, ec, es, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_out_slot, y_ptr, rbase, m_grp, m_rows, cnt, tid, lane);")
+            L.append(f"        else umoe_v2_f{fid}_nb4(my_xp, ec, es, tg_x, tg_ht4, tg_ht2, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, tg_out_slot, y_ptr, rbase, m_grp, m_rows, cnt, tid, lane);")
         L.append("        break;")
     L.append("}")
     in_names = ["x", "codes", "scales", "exp_fid", "exp_code_off", "exp_scale_off", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "units", "unit_count", "meta", "slot_order"]
@@ -2679,7 +2730,7 @@ def _make_unified_moe_prefill_v2_kernel(
         in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_umoe_prefill_v2_n{n}_f{tag}_si{int(sorted_in)}_so{int(sorted_out)}_rb{rb}_s{sg}",
+        name=f"ink_umoe_prefill_v2_n{n}_f{tag}_si{int(sorted_in)}_so{int(sorted_out)}_rb{rb}_s{sg}_rg{n_rg}",
         input_names=in_names,
         output_names=["y"],
         header="\n".join(H),
@@ -2785,16 +2836,20 @@ class UnifiedMoESide:
         n_cols: int,
         fast_luts: dict[str, mx.array],
         nvfp4_slab: tuple[mx.array, mx.array, mx.array] | None = None,
+        rg_map: np.ndarray | None = None,
     ):
         self.m_rows = int(m_rows)
         self.n_cols = int(n_cols)
         self.has_nvfp4 = nvfp4_slab is not None
+        self.n_rg = int(rg_map.shape[1]) if rg_map is not None else 1
+        rg_rows = self.m_rows // self.n_rg
+        assert rg_rows * self.n_rg == self.m_rows, f"m_rows={m_rows} not divisible by n_rg={self.n_rg}"
         mf = np.array(map_fid, dtype=np.int32)
         ml = np.array(map_loc, dtype=np.uint32)
         slab_by_fid = {int(fid): (np.array(c, dtype=np.uint32), np.array(s, dtype=np.float16)) for fid, c, s, _, _ in slabs}
         if self.has_nvfp4:
             c_nv, s_nv_u8, out_nv_f32 = nvfp4_slab
-            c_nv_np = np.ascontiguousarray(np.array(c_nv, dtype=np.uint32)).reshape(-1, self.m_rows, self.n_cols // 8)
+            c_nv_np = np.ascontiguousarray(np.array(c_nv, dtype=np.uint32)).reshape(-1, rg_rows, self.n_cols // 8)
             slab_by_fid[7] = (c_nv_np, np.zeros((1, 64), dtype=np.float16))
         codes_parts, scales_parts = [], []
         fid_code_base, fid_scale_base, fid_wpr = {}, {}, {}
@@ -2810,25 +2865,47 @@ class UnifiedMoESide:
             s_off += s.size
         codes_parts.append(np.zeros(4, dtype=np.uint32))
         scales_parts.append(np.zeros(64, dtype=np.float16))
-        exp_code_off = np.zeros(128, dtype=np.uint32)
-        exp_scale_off = np.zeros(128, dtype=np.uint32)
-        exp_nv_scale_off = np.zeros(128, dtype=np.uint32)
-        nv_outer_128 = np.zeros(128, dtype=np.float32)
-        spr_nv = self.n_cols // 16
-        out_nv_np = np.array(nvfp4_slab[2], dtype=np.float32).reshape(-1) if self.has_nvfp4 else None
-        for e in range(128):
-            f = int(mf[e])
-            loc = int(ml[e])
-            exp_code_off[e] = fid_code_base[f] + loc * self.m_rows * fid_wpr[f]
-            if f == 7:
-                exp_scale_off[e] = fid_scale_base[7]
-                exp_nv_scale_off[e] = loc * self.m_rows * spr_nv
-                nv_outer_128[e] = out_nv_np[loc]
-            else:
-                exp_scale_off[e] = fid_scale_base[f] + loc * self.m_rows
+
+        if self.n_rg > 1:
+            assert rg_map is not None and rg_map.shape == (128, self.n_rg, 2)
+            rg_fid_arr = np.zeros(128 * self.n_rg, dtype=np.uint32)
+            exp_code_off = np.zeros(128 * self.n_rg, dtype=np.uint32)
+            exp_scale_off = np.zeros(128 * self.n_rg, dtype=np.uint32)
+            for e in range(128):
+                for rg in range(self.n_rg):
+                    f = int(rg_map[e, rg, 0])
+                    loc = int(rg_map[e, rg, 1])
+                    idx_rg = e * self.n_rg + rg
+                    rg_fid_arr[idx_rg] = f
+                    exp_code_off[idx_rg] = fid_code_base[f] + loc * rg_rows * fid_wpr[f]
+                    exp_scale_off[idx_rg] = fid_scale_base[f] + loc * rg_rows
+            # `self.exp_fid` stays shape (128,) for router/prefill expert planners; `self._kern_fid` is passed to MoE kernels!
+            self.exp_fid = mx.array(rg_map[:, 0, 0].astype(np.uint32))
+            self._kern_fid = mx.array(rg_fid_arr)
+            exp_nv_scale_off = np.zeros(128, dtype=np.uint32)
+            nv_outer_128 = np.zeros(128, dtype=np.float32)
+        else:
+            exp_code_off = np.zeros(128, dtype=np.uint32)
+            exp_scale_off = np.zeros(128, dtype=np.uint32)
+            exp_nv_scale_off = np.zeros(128, dtype=np.uint32)
+            nv_outer_128 = np.zeros(128, dtype=np.float32)
+            spr_nv = self.n_cols // 16
+            out_nv_np = np.array(nvfp4_slab[2], dtype=np.float32).reshape(-1) if self.has_nvfp4 else None
+            for e in range(128):
+                f = int(mf[e])
+                loc = int(ml[e])
+                exp_code_off[e] = fid_code_base[f] + loc * self.m_rows * fid_wpr[f]
+                if f == 7:
+                    exp_scale_off[e] = fid_scale_base[7]
+                    exp_nv_scale_off[e] = loc * self.m_rows * spr_nv
+                    nv_outer_128[e] = out_nv_np[loc]
+                else:
+                    exp_scale_off[e] = fid_scale_base[f] + loc * self.m_rows
+            self.exp_fid = mx.array(mf.astype(np.uint32))
+            self._kern_fid = self.exp_fid
+
         self.codes = mx.array(np.concatenate(codes_parts))
         self.scales = mx.array(np.concatenate(scales_parts))
-        self.exp_fid = mx.array(mf.astype(np.uint32))
         self.exp_code_off = mx.array(exp_code_off)
         self.exp_scale_off = mx.array(exp_scale_off)
         self.fids = tuple(sorted(slab_by_fid.keys()))
@@ -2849,10 +2926,10 @@ class UnifiedMoESide:
                 self.nv_scales, self.exp_nv_scale_off, self.nv_outer,
                 fast_luts["nvfp4_e2m1"], fast_luts["nvfp4_e4m3"],
             ]
-            mx.eval(self.codes, self.scales, self.exp_fid, self.exp_code_off, self.exp_scale_off, self.nv_scales, self.exp_nv_scale_off, self.nv_outer)
+            mx.eval(self.codes, self.scales, self.exp_fid, self._kern_fid, self.exp_code_off, self.exp_scale_off, self.nv_scales, self.exp_nv_scale_off, self.nv_outer)
         else:
             self._nv_args = []
-            mx.eval(self.codes, self.scales, self.exp_fid, self.exp_code_off, self.exp_scale_off)
+            mx.eval(self.codes, self.scales, self.exp_fid, self._kern_fid, self.exp_code_off, self.exp_scale_off)
 
     def __call__(
         self,
@@ -2870,10 +2947,10 @@ class UnifiedMoESide:
         nv_tail = [(x_raw_f16 if x_raw_f16 is not None else x_rot_f16).reshape(-1), *self._nv_args] if self.has_nvfp4 else []
         if n_slots <= 8 and not sorted_in and not sorted_out:
             sg, ntg = (4, 60) if _is_m4() else (8, 160)
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "t1", rps=4, sg=sg)
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "t1", rps=4, sg=sg, n_rg=self.n_rg)
             mt = _u32(self.m_rows, n_slots, x_div, ntg)
             return kern(
-                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.exp_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, eids_flat.astype(mx.uint32), mt, *nv_tail],
+                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, eids_flat.astype(mx.uint32), mt, *nv_tail],
                 grid=(ntg * sg * 32, 1, 1),
                 threadgroup=(sg * 32, 1, 1),
                 output_shapes=[(n_slots, self.m_rows)],
@@ -2895,10 +2972,10 @@ class UnifiedMoESide:
                 ntg_g = 120 if (self.n_cols == 2304 and 40 < n_slots <= 56) else 160
             else:
                 sg_g, rps_g, ntg_g, lpr_g = 8, 4, 160, 8
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, lpr=lpr_g)
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, n_rg=self.n_rg, lpr=lpr_g)
             mt = _u32(self.m_rows, x_div, ntg_g)
             return kern(
-                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.exp_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, plan, mt, *nv_tail],
+                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, plan, mt, *nv_tail],
                 grid=(ntg_g * sg_g * 32, 1, 1),
                 threadgroup=(sg_g * 32, 1, 1),
                 output_shapes=[(n_slots, self.m_rows)],
@@ -2912,10 +2989,10 @@ class UnifiedMoESide:
             m_tile, sg_p = 64, 4
             rblocks = (self.m_rows + m_tile - 1) // m_tile
             kern = _make_unified_moe_prefill_mpp_kernel(
-                self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, m_tile=m_tile, tile_t=tile_t, k_tile=32, sg=sg_p,
+                self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, m_tile=m_tile, tile_t=tile_t, k_tile=32, sg=sg_p, n_rg=self.n_rg,
             )
             return kern(
-                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.exp_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
+                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
                 grid=(max_u * sg_p * 32, rblocks, 1),
                 threadgroup=(sg_p * 32, 1, 1),
                 output_shapes=[(n_slots, self.m_rows)],
@@ -2925,10 +3002,10 @@ class UnifiedMoESide:
         rows_per_tg = sg_p * 8 * rb_p
         rblocks = (self.m_rows + rows_per_tg - 1) // rows_per_tg
         kern = _make_unified_moe_prefill_v2_kernel(
-            self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, sg=sg_p, rb=rb_p,
+            self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, sg=sg_p, rb=rb_p, n_rg=self.n_rg,
         )
         return kern(
-            inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.exp_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_sg8, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
+            inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_sg8, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
             grid=(max_u * sg_p * 32, rblocks, 1),
             threadgroup=(sg_p * 32, 1, 1),
             output_shapes=[(n_slots, self.m_rows)],
@@ -5818,6 +5895,62 @@ def _selftest():
         err = float(mx.linalg.norm(y_u - y_r) / mx.linalg.norm(y_r))
         assert err < 2e-3, f"UnifiedMoESide T={T} fail: {err}"
         print(f"  PASS UnifiedMoESide (ht2+ht3+rtr1+rtr4, T={T:2d}): rel_err={err:.2e}")
+
+    # 3b. UnifiedMoESide with within-expert row-group bit splitting (`n_rg=4`, `rg_rows=128`, `m_rows=512`)
+    rg_slabs = []
+    rg_map = np.zeros((128, 4, 2), dtype=np.int32)
+    rg_fmts = [(1, "ht2", 2, 4, 512, 0x9E3779B1), (2, "ht3", 3, 2, 1024, 0x9E3779B1), (3, "rtr1", 1, 1, 4096, 0), (6, "rtr4", 4, 1, 4096, 0)]
+    fmt_locs = {fid: [] for fid, *_ in rg_fmts}
+    for e in range(128):
+        for rg in range(4):
+            fid, *_ = rg_fmts[(e + rg) % 4]
+            loc = len(fmt_locs[fid])
+            fmt_locs[fid].append((e, rg))
+            rg_map[e, rg] = [fid, loc]
+    for fid, fmt, k, g, K, hm in rg_fmts:
+        cnt_f = len(fmt_locs[fid])
+        c = mx.array(rng.integers(0, 2**32, (cnt_f, 128, (2304 * k) // 32), dtype=np.uint32))
+        s = mx.array(rng.uniform(0.01, 0.05, (cnt_f, 128)).astype(np.float16))
+        rg_slabs.append((fid, c, s, luts[fmt], (k, g, K, hm)))
+    umoe_rg = UnifiedMoESide(rg_slabs, mx.array(rg_map[:, 0, 0]), mx.zeros((128,), dtype=mx.uint32), 512, 2304, fluts, rg_map=rg_map)
+    for T, eids_np in [
+        (1, np.array([0, 33, 66, 99, 5, 40, 70, 105], dtype=np.uint32)),
+        (8, np.array([0, 32, 64, 96, 1, 33, 65, 97] * 6 + [0, 32, 64, 96, 2, 34, 66, 98] + [0, 32, 64, 96, 3, 35, 67, 99], dtype=np.uint32)),
+        (16, rng.integers(0, 128, 128, dtype=np.uint32)),
+    ]:
+        xt = mx.array(rng.standard_normal((T, 2304)).astype(np.float32))
+        ev = mx.array(eids_np)
+        y_u = umoe_rg(xt.astype(mx.float16), ev, x_div=8)
+        rg_parts = []
+        sent = mx.array(0xFFFFFFFF, dtype=mx.uint32)
+        for rg in range(4):
+            y_rg = mx.zeros((T * 8, 128), dtype=mx.float32)
+            rf_mx = mx.array(rg_map[:, rg, 0])
+            rl_mx = mx.array(rg_map[:, rg, 1].astype(np.uint32))
+            for fid, c, s, lv, (k, g, K, hm) in rg_slabs:
+                lf = mx.where(rf_mx[ev] == fid, rl_mx[ev], sent)
+                y_rg = y_rg + trellis_matvec(xt, c, s, lv, lf, 128, 2304, k, g, K, hm, x_div=8)
+            rg_parts.append(y_rg)
+        y_r = mx.concatenate(rg_parts, axis=-1)
+        mx.eval(y_u, y_r)
+        err_rg = float(mx.linalg.norm(y_u - y_r) / mx.linalg.norm(y_r))
+        assert err_rg < 2e-3, f"UnifiedMoESide rg_map T={T} fail: {err_rg}"
+        if T == 16:
+            # Also verify non-MPP fallback prefill_v2 kernel explicitly!
+            offsets, order = compute_moe_sorted_offsets(ev)
+            units, ucnt, max_u = plan_moe_prefill_units(offsets, umoe_rg.exp_fid, umoe_rg.fids, int(ev.shape[0]), tile_t=32)
+            kv2 = _make_unified_moe_prefill_v2_kernel(2304, umoe_rg.fids, sg=8, rb=2, n_rg=4)
+            y_v2 = kv2(
+                inputs=[xt.astype(mx.float16).reshape(-1), umoe_rg.codes, umoe_rg.scales, umoe_rg._kern_fid, umoe_rg.exp_code_off, umoe_rg.exp_scale_off, *umoe_rg._lut_args_sg8, units, ucnt, _u32(512, 8), order],
+                grid=(max_u * 256, 4, 1),
+                threadgroup=(256, 1, 1),
+                output_shapes=[(T * 8, 512)],
+                output_dtypes=[mx.float32],
+            )[0]
+            mx.eval(y_v2)
+            err_v2 = float(mx.linalg.norm(y_v2 - y_r) / mx.linalg.norm(y_r))
+            assert err_v2 < 2e-3, f"UnifiedMoESide prefill_v2 rg_map fail: {err_v2}"
+        print(f"  PASS UnifiedMoESide rg_map n_rg=4 (T={T:2d}): rel_err={err_rg:.2e}")
 
     # 4. Sigmoid Top-8 Norm + Pre-Compacted Plan
     logits_f16 = mx.array(rng.standard_normal((8, 128)).astype(np.float16))

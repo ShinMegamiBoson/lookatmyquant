@@ -622,12 +622,22 @@ class PackedMoE:
         self.router_bias = router_bias.astype(mx.float32)
         self.gu_signs_in = mx.array(arrays["gu_signs_in"].astype(np.float32))
         self.dn_signs_in = mx.array(arrays["dn_signs_in"].astype(np.float32))
-        gu_map = np.asarray(arrays["gu_map"], dtype=np.int32)
-        dn_map = np.asarray(arrays["dn_map"], dtype=np.int32)
-        gu_map_fid = mx.array(gu_map[:, 0].astype(np.int32))
-        gu_map_loc = mx.array(gu_map[:, 1].astype(np.uint32))
-        dn_map_fid = mx.array(dn_map[:, 0].astype(np.int32))
-        dn_map_loc = mx.array(dn_map[:, 1].astype(np.uint32))
+        gu_rg_map = np.asarray(arrays["gu_rg_map"], dtype=np.int32) if "gu_rg_map" in arrays else None
+        dn_rg_map = np.asarray(arrays["dn_rg_map"], dtype=np.int32) if "dn_rg_map" in arrays else None
+        if gu_rg_map is not None:
+            gu_map_fid = mx.array(gu_rg_map[:, 0, 0].astype(np.int32))
+            gu_map_loc = mx.zeros((gu_rg_map.shape[0],), dtype=mx.uint32)
+        else:
+            gu_map = np.asarray(arrays["gu_map"], dtype=np.int32)
+            gu_map_fid = mx.array(gu_map[:, 0].astype(np.int32))
+            gu_map_loc = mx.array(gu_map[:, 1].astype(np.uint32))
+        if dn_rg_map is not None:
+            dn_map_fid = mx.array(dn_rg_map[:, 0, 0].astype(np.int32))
+            dn_map_loc = mx.zeros((dn_rg_map.shape[0],), dtype=mx.uint32)
+        else:
+            dn_map = np.asarray(arrays["dn_map"], dtype=np.int32)
+            dn_map_fid = mx.array(dn_map[:, 0].astype(np.int32))
+            dn_map_loc = mx.array(dn_map[:, 1].astype(np.uint32))
 
         gu_slabs = []
         dn_slabs = []
@@ -657,17 +667,21 @@ class PackedMoE:
             )
 
         if self._fast:
-            self.gu_unified = UnifiedMoESide(gu_slabs, gu_map_fid, gu_map_loc, 2 * cfg.intermediate_size, cfg.hidden_size, fast_luts, nvfp4_slab=gu_nvfp4)
-            self.dn_unified = UnifiedMoESide(dn_slabs, dn_map_fid, dn_map_loc, cfg.hidden_size, cfg.intermediate_size, fast_luts, nvfp4_slab=dn_nvfp4)
+            self.gu_unified = UnifiedMoESide(gu_slabs, gu_map_fid, gu_map_loc, 2 * cfg.intermediate_size, cfg.hidden_size, fast_luts, nvfp4_slab=gu_nvfp4, rg_map=gu_rg_map)
+            self.dn_unified = UnifiedMoESide(dn_slabs, dn_map_fid, dn_map_loc, cfg.hidden_size, cfg.intermediate_size, fast_luts, nvfp4_slab=dn_nvfp4, rg_map=dn_rg_map)
             self.gu_slabs = []
             self.dn_slabs = []
             self.gu_nvfp4 = None
             self.dn_nvfp4 = None
             self.e2m1_lut = None
             self.e4m3_lut = None
+            self.gu_rg_map = None
+            self.dn_rg_map = None
         else:
             self.gu_map_fid, self.gu_map_loc = gu_map_fid, gu_map_loc
             self.dn_map_fid, self.dn_map_loc = dn_map_fid, dn_map_loc
+            self.gu_rg_map = gu_rg_map
+            self.dn_rg_map = dn_rg_map
             self._sentinel = mx.array(0xFFFFFFFF, dtype=mx.uint32)
             self.gu_slabs = gu_slabs
             self.dn_slabs = dn_slabs
@@ -795,13 +809,28 @@ class PackedMoE:
         y_gu_total = None
         if self.gu_slabs:
             x_rot = rht_apply_in(flat, self.gu_signs_in)
-            for fid, codes, scales, lut, (k, g, K, hmult) in self.gu_slabs:
-                locs_f = gu_locs if single_gu else mx.where(gu_fids == fid, gu_locs, self._sentinel)
-                y_f = moe_fn(
-                    x_rot, codes, scales, lut, locs_f,
-                    2 * self.cfg.intermediate_size, self.cfg.hidden_size, k, g, K, hmult, x_div=K_top,
-                )
-                y_gu_total = y_f if y_gu_total is None else (y_gu_total + y_f)
+            if self.gu_rg_map is not None:
+                n_rg = int(self.gu_rg_map.shape[1])
+                rg_rows = (2 * self.cfg.intermediate_size) // n_rg
+                parts_gu = []
+                for rg in range(n_rg):
+                    rf_mx = mx.array(self.gu_rg_map[:, rg, 0])[eids_flat]
+                    rl_mx = mx.array(self.gu_rg_map[:, rg, 1].astype(np.uint32))[eids_flat]
+                    y_rg = None
+                    for fid, codes, scales, lut, (k, g, K, hmult) in self.gu_slabs:
+                        locs_f = rl_mx if single_gu else mx.where(rf_mx == fid, rl_mx, self._sentinel)
+                        y_f = moe_fn(x_rot, codes, scales, lut, locs_f, rg_rows, self.cfg.hidden_size, k, g, K, hmult, x_div=K_top)
+                        y_rg = y_f if y_rg is None else (y_rg + y_f)
+                    parts_gu.append(y_rg)
+                y_gu_total = mx.concatenate(parts_gu, axis=-1)
+            else:
+                for fid, codes, scales, lut, (k, g, K, hmult) in self.gu_slabs:
+                    locs_f = gu_locs if single_gu else mx.where(gu_fids == fid, gu_locs, self._sentinel)
+                    y_f = moe_fn(
+                        x_rot, codes, scales, lut, locs_f,
+                        2 * self.cfg.intermediate_size, self.cfg.hidden_size, k, g, K, hmult, x_div=K_top,
+                    )
+                    y_gu_total = y_f if y_gu_total is None else (y_gu_total + y_f)
         if self.gu_nvfp4 is not None:
             c_u32, s_u8, o_f32 = self.gu_nvfp4
             locs_nv = gu_locs if len(self.gu_slabs) == 0 else mx.where(gu_fids == NVFP4_FID, gu_locs, self._sentinel)
@@ -818,13 +847,28 @@ class PackedMoE:
         y_dn_total = None
         if self.dn_slabs:
             act_rot = rht_apply_in(act, self.dn_signs_in)
-            for fid, codes, scales, lut, (k, g, K, hmult) in self.dn_slabs:
-                locs_f = dn_locs if single_dn else mx.where(dn_fids == fid, dn_locs, self._sentinel)
-                y_f = moe_fn(
-                    act_rot, codes, scales, lut, locs_f,
-                    self.cfg.hidden_size, self.cfg.intermediate_size, k, g, K, hmult, x_div=1,
-                )
-                y_dn_total = y_f if y_dn_total is None else (y_dn_total + y_f)
+            if self.dn_rg_map is not None:
+                n_rg = int(self.dn_rg_map.shape[1])
+                rg_rows = self.cfg.hidden_size // n_rg
+                parts_dn = []
+                for rg in range(n_rg):
+                    rf_mx = mx.array(self.dn_rg_map[:, rg, 0])[eids_flat]
+                    rl_mx = mx.array(self.dn_rg_map[:, rg, 1].astype(np.uint32))[eids_flat]
+                    y_rg = None
+                    for fid, codes, scales, lut, (k, g, K, hmult) in self.dn_slabs:
+                        locs_f = rl_mx if single_dn else mx.where(rf_mx == fid, rl_mx, self._sentinel)
+                        y_f = moe_fn(act_rot, codes, scales, lut, locs_f, rg_rows, self.cfg.intermediate_size, k, g, K, hmult, x_div=1)
+                        y_rg = y_f if y_rg is None else (y_rg + y_f)
+                    parts_dn.append(y_rg)
+                y_dn_total = mx.concatenate(parts_dn, axis=-1)
+            else:
+                for fid, codes, scales, lut, (k, g, K, hmult) in self.dn_slabs:
+                    locs_f = dn_locs if single_dn else mx.where(dn_fids == fid, dn_locs, self._sentinel)
+                    y_f = moe_fn(
+                        act_rot, codes, scales, lut, locs_f,
+                        self.cfg.hidden_size, self.cfg.intermediate_size, k, g, K, hmult, x_div=1,
+                    )
+                    y_dn_total = y_f if y_dn_total is None else (y_dn_total + y_f)
         if self.dn_nvfp4 is not None:
             c_u32, s_u8, o_f32 = self.dn_nvfp4
             locs_nv = dn_locs if len(self.dn_slabs) == 0 else mx.where(dn_fids == NVFP4_FID, dn_locs, self._sentinel)

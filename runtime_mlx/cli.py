@@ -1,9 +1,9 @@
 """Command-line interface for running LookAtMyQuant models on Apple silicon.
 
-    lamq generate shinmegamiboson/Qwen3.8-27B-LookAtMyQuant-7.2GB -p "What is 17 * 23?"
-    lamq generate q38-27b --drafter q38-27b-drafter -p "Write merge_intervals in Python."
-    lamq chat q38-27b --drafter q38-27b-drafter
-    lamq info q38-27b
+lamq generate shinmegamiboson/Qwen3.8-27B-LookAtMyQuant-7.2GB -p "What is 17 * 23?"
+lamq generate shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-5.4GB --drafter shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-drafter -p "Write merge_intervals in Python."
+lamq chat q38-27b --drafter q38-27b-drafter
+lamq info shinmegamiboson/Inkling-2-Mini-LookAtMyQuant-4.7GB
 """
 
 from __future__ import annotations
@@ -15,26 +15,70 @@ import sys
 from .runtime import Runtime, inspect_model
 
 
-def _add_runtime_args(parser: argparse.ArgumentParser, *, default_max_tokens: int) -> None:
+def _add_runtime_args(
+    parser: argparse.ArgumentParser, *, default_max_tokens: int
+) -> None:
     parser.add_argument("model", help="local model directory or Hugging Face repo ID")
-    parser.add_argument("--drafter", default=None, help="optional DSpine drafter directory or Hugging Face repo ID")
+    parser.add_argument(
+        "--drafter",
+        default=None,
+        help="optional DSpine drafter directory or Hugging Face repo ID",
+    )
     parser.add_argument(
         "--mode",
         choices=("linear", "chat-fork", "copy-wide"),
         default="linear",
         help="speculative verifier strategy when --drafter is set",
     )
-    parser.add_argument("--block-size", type=int, default=8, help="draft block size (8 or 16)")
-    parser.add_argument("--max-tokens", type=int, default=default_max_tokens, help="maximum tokens to generate")
-    parser.add_argument("--temp", type=float, default=0.0, help="sampling temperature (0.0 for greedy)")
-    parser.add_argument("--top-p", type=float, default=1.0, help="nucleus sampling probability when --temp > 0")
+    parser.add_argument(
+        "--block-size", type=int, default=8, help="draft block size (8 or 16)"
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=default_max_tokens,
+        help="maximum tokens to generate",
+    )
+    parser.add_argument(
+        "--temp", type=float, default=0.0, help="sampling temperature (0.0 for greedy)"
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=1.0,
+        help="nucleus sampling probability when --temp > 0",
+    )
     parser.add_argument("--system", default=None, help="optional system message")
-    parser.add_argument("--thinking", action="store_true", help="enable thinking mode in the chat template")
-    parser.add_argument("--no-verify", action="store_true", help="skip SHA-256 checksum verification when loading")
-    parser.add_argument("--full-vocab", action="store_true", help="score the full vocabulary for drafter proposals")
-    parser.add_argument("--dense-drafter", action="store_true", help="keep drafter weights dense float16 instead of 8-bit rows")
-    parser.add_argument("--no-adaptive", action="store_true", help="disable adaptive serial fallback when drafter acceptance drops")
-    parser.add_argument("--stats", action="store_true", help="print throughput and acceptance statistics to stderr")
+    parser.add_argument(
+        "--thinking",
+        action="store_true",
+        help="enable thinking mode in the chat template",
+    )
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip SHA-256 checksum verification when loading",
+    )
+    parser.add_argument(
+        "--full-vocab",
+        action="store_true",
+        help="score the full vocabulary for drafter proposals",
+    )
+    parser.add_argument(
+        "--dense-drafter",
+        action="store_true",
+        help="keep drafter weights dense float16 instead of 8-bit rows",
+    )
+    parser.add_argument(
+        "--no-adaptive",
+        action="store_true",
+        help="disable adaptive serial fallback when drafter acceptance drops",
+    )
+    parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="print throughput and acceptance statistics to stderr",
+    )
 
 
 def _load_from_args(args: argparse.Namespace) -> Runtime:
@@ -136,7 +180,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
         try:
             user = input("> ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("", file=sys.stderr)
+            print(file=sys.stderr)
             break
         if not user:
             continue
@@ -166,7 +210,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                     parts.append(chunk.text)
                 last = chunk
         except KeyboardInterrupt:
-            print("", file=sys.stderr)
+            print(file=sys.stderr)
         sys.stdout.write("\n")
         sys.stdout.flush()
         if args.stats and last is not None:
@@ -189,16 +233,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_gen = sub.add_parser("generate", help="generate text from a prompt or stdin")
     _add_runtime_args(p_gen, default_max_tokens=256)
-    p_gen.add_argument("-p", "--prompt", default=None, help="prompt text (omit or pass '-' to read stdin)")
-    p_gen.add_argument("--raw", action="store_true", help="send the prompt verbatim without applying a chat template")
-    p_gen.add_argument("--json", action="store_true", help="emit JSON output instead of streaming text")
+    p_gen.add_argument(
+        "-p",
+        "--prompt",
+        default=None,
+        help="prompt text (omit or pass '-' to read stdin)",
+    )
+    p_gen.add_argument(
+        "--raw",
+        action="store_true",
+        help="send the prompt verbatim without applying a chat template",
+    )
+    p_gen.add_argument(
+        "--json", action="store_true", help="emit JSON output instead of streaming text"
+    )
     p_gen.set_defaults(func=_cmd_generate)
 
     p_chat = sub.add_parser("chat", help="interactive multi-turn chat in the terminal")
     _add_runtime_args(p_chat, default_max_tokens=512)
     p_chat.set_defaults(func=_cmd_chat)
 
-    p_info = sub.add_parser("info", help="inspect a packed model's format and architecture without loading weights")
+    p_info = sub.add_parser(
+        "info",
+        help="inspect a packed model's format and architecture without loading weights",
+    )
     p_info.add_argument("model", help="local model directory or Hugging Face repo ID")
     p_info.set_defaults(func=_cmd_info)
 

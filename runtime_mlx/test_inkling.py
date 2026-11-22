@@ -571,6 +571,79 @@ def test_nvfp4_unified_moe_all_modes() -> None:
         assert rel < 2.5e-3, f"PackedMoE fast vs ref mismatch at T={T}: rel={rel}"
 
 
+def test_row_group_moe_and_f16_signs_in() -> None:
+    """Verify full H=2304 `PackedMoE` with `n_rg=18` (`RG=128` rows) + `float16` pre-RHT column-scaled `*_signs_in`."""
+    from runtime_mlx.inkling.fast_kernels import build_fast_luts
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config, PackedMoE
+
+    rng = np.random.default_rng(20261122)
+    luts_np = {
+        "ht1": rng.standard_normal((512, 4)).astype(np.float16) * 0.4,
+        "ht2": rng.standard_normal((512, 4)).astype(np.float16) * 0.4,
+        "ht3": rng.standard_normal((1024, 2)).astype(np.float16) * 0.4,
+        "rtr1": rng.standard_normal((4096,)).astype(np.float16) * 0.4,
+        "rtr2": rng.standard_normal((4096,)).astype(np.float16) * 0.4,
+        "rtr3": rng.standard_normal((4096,)).astype(np.float16) * 0.4,
+        "rtr4": rng.standard_normal((4096,)).astype(np.float16) * 0.4,
+    }
+    luts = {k: mx.array(v) for k, v in luts_np.items()}
+    fast_luts = build_fast_luts(luts)
+
+    n_rg = 18
+    rg_rows = 128
+    fmts = [(1, "ht2", 2), (2, "ht3", 3), (3, "rtr1", 1), (6, "rtr4", 4)]
+    gu_rg_map = np.zeros((128, n_rg, 2), dtype=np.int16)
+    dn_rg_map = np.zeros((128, n_rg, 2), dtype=np.int16)
+    gu_cnt = {fid: 0 for fid, _, _ in fmts}
+    dn_cnt = {fid: 0 for fid, _, _ in fmts}
+    for e in range(128):
+        for rg in range(n_rg):
+            gfid, _, _ = fmts[(e * 3 + rg) % 4]
+            gu_rg_map[e, rg] = [gfid, gu_cnt[gfid]]
+            gu_cnt[gfid] += 1
+            dfid, _, _ = fmts[(e * 5 + rg + 1) % 4]
+            dn_rg_map[e, rg] = [dfid, dn_cnt[dfid]]
+            dn_cnt[dfid] += 1
+
+    arrays: dict[str, np.ndarray] = {
+        "gu_signs_in": (rng.choice([-1.0, 1.0], size=(2304,)) * rng.uniform(0.75, 1.35, size=(2304,))).astype(np.float16),
+        "dn_signs_in": (rng.choice([-1.0, 1.0], size=(1152,)) * rng.uniform(0.75, 1.35, size=(1152,))).astype(np.float16),
+        "gu_rg_map": gu_rg_map,
+        "dn_rg_map": dn_rg_map,
+    }
+    for fid, fmt, k in fmts:
+        ng = gu_cnt[fid]
+        nd = dn_cnt[fid]
+        arrays[f"gu_{fmt}_codes"] = _pack_u32_random(rng, (ng, rg_rows, (2304 * k) // 32))
+        arrays[f"gu_{fmt}_scales"] = rng.uniform(0.008, 0.025, size=(ng, rg_rows)).astype(np.float16)
+        arrays[f"dn_{fmt}_codes"] = _pack_u32_random(rng, (nd, rg_rows, (1152 * k) // 32))
+        arrays[f"dn_{fmt}_scales"] = rng.uniform(0.008, 0.025, size=(nd, rg_rows)).astype(np.float16)
+
+    rw = mx.array(rng.standard_normal((128, 2304)).astype(np.float32) * 0.05)
+    rb = mx.array(rng.standard_normal((128,)).astype(np.float32) * 0.02)
+    cfg_fast = Inkling2Config()
+    moe_fast = PackedMoE(arrays, luts, fast_luts, rw, rb, cfg_fast)
+    moe_ref = PackedMoE(arrays, luts, None, rw, rb, cfg_fast)
+
+    for T in (1, 4, 8, 36):
+        h_in = mx.array(rng.standard_normal((1, T, 2304)).astype(np.float16).astype(np.float32) * 0.4)
+        yf = moe_fast(h_in)
+        yr = moe_ref(h_in)
+        mx.eval(yf, yr)
+        rel = float(np.linalg.norm(np.array(yf) - np.array(yr)) / np.linalg.norm(np.array(yr)))
+        assert rel < 2.5e-3, f"PackedMoE rg_map+f16_signs mismatch at T={T}: rel={rel}"
+
+        # Also test `forward_fast_fused` (which exercises `sigmoid_top8_norm_and_plan_fast` for T=4,8!)
+        cache = Inkling2Cache(cfg_fast)
+        res = mx.zeros((T, 2304), dtype=mx.float32)
+        conv_w = mx.zeros((4, 2304), dtype=mx.float32)
+        out_fused = moe_fast.forward_fast_fused(h_in, res, conv_w, cache, 0, T)
+        mx.eval(out_fused)
+        expected_fused = np.array(yr)[0] * (1.0 / np.sqrt(5.0))
+        rel_f = float(np.linalg.norm(np.array(out_fused) - expected_fused) / np.linalg.norm(expected_fused))
+        assert rel_f < 2.5e-3, f"PackedMoE forward_fast_fused rg_map mismatch at T={T}: rel={rel_f}"
+
+
 def test_fast_kernels_suite() -> None:
     """Verify all H=2304 Apple Silicon fast Metal kernels against exact references."""
     from runtime_mlx.inkling.fast_kernels import _selftest
@@ -583,6 +656,7 @@ def main() -> None:
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
     test_nvfp4_unified_moe_all_modes()
+    test_row_group_moe_and_f16_signs_in()
     test_fast_kernels_suite()
     print("ALL INKLING MLX RUNTIME TESTS PASSED!", flush=True)
 
