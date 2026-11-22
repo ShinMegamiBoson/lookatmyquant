@@ -4,10 +4,7 @@
 **behaviour** (formats, model semantics, decoding algorithms), not Metal speed work: correctness here is anchored to
 numpy/PyTorch references and transformers, so upstream kernel tuning never forces work on this side.
 
-**Synced through upstream commit:** `5106923` (2026-11-21, "Add unified NVFP4 MoE Metal kernels and 11.2 GB / 12.8 GB
-Inkling-2-Mini results")
-
-CUDA also supports SQYFR v3 trellis row groups and FP16 input column scales introduced in `f9f8008`.
+**Synced through upstream commit:** `f9f8008` (2026-11-22, SQYFR v3 trellis row groups and FP16 input column scales).
 
 When you sync, update the commit above, then run `python runtime_cuda/upstream_sync.py` again: it should list
 nothing new.

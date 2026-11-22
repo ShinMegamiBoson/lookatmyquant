@@ -113,14 +113,16 @@ def check_buckets(path: Path, meta: list[dict]) -> None:
         raise UnsupportedPackedFile(f"{path.name}: unknown tensors {unknown[:6]}")
 
 
-def check_config(cfg_path: Path) -> None:
+def check_config(cfg_path: Path) -> int:
     raw = json.loads(cfg_path.read_text())
     tc = raw.get("text_config", raw)
     if tc.get("n_shared_experts", 0):
         raise UnsupportedPackedFile(f"config: n_shared_experts={tc['n_shared_experts']} is not implemented")
     if tc.get("loop_config", {}).get("is_varloop", False):
         raise UnsupportedPackedFile("config: loop_config.is_varloop is not implemented")
-    n = tc.get("num_hidden_layers", 0)
+    n = tc.get("num_hidden_layers")
+    if type(n) is not int or n < 1:
+        raise UnsupportedPackedFile("config: num_hidden_layers must be a positive integer")
     local = set(tc.get("local_layer_ids", []))
     types = tc.get("layer_types") or ["hybrid" if (i + 1) % 6 == 0 else "hybrid_sliding" for i in range(n)]  # transformers' default
     if {i for i, t in enumerate(types) if t.endswith("sliding")} != local:  # the runtimes read local_layer_ids
@@ -133,13 +135,23 @@ def check_config(cfg_path: Path) -> None:
     for swa, full in (("swa_num_attention_heads", "num_attention_heads"), ("swa_num_key_value_heads", "num_key_value_heads"), ("swa_head_dim", "head_dim")):
         if swa in tc and tc[swa] != tc[full]:  # the runtime gives sliding layers the full layers' head shape
             raise UnsupportedPackedFile(f"config: {swa}={tc[swa]} differs from {full}={tc[full]}, which is not implemented")
+    return n
 
 
 def validate_packed_dir(packed_dir: str | Path, deep: bool = True) -> dict:
     """Raises UnsupportedPackedFile on anything unknown. `deep` also opens each layer's expert maps (cheap: two
     small arrays a layer). Returns a summary of the formats the file uses."""
     d = Path(packed_dir)
-    check_config(d / "config.json")
+    n_layers = check_config(d / "config.json")
+    layer_stems = [f"layer_{index:02d}" for index in range(n_layers)]
+    for suffix in ("_packed.npz", "_meta.json"):
+        expected = {stem + suffix for stem in layer_stems}
+        actual = {path.name for path in d.glob(f"layer_*{suffix}") if path.is_file()}
+        if expected != actual:
+            raise UnsupportedPackedFile(
+                f"invalid layer files for {suffix}: missing {sorted(expected - actual)}, "
+                f"unexpected {sorted(actual - expected)}"
+            )
     man = d / "manifest.json"
     if man.exists():
         fmt = json.loads(man.read_text()).get("format", "")
@@ -162,9 +174,9 @@ def validate_packed_dir(packed_dir: str | Path, deep: bool = True) -> dict:
         if "nvfp4_e4m3" in luts and not np.array_equal(lz["nvfp4_e4m3"].astype(np.float32).reshape(-1), e4m3_table_np()):
             raise UnsupportedPackedFile("luts.npz: nvfp4_e4m3 differs from the standard E4M3 table")
     used: dict[str, int] = {}
-    n_layers = json.loads((d / "config.json").read_text()).get("text_config", {}).get("num_hidden_layers")
-    for p in sorted(d.glob("layer_*_packed.npz")):
-        meta = json.loads(p.with_name(p.name.replace("_packed.npz", "_meta.json")).read_text())
+    for stem in layer_stems:
+        p = d / f"{stem}_packed.npz"
+        meta = json.loads((d / f"{stem}_meta.json").read_text())
         if deep:
             with np.load(p) as arrays:
                 keys = check_layer(p, meta, arrays)
@@ -178,8 +190,6 @@ def validate_packed_dir(packed_dir: str | Path, deep: bool = True) -> dict:
         for side in ("gu", "dn"):
             for f, c in meta.get("experts", {}).get(side, {}).items():
                 used[f"experts:{f}"] = used.get(f"experts:{f}", 0) + c
-    if n_layers is not None and len(list(d.glob("layer_*_packed.npz"))) != n_layers:
-        raise UnsupportedPackedFile(f"expected {n_layers} layer files, found {len(list(d.glob('layer_*_packed.npz')))}")
     for kind in ("embed", "head"):
         meta = json.loads((d / f"{kind}_meta.json").read_text())
         check_buckets(d / f"{kind}_packed.npz", meta)
