@@ -410,6 +410,73 @@ def test_tree_spec_and_kernels() -> None:
         assert err < 1e-4, f"tree SDPA mismatch on node {ni}: {err}"
 
 
+def test_compressed_global_kv() -> None:
+    """Check optional storage across append, growth, rollback and all SDPA dispatch sizes."""
+    from runtime_mlx.inkling.fast_kernels import gqa_relpos_sinks_sdpa_fast, make_tree_spec
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config
+
+    rng = np.random.default_rng(718)
+    data = mx.array(rng.normal(0, 0.2, (2, 8, 300, 128)).astype(np.float16))
+    q = mx.array(rng.normal(0, 1, (33, 24, 128)).astype(np.float32))
+    qin = mx.array(rng.normal(0, 0.1, (33, 2304)).astype(np.float32))
+    sw = mx.array(rng.normal(0, 0.05, (24, 2304)).astype(np.float16))
+    rel = mx.array(rng.normal(0, 0.2, (33, 24, 16)).astype(np.float32))
+    rp = mx.array(rng.normal(0, 0.2, (1024, 16)).astype(np.float16))
+
+    def attention(cache, T, positions, *, tree=None):
+        buf, length, start, cap, fp8, scales = cache.update_kv_f16(0, data[:, :, positions, :], False)
+        kwargs = {"tree_depth": tree["depth_mx"], "tree_mask": tree["mask_mx"]} if tree else {}
+        return gqa_relpos_sinks_sdpa_fast(
+            q[:T], buf, rel[:T], rp, qin[:T], sw, T, length, start, length - T, cap, False,
+            kv_fp8=fp8, kv_q4_scales=scales, **kwargs,
+        )
+
+    for mode in ("fp16", "fp8", "q4"):
+        cfg = Inkling2Config(global_kv_mode=mode)
+        for base in (12, 255):
+            for T in (1, 4, 5, 8, 9, 16, 31, 32, 33):
+                reference = Inkling2Cache(Inkling2Config())
+                candidate = Inkling2Cache(cfg)
+                for cache in (reference, candidate):
+                    cache.update_kv_f16(0, data[:, :, :base, :], False)
+                expected = np.array(attention(reference, T, slice(base, base + T)))
+                actual = np.array(attention(candidate, T, slice(base, base + T)))
+                assert np.all(np.isfinite(actual)), (mode, base, T)
+                err_by_token = np.linalg.norm(actual - expected, axis=1) / np.linalg.norm(expected, axis=1)
+                tolerance = {"fp16": 1e-6, "fp8": 0.08, "q4": 0.24}[mode]
+                assert max(err_by_token) < tolerance, (mode, base, T, err_by_token)
+
+            tree = make_tree_spec((-1, 0, 1, 2, 3, 0, 5, 6))
+            accepted = [0, 5, 6, 7]
+            candidate = Inkling2Cache(cfg)
+            control = Inkling2Cache(cfg)
+            for cache in (candidate, control):
+                cache.update_kv_f16(0, data[:, :, :base, :], False)
+            candidate.begin_spec_verify()
+            tree_out = attention(candidate, 8, slice(base, base + 8), tree=tree)
+            candidate.commit_tree_verify(accepted, 8)
+            control.update_kv_f16(0, data[:, :, [base + t for t in accepted], :], False)
+            assert candidate.kv_len[0] == control.kv_len[0]
+            assert len(candidate.state) == (2 if mode == "q4" else 1)
+            for actual, expected in zip(candidate.state, control.state):
+                np.testing.assert_array_equal(np.array(actual[:, :, :base + 4, :]), np.array(expected[:, :, :base + 4, :]))
+            next_out = attention(candidate, 1, slice(base + 8, base + 9))
+            next_control = attention(control, 1, slice(base + 8, base + 9))
+            np.testing.assert_allclose(np.array(next_out), np.array(next_control), atol=1e-6, rtol=1e-5)
+            assert bool(mx.all(mx.isfinite(tree_out)))
+            candidate.begin_spec_verify()
+            candidate.update_kv_f16(0, data[:, :, :8, :], False)
+            candidate.commit_spec_verify(3, 8)
+            control.update_kv_f16(0, data[:, :, :3, :], False)
+            assert candidate.kv_len[0] == control.kv_len[0]
+            for actual, expected in zip(candidate.state, control.state):
+                np.testing.assert_array_equal(np.array(actual[:, :, :base + 8, :]), np.array(expected[:, :, :base + 8, :]))
+
+        sliding = Inkling2Cache(cfg)
+        buf, _, _, _, fp8, scales = sliding.update_kv_f16(0, data, True)
+        assert buf.dtype == mx.float16 and not fp8 and scales is None
+
+
 def test_nvfp4_unified_moe_all_modes() -> None:
     """Verify `nvfp4` (`fid=7`) across `t1`, `grouped`, `prefill_mpp`, `prefill_v2`, `also_raw`, and `PackedMoE`."""
     from runtime_mlx.inkling.fast_kernels import (
@@ -531,7 +598,7 @@ def test_nvfp4_unified_moe_all_modes() -> None:
                 y_v2 = kern_v2(
                     inputs=[
                         x_rot.reshape(-1), umoe.codes, umoe.scales, umoe.exp_fid, umoe.exp_code_off, umoe.exp_scale_off,
-                        *umoe._lut_args_sg8, units, ucnt, _u32(m_rows, x_div), order, x_raw.reshape(-1), *umoe._nv_args,
+                        *umoe._lut_args_prefill_v2, units, ucnt, _u32(m_rows, x_div), order, x_raw.reshape(-1), *umoe._nv_args,
                     ],
                     grid=(max_u * sg_p * 32, rblocks, 1),
                     threadgroup=(sg_p * 32, 1, 1),
@@ -655,6 +722,7 @@ def main() -> None:
     test_mini_model_and_runtime_integration()
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
+    test_compressed_global_kv()
     test_nvfp4_unified_moe_all_modes()
     test_row_group_moe_and_f16_signs_in()
     test_fast_kernels_suite()

@@ -77,6 +77,8 @@ def build_fast_luts(luts: dict[str, mx.array]) -> dict[str, mx.array]:
     dummy = mx.zeros((512,), dtype=mx.float16)
     e2m1_def, e4m3_def = nvfp4_luts_mx()
     fast = {
+        **{name: luts[name].reshape(-1).astype(mx.float16) if name in luts else dummy
+           for name in ("rtr1", "rtr2", "rtr3")},
         "ht1": luts["ht1"].reshape(-1).astype(mx.float16) if "ht1" in luts else dummy,
         "ht2": luts["ht2"].reshape(-1).astype(mx.float16) if "ht2" in luts else dummy,
         "ht3": luts["ht3"].reshape(-1).astype(mx.float16) if "ht3" in luts else dummy,
@@ -801,6 +803,55 @@ def rht_in_3072_gated_fast(attn_out: mx.array, gate_raw: mx.array, signs: mx.arr
 
 # ----------------------------------------------------------------------------- Shared Format Decode Helpers (ch = 16)
 
+_RTR_ARGS = "const threadgroup half* tv_rtr1, const threadgroup half* tv_rtr2, const threadgroup half* tv_rtr3, "
+
+
+def _rtr_value(fid: int, g: int, ex: str, staged: bool = True) -> str:
+    """The `g` weights that the `12 + (g - 1) * k` bits `ex` fix, read from the 4,096-entry table in threadgroup memory."""
+    k = fid - 2
+    if not staged:
+        return f"tv_rtr{k}[{ex}]"
+    vals = [f"tv_rtr{k}[(({ex}) >> {(g - 1 - t) * k}u) & 4095u]" for t in range(g)]
+    return f"half4({', '.join(vals)}, 0.0h)" if g == 3 else f"half2({', '.join(vals)})"
+
+
+def _emit_rtr_tables(a, fids, tid: str, n_threads: int):
+    """Copy each `rtr1..rtr3` base table the kernel uses (8 KB each) into threadgroup memory; the caller emits the barrier."""
+    for k in (1, 2, 3):
+        if k + 2 in fids:
+            a(f"threadgroup half tv_rtr{k}[4096]; for (uint idx = {tid}; idx < 4096u; idx += {n_threads}u) tv_rtr{k}[idx] = lut_rtr{k}[idx];")
+        else:
+            a(f"threadgroup half tv_rtr{k}[1];")
+
+
+def _can_stage_rtr(fids: tuple[int, ...], threadgroup_bytes: int) -> bool:
+    # Leave room for alignment and dummy tables under Metal's 32 KiB limit.
+    count = sum(fid in fids for fid in (3, 4, 5))
+    return bool(count and threadgroup_bytes + count * 8192 <= 31 * 1024 and not _has_mpp())
+
+
+def _rtr_params(staged: bool, rtr1_vec: int = 4) -> str:
+    if staged:
+        return _RTR_ARGS
+    return f"const device half{rtr1_vec}* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, "
+
+
+def _emit_rtr_bindings(a, fids, tid: str, n_threads: int, staged: bool, rtr1_vec: int = 4):
+    if staged:
+        _emit_rtr_tables(a, fids, tid, n_threads)
+    else:
+        for k in (1, 2, 3):
+            ty = f"half{rtr1_vec}" if k == 1 else "half2"
+            a(f"const device {ty}* tv_rtr{k} = (const device {ty}*)lut_rtr{k};")
+
+
+def _lut_inputs(fast_luts, *, staged: bool = False, sg8: bool = False):
+    trellis = ("rtr1", "rtr2", "rtr3") if staged else (
+        "rtr1_g2" if sg8 else "rtr1_g3", "rtr2_g2", "rtr3_g2"
+    )
+    return [fast_luts[name] for name in ("ht1", "ht2", "ht3", *trellis, "rtr4")]
+
+
 def _emit_decode_ch16(
     a,
     fid: int,
@@ -813,6 +864,7 @@ def _emit_decode_ch16(
     x_expr_fn,
     acc_expr_fn,
     dequant_out_expr: str = "",
+    stage_rtr: bool = False,
 ):
     """Emit ch=16 bit-unpack + LUT decode for ANY of the 9 formats (ht1..ht3, rtr1..rtr4, lm6, lm8).
 
@@ -875,7 +927,7 @@ def _emit_decode_ch16(
             for b in range(t_or_c):
                 a(f"            {acc_expr_fn(b)} += (float)hs{b};")
 
-    elif fid == 3:  # rtr1 (k=1, g=3, 14-bit multi-table in L1 tv_rtr1)
+    elif fid == 3:  # rtr1 (k=1, g=3: 14 bits fix 3 weights in tv_rtr1)
         wpr_c = n // 32
         a(f"            const uint B = ({n}u - 16u * (c + 1u)), w0 = B >> 5, o = B & 31u;")
         a(f"            const device uint* p = {ptr_expr} + w0;")
@@ -888,7 +940,7 @@ def _emit_decode_ch16(
                 nb = 12 + (gg - 1)
                 wi, off = bit >> 5, bit & 31
                 ex = f"extract_bits(w{wi}v, {off}u, {nb}u)" if off + nb <= 32 else f"insert_bits(extract_bits(w{wi}v, {off}u, {32-off}u), w{wi+1}v, {32-off}u, {nb-(32-off)}u)"
-                a(f"              const half4 v{ci} = tv_rtr1[{ex}];")
+                a(f"              const half4 v{ci} = {_rtr_value(3, 3, ex, stage_rtr)};")
             a(f"              *(device half4*)({dequant_out_expr} + 0u)  = half4(float4(v0[0], v0[1], v0[2], v1[0]) * sc);")
             a(f"              *(device half4*)({dequant_out_expr} + 4u)  = half4(float4(v1[1], v1[2], v2[0], v2[1]) * sc);")
             a(f"              *(device half4*)({dequant_out_expr} + 8u)  = half4(float4(v2[2], v3[0], v3[1], v3[2]) * sc);")
@@ -904,7 +956,7 @@ def _emit_decode_ch16(
                 nb = 12 + (gg - 1)
                 wi, off = bit >> 5, bit & 31
                 ex = f"extract_bits(w{wi}v, {off}u, {nb}u)" if off + nb <= 32 else f"insert_bits(extract_bits(w{wi}v, {off}u, {32-off}u), w{wi+1}v, {32-off}u, {nb-(32-off)}u)"
-                a(f"            {{ const half4 v = tv_rtr1[{ex}];")
+                a(f"            {{ const half4 v = {_rtr_value(3, 3, ex, stage_rtr)};")
                 for b in range(t_or_c):
                     terms = " + ".join(f"v[{3 - gg + t}] * ({x_expr_fn(b, (i + t) // 4)})[{(i + t) % 4}]" for t in range(gg))
                     a(f"              hs{b} += {terms};")
@@ -913,11 +965,10 @@ def _emit_decode_ch16(
             for b in range(t_or_c):
                 a(f"            {acc_expr_fn(b)} += (float)hs{b};")
 
-    elif fid in (4, 5):  # rtr2 (k=2, g=2, 14-bit L1 tv_rtr2) or rtr3 (k=3, g=2, 15-bit L1 tv_rtr3)
+    elif fid in (4, 5):  # rtr2 (k=2, g=2, 14 bits) or rtr3 (k=3, g=2, 15 bits)
         k = 2 if fid == 4 else 3
         nb = 12 + k
         wpr_c = (n * k) // 32
-        tvn = "tv_rtr2" if fid == 4 else "tv_rtr3"
         a(f"            const uint B = ({n}u - 16u * (c + 1u)) * {k}u, w0 = B >> 5;")
         if k == 3:
             a("            const uint o = B & 31u;")
@@ -934,7 +985,7 @@ def _emit_decode_ch16(
             bit = (15 - (i + 1)) * k
             wi, off = bit >> 5, bit & 31
             ex = f"extract_bits(w{wi}v, {off}u, {nb}u)" if off + nb <= 32 else f"insert_bits(extract_bits(w{wi}v, {off}u, {32-off}u), w{wi+1}v, {32-off}u, {nb-(32-off)}u)"
-            a(f"            {{ const half2 v = {tvn}[{ex}];")
+            a(f"            {{ const half2 v = {_rtr_value(fid, 2, ex, stage_rtr)};")
             if mode == "dequant":
                 a(f"              *(device half2*)({dequant_out_expr} + {i}u) = half2(float2(v) * sc); }}")
             else:
@@ -1020,7 +1071,7 @@ def _emit_decode_ch16(
 # ----------------------------------------------------------------------------- Fused Multi-Matrix DenseStage
 
 @lru_cache(maxsize=128)
-def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int, sg: int):
+def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int, sg: int, stage_rtr: bool = False):
     assert n % 256 == 0
     iters = n // 256
     has_ht1 = 0 in fids
@@ -1038,7 +1089,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
             f"inline void dstage_f{fid}("
             "const device half* xin, const device uint* mcodes, const device half* mscales, const device half* lv, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-            "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
             "device float* y, uint r0, uint m_rows, uint wpr, uint r_out_off, uint total_out, uint hl) {"
         )
         ha("    float acc[RPS][TBLK];")
@@ -1062,6 +1113,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
             n,
             ptr_expr="mcodes + (ulong)row * wpr",
             wpr_expr="wpr",
+            stage_rtr=stage_rtr,
             mode="dot",
             t_or_c=t_blk,
             x_expr_fn=lambda b, q: f"xr[{b}][{q}]",
@@ -1104,12 +1156,9 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
         a(f"for (uint idx = tid; idx < 1024u; idx += {sg * 32}u) tg_ht3[idx] = half2(lut_ht3[2u*idx], lut_ht3[2u*idx+1u]);")
     else:
         a("threadgroup half2 tg_ht3[1];")
-    if has_ht1 or has_ht2 or has_ht3:
+    _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
+    if has_ht1 or has_ht2 or has_ht3 or stage_rtr:
         a("threadgroup_barrier(mem_flags::mem_threadgroup);")
-
-    a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
 
     a("uint tot_blocks = 0u;")
     a("uint mat_blk_end[16];")
@@ -1134,7 +1183,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
     a("}")
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_dstage_n{n}_f{tag}_t{t_blk}_r{rps}_s{sg}",
+        name=f"ink_dstage_n{n}_f{tag}_t{t_blk}_r{rps}_s{sg}_rtr{int(stage_rtr)}",
         input_names=["x", "codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["y"],
         header="\n".join(H),
@@ -1143,7 +1192,7 @@ def _make_dense_stage_kernel(n: int, fids: tuple[int, ...], t_blk: int, rps: int
 
 
 @lru_cache(maxsize=64)
-def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
+def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8, stage_rtr: bool = False):
     """Fast GPU dequantize of a DenseStage (or any subset of matrices) into float16[total_out, n] for T > 8 prefill GEMM!"""
     assert n % 256 == 0
     iters = n // 256
@@ -1158,7 +1207,7 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
             f"inline void ddeq_f{fid}("
             "const device uint* mcodes, const device half* mscales, const device half* lv, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-            "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
             "device half* W, uint row, uint wpr, uint out_row, uint hl) {"
         )
         ha("    const float sc = (float)mscales[row];")
@@ -1171,6 +1220,7 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
             n,
             ptr_expr="mcodes + (ulong)row * wpr",
             wpr_expr="wpr",
+            stage_rtr=stage_rtr,
             mode="dequant",
             t_or_c=0,
             x_expr_fn=None,
@@ -1202,11 +1252,9 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
         a(f"for (uint idx = tid; idx < 1024u; idx += {sg * 32}u) tg_ht3[idx] = half2(lut_ht3[2u*idx], lut_ht3[2u*idx+1u]);")
     else:
         a("threadgroup half2 tg_ht3[1];")
-    if has_ht1 or has_ht2 or has_ht3:
+    _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
+    if has_ht1 or has_ht2 or has_ht3 or stage_rtr:
         a("threadgroup_barrier(mem_flags::mem_threadgroup);")
-    a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
 
     a("uint mat_row_end[16];")
     a("uint acc_r = 0u;")
@@ -1227,7 +1275,7 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
     a("}")
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_ddeq_n{n}_f{tag}_s{sg}",
+        name=f"ink_ddeq_n{n}_f{tag}_s{sg}_rtr{int(stage_rtr)}",
         input_names=["codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["W"],
         header="\n".join(H),
@@ -1236,8 +1284,8 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8):
 
 
 @lru_cache(maxsize=64)
-def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg: int = 32):
-    """simdgroup_half8x8 DenseStage kernel for T=8 with L1 LUTs, 32 KB rtr1_g2, and sliding w_prev."""
+def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg: int = 32, stage_rtr: bool = False):
+    """DenseStage SIMD-group matrix multiply for T <= 8, with selectable RTR table layout."""
     assert n % 32 == 0
     steps = n // 32
     H = [
@@ -1252,7 +1300,7 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
             f"inline void sg8_f{fid}("
             "const device half* xin, const device uint* mcodes, const device half* mscales, const device half* lv, "
             "const device half4* t_ht1, const device half4* t_ht2, const device half2* t_ht3, "
-            "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr, rtr1_vec=2)}const device half* lut_rtr4, "
             "device float* y, uint rbase, uint m_rows, uint wpr, uint r_out_off, uint total_out, uint t_out, uint lane) {"
         )
         ha("    const uint qid = lane / 4u, fm = (qid & 4u) + ((lane / 2u) % 4u), fn = (qid & 2u) * 2u + (lane % 2u) * 2u;")
@@ -1304,21 +1352,20 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
         elif fid == 3:
             ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
             for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr1[extract_bits(lo, {sh}u, 13u)]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(3, 2, f'extract_bits(lo, {sh}u, 13u)', stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
         elif fid in (4, 5):
-            tvn = "tv_rtr2" if fid == 4 else "tv_rtr3"
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             if k == 2:
                 ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
                 for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-                    ha(f"            ELEMS_H2(Am.thread_elements()) = {tvn}[extract_bits(lo, {rb_b}u, 14u)]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, f'extract_bits(lo, {rb_b}u, 14u)', stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
             else:
                 ha(f"            const uint w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
                 ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
                 ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
                 for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
                     ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32-rb_b}u), hi, {32-rb_b}u, {15-(32-rb_b)}u)"
-                    ha(f"            ELEMS_H2(Am.thread_elements()) = {tvn}[{ex}]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, ex, stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
         elif fid == 6:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
@@ -1357,9 +1404,9 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
     a("const device half4* t_ht1 = (const device half4*)lut_ht1;")
     a("const device half4* t_ht2 = (const device half4*)lut_ht2;")
     a("const device half2* t_ht3 = (const device half2*)lut_ht3;")
-    a("const device half2* tv_rtr1 = (const device half2*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
+    _emit_rtr_bindings(a, fids, "simd * 32u + lane", sg * 32, stage_rtr, rtr1_vec=2)
+    if stage_rtr:
+        a("threadgroup_barrier(mem_flags::mem_threadgroup);")
     a("uint tot_blocks = 0u, mat_blk_end[16];")
     a("for (uint mi = 0; mi < n_mats; mi++) { tot_blocks += (dims[mi*8u+1u] + (8u*RB) - 1u) / (8u*RB); mat_blk_end[mi] = tot_blocks; }")
     a("for (uint rb = tg; rb * SG < tot_blocks; rb += ntg) {")
@@ -1378,7 +1425,7 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
     a("}")
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_sg8_dstage_v2_n{n}_f{tag}_rb{rb}_sg{sg}",
+        name=f"ink_sg8_dstage_v2_n{n}_f{tag}_rb{rb}_sg{sg}_rtr{int(stage_rtr)}",
         input_names=["x", "codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["y"],
         header="\n".join(H),
@@ -1437,14 +1484,11 @@ class DenseStage:
         self.total_out = r_off
         self.n_mats = len(items)
         self.fids = tuple(sorted(fids))
-        self._lut_args = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g3"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
-        self._lut_args_sg8 = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g2"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
+        ht_bytes = 4096 * sum(fid in self.fids for fid in (0, 1, 2))
+        self._stage_rtr = _can_stage_rtr(self.fids, ht_bytes)
+        self._stage_rtr_sg8 = _can_stage_rtr(self.fids, 0)
+        self._lut_args = _lut_inputs(fast_luts, staged=self._stage_rtr)
+        self._lut_args_sg8 = _lut_inputs(fast_luts, staged=self._stage_rtr_sg8, sg8=True)
         mx.eval(self.codes, self.scales, self.levels, self.dims)
         if self.signs_in is not None:
             mx.eval(self.signs_in)
@@ -1453,7 +1497,7 @@ class DenseStage:
         if ntg is None:
             ntg = 10 if _is_m4() else 160
         sg = 8
-        kern = _make_dense_dequant_kernel(self.n, self.fids, sg=sg)
+        kern = _make_dense_dequant_kernel(self.n, self.fids, sg=sg, stage_rtr=self._stage_rtr)
         mt = _u32(self.total_out, self.n_mats, ntg)
         return kern(
             inputs=[self.codes, self.scales, self.levels, self.dims, *self._lut_args, mt],
@@ -1478,7 +1522,7 @@ class DenseStage:
         sg = min(sg_limit, (8 if m4 else sg_limit) if sg is None else sg)
         if ntg is None:
             ntg = (20 if self.total_out > 10000 else 30) if m4 else 80
-        kern = _make_sg8_dense_stage_kernel(self.n, self.fids, rb=rb, sg=sg)
+        kern = _make_sg8_dense_stage_kernel(self.n, self.fids, rb=rb, sg=sg, stage_rtr=self._stage_rtr_sg8)
         mt = _u32(self.total_out, self.n_mats, ntg, T)
         return kern(
             inputs=[x_rot_tr_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args_sg8, mt],
@@ -1500,7 +1544,7 @@ class DenseStage:
                     rps, sg, ntg = 1, 4, 160
             else:
                 rps, sg, ntg = (2, 4, 160) if self.total_out <= 3072 else (2, 8, 160)
-            kern = _make_dense_stage_kernel(self.n, self.fids, 1, rps=rps, sg=sg)
+            kern = _make_dense_stage_kernel(self.n, self.fids, 1, rps=rps, sg=sg, stage_rtr=self._stage_rtr)
             mt = _u32(self.total_out, self.n_mats, ntg)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args, mt],
@@ -1511,7 +1555,7 @@ class DenseStage:
             )[0]
         if T <= 8:
             rps, sg, ntg = (2, 4, 40) if (_is_m4() and self.total_out <= 3072) else (1, 8, 160)
-            kern = _make_dense_stage_kernel(self.n, self.fids, T, rps=rps, sg=sg)
+            kern = _make_dense_stage_kernel(self.n, self.fids, T, rps=rps, sg=sg, stage_rtr=self._stage_rtr)
             mt = _u32(self.total_out, self.n_mats, ntg)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args, mt],
@@ -1553,65 +1597,13 @@ class DenseStage:
 
 # ----------------------------------------------------------------------------- Unified 1-Launch Multi-Format MoE
 
-def _emit_sg8_moe_mma(ha, fid: int, n: int, nb_tiles: int):
-    """DRY helper emitting the 4 simdgroup_half8x8 decode + MMA steps for any MoE format `fid` in {0..6}."""
-    k = {0: 1, 1: 2, 2: 3, 3: 1, 4: 2, 5: 3, 6: 4}[fid]
-    wpr_c = (n * k) // 32
-
-    def mma_line(j: int):
-        if nb_tiles == 1:
-            return f"simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);"
-        return (
-            f"\n            #pragma unroll\n"
-            f"            for (uint b = 0; b < {nb_tiles}u; b++) simdgroup_multiply_accumulate(Acc[i][b], Am, Xm[b][{j}], Acc[i][b]);"
-        )
-
-    if fid in (0, 1):
-        tgn = "t_ht1" if fid == 0 else "t_ht2"
-        if fid == 1:
-            ha(f"            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (((wi + 1u < {wpr_c}u) ? pw[1] : 0u) << 16u));")
-        else:
-            ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u; const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
-        ha(f"            const half4 v0 = {tgn}[((extract_bits(lo, {4 * k}u, 12u)) * {HASH_MULT_HEX}) >> 23u];")
-        ha(f"            const half4 v1 = {tgn}[((extract_bits(lo, 0u, 12u)) * {HASH_MULT_HEX}) >> 23u];")
-        for j, expr in [(0, "v0.xy"), (1, "v0.zw"), (2, "v1.xy"), (3, "v1.zw")]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = {expr}; {mma_line(j)}")
-    elif fid == 2:
-        ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
-        ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
-        for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = t_ht3[(extract_bits(lo, {rb_b}u, 12u) * {HASH_MULT_HEX}) >> 22u]; {mma_line(j)}")
-    elif fid == 3:
-        ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
-        for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr1[extract_bits(lo, {sh}u, 13u)]; {mma_line(j)}")
-    elif fid == 4:
-        ha(f"            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (((wi + 1u < {wpr_c}u) ? pw[1] : 0u) << 16u));")
-        for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-            ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr2[extract_bits(lo, {rb_b}u, 14u)]; {mma_line(j)}")
-    elif fid == 5:
-        ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u, w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
-        ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
-        ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
-        for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
-            ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32 - rb_b}u), hi, {32 - rb_b}u, {15 - (32 - rb_b)}u)"
-            ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr3[{ex}]; {mma_line(j)}")
-    elif fid == 6:
-        ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
-        for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
-            ex0 = f"extract_bits(w0, {b0}u, 12u)" if b0 + 12 <= 32 else f"insert_bits(extract_bits(w0, {b0}u, {32 - b0}u), w1, {32 - b0}u, {12 - (32 - b0)}u)"
-            ex1 = f"extract_bits(w0, {b1}u, 12u)" if b1 + 12 <= 32 else f"insert_bits(extract_bits(w0, {b1}u, {32 - b1}u), w1, {32 - b1}u, {12 - (32 - b1)}u)"
-            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lut_rtr4[{ex0}], lut_rtr4[{ex1}]); {mma_line(j)}")
-
-
 @lru_cache(maxsize=64)
-def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, rb: int = 2, nb: int = 2, n_rg: int = 1, lpr: int | None = None):
+def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, n_rg: int = 1, lpr: int | None = None, stage_rtr: bool = False):
     """Unified 1-launch MoE kernel supporting ALL formats {ht1,ht2,ht3,rtr1..rtr4,nvfp4} and optional row-group splitting (`n_rg`).
 
     Modes:
       - `t1`: T=1 (8 active slots, 1 token/expert, zero compaction, half-warp c1)
       - `grouped`: T=2..8 (up to 64 slots, pre-compacted plan, low-reg c3/c4, lpr=8 RPS=4 SG=8 -> 12.6ms!)
-      - `prefill`: T>8 (arbitrary N*8 slots via GPU-sorted balanced 16-token work units, NB=2 simdgroup_half8x8!)
     """
     if lpr is None:
         lpr = 8 if (t_mode == "grouped" or n == 1152) else 16
@@ -1685,7 +1677,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                     f"inline void umoe_pp{fid}_c{c_val}("
                     "const device half* x, const device uint* ecodes, const device half* escales, "
                     "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-                    "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+                    f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
                     "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint packed, uint hl) {"
                 )
                 for b in range(c_val):
@@ -1713,6 +1705,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
                     n,
                     ptr_expr=f"ecodes + (ulong)row * {wpr_c}u",
                     wpr_expr=f"{wpr_c}u",
+                    stage_rtr=stage_rtr,
                     mode="dot",
                     t_or_c=c_val,
                     x_expr_fn=lambda b, q: f"x{b}[{q}]",
@@ -1755,10 +1748,8 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             a("threadgroup half2 tg_ht3[1];")
         if has_nv:
             a(f"threadgroup half tg_e2m1[16]; threadgroup half tg_e4m3[256]; if (tid < 16u) tg_e2m1[tid] = lut_e2m1[tid]; for (uint idx = tid; idx < 256u; idx += {sg * 32}u) tg_e4m3[idx] = lut_e4m3[idx];")
-        a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-        a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-        a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
-        if has_ht1 or has_ht2 or has_ht3 or has_nv:
+        _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
+        if has_ht1 or has_ht2 or has_ht3 or has_nv or stage_rtr:
             a("threadgroup_barrier(mem_flags::mem_threadgroup);")
         a("const uint n_act = plan[0];")
         a("const uint blocks_per_u = (m_rows + RPS - 1u) / RPS;")
@@ -1803,115 +1794,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
         tag = "_".join(str(f) for f in fids)
         return mx.fast.metal_kernel(
-            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}",
-            input_names=in_names,
-            output_names=["y"],
-            header="\n".join(H),
-            source="\n".join(L),
-        )
-
-    if t_mode == "prefill":
-        steps = n // 32
-        H = [
-            "#include <metal_simdgroup_matrix>\n",
-            f"#define SG {sg}u\n#define RB {rb}u\n#define NB {nb}u\n",
-            "#define ELEMS_H2 reinterpret_cast<thread half2&>\n",
-            "#define ELEMS_F2 reinterpret_cast<thread float2&>\n",
-        ]
-        ha = H.append
-        for fid in fids:
-            k = {0: 1, 1: 2, 2: 3, 3: 1, 4: 2, 5: 3, 6: 4}[fid]
-            wpr_c = (n * k) // 32
-            ha(
-                f"inline void umoe_f{fid}_prefill_bal("
-                "const device half* x, const device uint* ecodes, const device half* escales, "
-                "const device half4* t_ht1, const device half4* t_ht2, const device half2* t_ht3, "
-                "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
-                "const device uint* slot_order, device float* y, uint rbase, uint m_rows, uint x_div, uint base, uint cnt, uint lane) {"
-            )
-            ha("    const uint qid = lane / 4u, fm = (qid & 4u) + ((lane / 2u) % 4u), fn = (qid & 2u) * 2u + (lane % 2u) * 2u;")
-            ha("    const uint q = fn / 2u, xcol = 8u * (fm / 2u) + (fm % 2u), r0 = rbase + fm;")
-            ha("    bool va[NB], vb[NB]; uint sa[NB], sb[NB]; const device half* xa[NB]; const device half* xb[NB];")
-            ha("    #pragma unroll")
-            ha("    for (uint b = 0; b < NB; b++) {")
-            ha("        va[b] = (8u * b + fn) < cnt; vb[b] = (8u * b + fn + 1u) < cnt;")
-            ha("        sa[b] = va[b] ? slot_order[base + 8u * b + fn] : 0u;")
-            ha("        sb[b] = vb[b] ? slot_order[base + 8u * b + fn + 1u] : 0u;")
-            ha(f"        xa[b] = x + (ulong)((x_div == 1u) ? sa[b] : (sa[b] >> 3)) * {n}u;")
-            ha(f"        xb[b] = x + (ulong)((x_div == 1u) ? sb[b] : (sb[b] >> 3)) * {n}u;")
-            ha("    }")
-            ha("    const device uint* p[RB];")
-            ha(f"    for (uint i = 0; i < RB; i++) p[i] = ecodes + (ulong)min(r0 + 8u * i, m_rows - 1u) * {wpr_c}u;")
-            ha(f"    const uint first = ({n}u - 8u - 8u * q) * {k}u, w_first = first >> 5, off = first & 31u;")
-            ha("    simdgroup_float8x8 Acc[RB][NB];")
-            ha("    for (uint i = 0; i < RB; i++) for (uint b = 0; b < NB; b++) Acc[i][b] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);")
-            if fid == 3:
-                ha("    uint w_prev[RB];")
-                ha(f"    for (uint i = 0; i < RB; i++) w_prev[i] = (w_first + 1u < {wpr_c}u) ? p[i][w_first + 1u] : 0u;")
-            ha(f"    for (uint s = 0; s < {steps}u; s++) {{")
-            ha("        simdgroup_half8x8 Xm[NB][4];")
-            ha("        const uint cbase = 32u * s + xcol;")
-            ha("        #pragma unroll")
-            ha("        for (uint b = 0; b < NB; b++) {")
-            ha("            #pragma unroll")
-            ha("            for (uint j = 0; j < 4u; j++) {")
-            ha("                const uint col = cbase + 2u * j;")
-            ha("                ELEMS_H2(Xm[b][j].thread_elements()) = half2(va[b] ? xa[b][col] : 0.0h, vb[b] ? xb[b][col] : 0.0h);")
-            ha("            }")
-            ha("        }")
-            ha(f"        const uint wi = w_first - s * {k}u;")
-            ha("        #pragma unroll")
-            ha("        for (uint i = 0; i < RB; i++) {")
-            ha("            const device uint* pw = p[i] + wi; simdgroup_half8x8 Am;")
-            _emit_sg8_moe_mma(ha, fid, n, nb_tiles=nb)
-            ha("        }")
-            ha("    }")
-            ha("    for (uint i = 0; i < RB; i++) {")
-            ha("        const uint row = r0 + 8u * i; if (row >= m_rows) continue;")
-            ha("        const float sc = (float)escales[row];")
-            ha("        #pragma unroll")
-            ha("        for (uint b = 0; b < NB; b++) {")
-            ha("            const float2 d = ELEMS_F2(Acc[i][b].thread_elements()) * sc;")
-            ha("            if (va[b]) y[(ulong)sa[b] * m_rows + row] = d.x;")
-            ha("            if (vb[b]) y[(ulong)sb[b] * m_rows + row] = d.y;")
-            ha("        }")
-            ha("    }")
-            ha("}")
-
-        L = []
-        a = L.append
-        a("const uint tg = threadgroup_position_in_grid.x, simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup, tid = simd * 32u + lane;")
-        a("const uint m_rows = meta[0], n_slots = meta[1], x_div = meta[2], ntg = meta[3];")
-        a("const device half4* t_ht1 = (const device half4*)lut_ht1; const device half4* t_ht2 = (const device half4*)lut_ht2; const device half2* t_ht3 = (const device half2*)lut_ht3;")
-        a("const device half2* tv_rtr1 = (const device half2*)lut_rtr1; const device half2* tv_rtr2 = (const device half2*)lut_rtr2; const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
-        a("threadgroup uint tg_e_order[128], tg_e_prefix[129], tg_n_units, tg_ne_tot;")
-        a("if (tid == 0u) {")
-        a("    uint ne = 0u, tot_u = 0u;")
-        for fid in fids:
-            a(f"    for (uint e = 0; e < 128u; e++) {{ if (exp_fid[e] == {fid}u) {{ uint c = expert_ids[e+1u] - expert_ids[e]; if (c > 0u) {{ tg_e_order[ne] = e; tg_e_prefix[ne] = tot_u; tot_u += (c + (8u * NB) - 1u) / (8u * NB); ne++; }} }} }}")
-        a("    tg_e_prefix[ne] = tot_u; tg_n_units = tot_u; tg_ne_tot = ne;")
-        a("}")
-        a("threadgroup_barrier(mem_flags::mem_threadgroup);")
-        a("const uint n_units = tg_n_units, ne_tot = tg_ne_tot;")
-        a("const uint blocks_per_u = (m_rows + (8u * RB) - 1u) / (8u * RB), total_blocks = n_units * blocks_per_u;")
-        a("for (uint rb_i = tg; rb_i * SG < total_blocks; rb_i += ntg) {")
-        a("    const uint gb = rb_i * SG + simd; if (gb >= total_blocks) continue;")
-        a("    const uint u = gb / blocks_per_u, rbase = (gb - u * blocks_per_u) * (8u * RB);")
-        a("    uint lo = 0u, hi = ne_tot;")
-        a("    while (lo + 1u < hi) { uint mid = (lo + hi) >> 1; if (tg_e_prefix[mid] <= u) lo = mid; else hi = mid; }")
-        a("    const uint eid = tg_e_order[lo], tile_i = u - tg_e_prefix[lo];")
-        a("    const uint off0 = expert_ids[eid], off1 = expert_ids[eid + 1u];")
-        a("    const uint base = off0 + tile_i * (8u * NB), cnt = min(8u * NB, off1 - base);")
-        a("    const uint fid = exp_fid[eid];")
-        a("    switch (fid) {")
-        for fid in fids:
-            a(f"        case {fid}u: umoe_f{fid}_prefill_bal(x, codes+exp_code_off[eid], scales+exp_scale_off[eid], t_ht1, t_ht2, t_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, slot_order, y, rbase, m_rows, x_div, base, cnt, lane); break;")
-        a("    }")
-        a("}")
-        in_names = ["x", "codes", "scales", "exp_fid", "exp_code_off", "exp_scale_off", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "expert_ids", "meta", "slot_order"]
-        tag = "_".join(str(f) for f in fids)
-        return mx.fast.metal_kernel(
-            name=f"ink_umoe_prefill_bal_n{n}_f{tag}_rb{rb}_nb{nb}_s{sg}",
+            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}_rtr{int(stage_rtr)}",
             input_names=in_names,
             output_names=["y"],
             header="\n".join(H),
@@ -1966,7 +1849,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             f"inline void umoe_f{fid}_c1("
             "const device half* x, const device uint* ecodes, const device half* escales, "
             "const threadgroup half4* tg_ht1, const threadgroup half4* tg_ht2, const threadgroup half2* tg_ht3, "
-            "const device half4* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+            f"{_rtr_params(stage_rtr)}const device half* lut_rtr4, "
             "device float* y, uint r0, uint m_rows, uint y_stride, uint x_div, uint s0, uint hl) {"
         )
         ha(f"    const device half* xp0 = x + (ulong)((x_div == 1u) ? s0 : (s0 / x_div)) * {n}u;")
@@ -1988,6 +1871,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
             n,
             ptr_expr=f"ecodes + (ulong)row * {wpr_c}u",
             wpr_expr=f"{wpr_c}u",
+            stage_rtr=stage_rtr,
             mode="dot",
             t_or_c=1,
             x_expr_fn=lambda b, q: f"x0[{q}]",
@@ -2030,9 +1914,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         a("threadgroup half2 tg_ht3[1];")
     if has_nv:
         a(f"threadgroup half tg_e2m1[16]; threadgroup half tg_e4m3[256]; if (tid < 16u) tg_e2m1[tid] = lut_e2m1[tid]; for (uint idx = tid; idx < 256u; idx += {sg * 32}u) tg_e4m3[idx] = lut_e4m3[idx];")
-    a("const device half4* tv_rtr1 = (const device half4*)lut_rtr1;")
-    a("const device half2* tv_rtr2 = (const device half2*)lut_rtr2;")
-    a("const device half2* tv_rtr3 = (const device half2*)lut_rtr3;")
+    _emit_rtr_bindings(a, fids, "tid", sg * 32, stage_rtr)
     a("threadgroup uint tg_valid[8], tg_nv;")
     a("if (tid == 0u) { uint nv = 0u; for (uint s = 0u; s < n_slots; s++) { if (expert_ids[s] != 0xFFFFFFFFu) tg_valid[nv++] = s; } tg_nv = nv; }")
     a("threadgroup_barrier(mem_flags::mem_threadgroup);")
@@ -2072,7 +1954,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
     tag = "_".join(str(f) for f in fids)
     return mx.fast.metal_kernel(
-        name=f"ink_umoe_t1_n{n}_f{tag}_r{rps}_s{sg}_rg{n_rg}",
+        name=f"ink_umoe_t1_n{n}_f{tag}_r{rps}_s{sg}_rg{n_rg}_rtr{int(stage_rtr)}",
         input_names=in_names,
         output_names=["y"],
         header="\n".join(H),
@@ -2457,6 +2339,7 @@ def _make_unified_moe_prefill_v2_kernel(
     """Non-MPP fallback format-homogeneous prefill MoE kernel (`SG=8, RB=2, tile_t=32`, TG SRAM X_tile + LUT)."""
     steps = n // 32
     has_ht = any(f in fids for f in (0, 1, 2))
+    has_rtr = any(f in fids for f in (3, 4, 5))
     has_nv = 7 in fids
     H = [
         "#include <metal_simdgroup_matrix>\n",
@@ -2492,18 +2375,18 @@ def _make_unified_moe_prefill_v2_kernel(
         elif fid == 3:
             ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
             for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr1[extract_bits(lo, {sh}u, 13u)]; {mma_line(j)}")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(3, 2, f'extract_bits(lo, {sh}u, 13u)')}; {mma_line(j)}")
         elif fid == 4:
             ha(f"            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (((wi + 1u < {wpr_c}u) ? pw[1] : 0u) << 16u));")
             for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr2[extract_bits(lo, {rb_b}u, 14u)]; {mma_line(j)}")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(4, 2, f'extract_bits(lo, {rb_b}u, 14u)')}; {mma_line(j)}")
         elif fid == 5:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u, w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
             ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
             ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
             for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
                 ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32 - rb_b}u), hi, {32 - rb_b}u, {15 - (32 - rb_b)}u)"
-                ha(f"            ELEMS_H2(Am.thread_elements()) = tv_rtr3[{ex}]; {mma_line(j)}")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(5, 2, ex)}; {mma_line(j)}")
         elif fid == 6:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
@@ -2590,7 +2473,7 @@ def _make_unified_moe_prefill_v2_kernel(
                 f"inline void umoe_v2_f{fid}_nb{nb_val}("
                 "const device half* my_xp, const device uint* ecodes, const device half* escales, "
                 "threadgroup half* tg_x, const threadgroup half4* tg_ht4, const threadgroup half2* tg_ht2, "
-                "const device half2* tv_rtr1, const device half2* tv_rtr2, const device half2* tv_rtr3, const device half* lut_rtr4, "
+                f"{_RTR_ARGS}const device half* lut_rtr4, "
                 "const threadgroup uint* tg_out_slot, device float* y, "
                 "uint rbase, uint m_rows, uint y_stride, uint cnt, uint tid, uint lane) {"
             )
@@ -2672,7 +2555,6 @@ def _make_unified_moe_prefill_v2_kernel(
         ]
     L += [
         "const device half4* t_ht1 = (const device half4*)lut_ht1; const device half4* t_ht2 = (const device half4*)lut_ht2;",
-        "const device half2* tv_rtr1 = (const device half2*)lut_rtr1; const device half2* tv_rtr2 = (const device half2*)lut_rtr2; const device half2* tv_rtr3 = (const device half2*)lut_rtr3;",
         "threadgroup half tg_x[64 * XSTR];",
         "threadgroup half4 tg_ht4[512]; const threadgroup half2* tg_ht2 = (const threadgroup half2*)tg_ht4;" if has_ht else "threadgroup half4 tg_ht4[1]; const threadgroup half2* tg_ht2 = (const threadgroup half2*)tg_ht4;",
         "threadgroup uint tg_out_slot[32];",
@@ -2683,6 +2565,13 @@ def _make_unified_moe_prefill_v2_kernel(
             f"else if (fid == 1u) {{ for (uint idx = tid; idx < 512u; idx += {sg * 32}u) tg_ht4[idx] = t_ht2[idx]; }}",
             f"else if (fid == 2u) {{ for (uint idx = tid; idx < 512u; idx += {sg * 32}u) tg_ht4[idx] = ((const device half4*)lut_ht3)[idx]; }}",
         ]
+    if has_rtr:
+        L += [
+            "threadgroup half tg_rtr[4096]; const threadgroup half* tv_rtr1 = tg_rtr; const threadgroup half* tv_rtr2 = tg_rtr; const threadgroup half* tv_rtr3 = tg_rtr;",
+            f"if (fid >= 3u && fid <= 5u) {{ const device half* t = (fid == 3u) ? lut_rtr1 : (fid == 4u) ? lut_rtr2 : lut_rtr3; for (uint idx = tid; idx < 4096u; idx += {sg * 32}u) tg_rtr[idx] = t[idx]; }}",
+        ]
+    else:
+        L.append("threadgroup half tg_rtr[1]; const threadgroup half* tv_rtr1 = tg_rtr; const threadgroup half* tv_rtr2 = tg_rtr; const threadgroup half* tv_rtr3 = tg_rtr;")
     if has_nv:
         L += [
             "threadgroup half tg_e2m1[16]; threadgroup half tg_e4m3[256];",
@@ -2898,14 +2787,11 @@ class UnifiedMoESide:
         self.exp_code_off = mx.array(exp_code_off)
         self.exp_scale_off = mx.array(exp_scale_off)
         self.fids = tuple(sorted(slab_by_fid.keys()))
-        self._lut_args = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g3"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
-        self._lut_args_sg8 = [
-            fast_luts["ht1"], fast_luts["ht2"], fast_luts["ht3"],
-            fast_luts["rtr1_g2"], fast_luts["rtr2_g2"], fast_luts["rtr3_g2"], fast_luts["rtr4"],
-        ]
+        ht_bytes = 4096 * sum(fid in self.fids for fid in (0, 1, 2))
+        self._stage_rtr = _can_stage_rtr(self.fids, ht_bytes + 1024)
+        self._lut_args_mpp = _lut_inputs(fast_luts)
+        self._lut_args_prefill_v2 = _lut_inputs(fast_luts, staged=True)
+        self._lut_args = self._lut_args_prefill_v2 if self._stage_rtr else self._lut_args_mpp
         if self.has_nvfp4:
             s_nv_flat = np.concatenate([np.array(nvfp4_slab[1], dtype=np.uint8).reshape(-1), np.zeros(64, dtype=np.uint8)])
             self.nv_scales = mx.array(s_nv_flat)
@@ -2936,7 +2822,7 @@ class UnifiedMoESide:
         nv_tail = [(x_raw_f16 if x_raw_f16 is not None else x_rot_f16).reshape(-1), *self._nv_args] if self.has_nvfp4 else []
         if n_slots <= 8 and not sorted_in and not sorted_out:
             sg, ntg = (4, 60) if _is_m4() else (8, 160)
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "t1", rps=4, sg=sg, n_rg=self.n_rg)
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "t1", rps=4, sg=sg, n_rg=self.n_rg, stage_rtr=self._stage_rtr)
             mt = _u32(self.m_rows, n_slots, x_div, ntg)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, eids_flat.astype(mx.uint32), mt, *nv_tail],
@@ -2961,7 +2847,7 @@ class UnifiedMoESide:
                 ntg_g = 120 if (self.n_cols == 2304 and 40 < n_slots <= 56) else 160
             else:
                 sg_g, rps_g, ntg_g, lpr_g = 8, 4, 160, 8
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, lpr=lpr_g, n_rg=self.n_rg)
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, lpr=lpr_g, n_rg=self.n_rg, stage_rtr=self._stage_rtr)
             mt = _u32(self.m_rows, x_div, ntg_g)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, plan, mt, *nv_tail],
@@ -2981,7 +2867,7 @@ class UnifiedMoESide:
                 self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, m_tile=m_tile, tile_t=tile_t, k_tile=32, sg=sg_p, n_rg=self.n_rg,
             )
             return kern(
-                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
+                inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_mpp, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
                 grid=(max_u * sg_p * 32, rblocks, 1),
                 threadgroup=(sg_p * 32, 1, 1),
                 output_shapes=[(n_slots, self.m_rows)],
@@ -2994,7 +2880,7 @@ class UnifiedMoESide:
             self.n_cols, self.fids, sorted_in=sorted_in, sorted_out=sorted_out, sg=sg_p, rb=rb_p, n_rg=self.n_rg,
         )
         return kern(
-            inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_sg8, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
+            inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args_prefill_v2, units, ucnt, _u32(self.m_rows, x_div), order, *nv_tail],
             grid=(max_u * sg_p * 32, rblocks, 1),
             threadgroup=(sg_p * 32, 1, 1),
             output_shapes=[(n_slots, self.m_rows)],
@@ -5842,6 +5728,16 @@ def _selftest():
             assert err_sg8 < 2e-3, f"DenseStage sg8 T={T} fail: {err_sg8}"
             print(f"  PASS DenseStage sg8 ALL 8 formats (T={T:2d}): rel_err={err_sg8:.2e}")
 
+    if not _has_mpp():
+        # All three RTR formats fit with one HT table, but not with both HT tables above.
+        narrow = DenseStage(items[1:], 2304, fluts)
+        assert narrow._stage_rtr and not st._stage_rtr and st._stage_rtr_sg8
+        for T in (1, 6, 16):
+            subset = st.matmul_rotated_f16(xt[:, :T].astype(mx.float16), T)[:, 64:]
+            staged = narrow.matmul_rotated_f16(xt[1:, :T].astype(mx.float16), T)
+            err = float(mx.linalg.norm(staged - subset) / mx.linalg.norm(subset))
+            assert err < 1e-5, f"Threadgroup RTR dense T={T} fail: {err}"
+
     # Test transpose_for_sg8 on rht_in_2304_fast for T=8 and T=5 (zero-padded to 8)
     y_tr = rht_in_2304_fast(x, s5, n_signs=5, T=8, out_dtype=mx.float16, transpose_for_sg8=True)
     y_exp = y_fast.reshape(5, 8, 2304).transpose(0, 2, 1).astype(mx.float16)
@@ -5889,7 +5785,7 @@ def _selftest():
     # 3b. UnifiedMoESide with within-expert row-group bit splitting (`n_rg=4`, `rg_rows=128`, `m_rows=512`)
     rg_slabs = []
     rg_map = np.zeros((128, 4, 2), dtype=np.int32)
-    rg_fmts = [(1, "ht2", 2, 4, 512, 0x9E3779B1), (2, "ht3", 3, 2, 1024, 0x9E3779B1), (3, "rtr1", 1, 1, 4096, 0), (6, "rtr4", 4, 1, 4096, 0)]
+    rg_fmts = [(1, "ht2", 2, 4, 512, 0x9E3779B1), (3, "rtr1", 1, 1, 4096, 0), (4, "rtr2", 2, 1, 4096, 0), (5, "rtr3", 3, 1, 4096, 0)]
     fmt_locs = {fid: [] for fid, *_ in rg_fmts}
     for e in range(128):
         for rg in range(4):
@@ -5931,7 +5827,7 @@ def _selftest():
             units, ucnt, max_u = plan_moe_prefill_units(offsets, umoe_rg.exp_fid, umoe_rg.fids, int(ev.shape[0]), tile_t=32)
             kv2 = _make_unified_moe_prefill_v2_kernel(2304, umoe_rg.fids, sg=8, rb=2, n_rg=4)
             y_v2 = kv2(
-                inputs=[xt.astype(mx.float16).reshape(-1), umoe_rg.codes, umoe_rg.scales, umoe_rg._kern_fid, umoe_rg.exp_code_off, umoe_rg.exp_scale_off, *umoe_rg._lut_args_sg8, units, ucnt, _u32(512, 8), order],
+                inputs=[xt.astype(mx.float16).reshape(-1), umoe_rg.codes, umoe_rg.scales, umoe_rg._kern_fid, umoe_rg.exp_code_off, umoe_rg.exp_scale_off, *umoe_rg._lut_args_prefill_v2, units, ucnt, _u32(512, 8), order],
                 grid=(max_u * 256, 4, 1),
                 threadgroup=(256, 1, 1),
                 output_shapes=[(T * 8, 512)],
