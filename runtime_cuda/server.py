@@ -1,10 +1,9 @@
 """Inkling CUDA inference behind the shared OpenAI-compatible HTTP transport."""
 from contextlib import ExitStack, closing
 import threading
-from uuid import uuid4
 
 from . import eos_ids, load_drafter, open_model, stream_tokens
-from .inkling_cuda.serve import END, MODEL, TEXT, THINK, TOOL, Frames
+from runtime_mlx.server import ClientGone, EFFORTS, OutputParser, RequestError, SPECIAL, declared_tool_names, normalize_messages
 
 
 class Engine:
@@ -21,10 +20,13 @@ class Engine:
             )
             if not 1 <= args.context <= self.model.context_limit:
                 raise ValueError(f"CUDA context must be within [1, {self.model.context_limit}]")
-            self.eos = eos_ids(self.model, self.tokenizer)
-            self.end, self.message, self.text, self.thinking, self.tool = self.tokenizer.convert_tokens_to_ids(
-                [END, MODEL, TEXT, THINK, TOOL]
-            )
+            self.ids = {}
+            for key, special in SPECIAL.items():
+                tid = self.tokenizer.convert_tokens_to_ids(special)
+                if not isinstance(tid, int) or tid < 0:
+                    raise ValueError(f"tokenizer has no {special}; is this an Inkling-2 model?")
+                self.ids[key] = tid
+            self.eos = eos_ids(self.model, self.tokenizer) | {self.ids["eos"]}
             self.drafter = load_drafter(self.model, args.drafter, context=args.context) if args.drafter else None
             self.draft_block_size = getattr(args, "draft_block_size", None) or 2
         except BaseException:
@@ -39,15 +41,9 @@ class Engine:
         return self.tokenizer.encode(content, add_special_tokens=add_special)
 
     def _render(self, req, *, generation=False):
-        from runtime_mlx.server import EFFORTS, RequestError, normalize_messages
-
         messages = normalize_messages(req.get("messages"))
         tools = req.get("tools")
-        if tools is not None and (not isinstance(tools, list) or any(
-            not isinstance(tool, dict) or not isinstance(tool.get("function"), dict)
-            or not isinstance(tool["function"].get("name"), str) for tool in tools
-        )):
-            raise RequestError(400, "tools must be a list of named functions")
+        tool_names = declared_tool_names(tools)
         add_generation_prompt = req.get("add_generation_prompt", True)
         if type(add_generation_prompt) is not bool:
             raise RequestError(400, "add_generation_prompt must be a boolean")
@@ -79,15 +75,13 @@ class Engine:
             )
         except Exception as error:
             raise RequestError(400, f"chat template error: {error}") from error
-        return rendered, effort, messages
+        return rendered, effort, tool_names
 
     def render(self, req):
         return self._render(req)[0]
 
     def prepare(self, req):
-        from runtime_mlx.server import RequestError
-
-        rendered, effort, messages = self._render(req, generation=True)
+        rendered, effort, tool_names = self._render(req, generation=True)
         ids = self.tokenize(rendered)
         remaining = self.args.context - len(ids)
         if not ids or remaining < 1:
@@ -107,26 +101,14 @@ class Engine:
         seed = req.get("seed")
         if seed is not None and (type(seed) is not int or not -(1 << 63) <= seed < (1 << 64)):
             raise RequestError(400, "Seed must be a 64-bit integer")
-        tools = req.get("tools") or []
         return {
             "ids": ids, "max_tokens": min(limit, remaining), "temperature": temperature, "seed": seed,
-            "blocked_token": self.thinking if effort in ("none", 0) else None,
-            "tools": tools, "stop_at_text_end": not tools or messages[-1]["role"] == "tool",
+            "blocked_token": self.ids["thinking"] if effort in ("none", 0) else None,
+            "tool_names": tool_names,
         }
 
-    @staticmethod
-    def _emit(emit, delta):
-        for key, value in delta.items():
-            if key == "tool_calls":
-                for call in value:
-                    emit("tool", {k: v for k, v in call.items() if k != "index"})
-            else:
-                emit("reasoning" if key == "reasoning_content" else key, value)
-
     def run(self, job, emit, gone):
-        from runtime_mlx.server import ClientGone
-
-        frames = Frames(self, job["tools"], uuid4().hex)
+        parser = OutputParser(self.tokenizer, self.ids, job["tool_names"])
         ids = job["ids"]
         count, finish = 0, "length"
         with self.lock:
@@ -139,16 +121,17 @@ class Engine:
                 for count, token in enumerate(tokens, 1):
                     if gone():
                         raise ClientGone()
-                    if token in self.eos:
-                        finish = "stop"
+                    # A model may configure additional end-of-turn tokens.
+                    for event in parser.feed(self.ids["eos"] if token in self.eos else token):
+                        emit(*event)
+                    if parser.done or count >= job["max_tokens"]:
                         break
-                    delta, stop = frames.token(token)
-                    self._emit(emit, delta)
-                    if stop and (stop == "tool_calls" or job["stop_at_text_end"] or frames.channel == "tool"):
-                        finish = stop
-                        break
-            self._emit(emit, frames.finish())
-        return {"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count}, finish
+            for event in parser.close():
+                emit(*event)
+            if parser.done:
+                finish = parser.finish
+        return {"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count,
+                "prompt_tokens_details": {"cached_tokens": 0}}, finish
 
     def warmup(self):
         for temperature in (0., 0.7):
