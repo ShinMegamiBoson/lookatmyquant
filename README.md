@@ -124,6 +124,8 @@ Use `POST /apply-template` to render a chat prompt or `POST /tokenize` with a `c
 
 Inkling prefill uses one pass when the prompt fits the estimated MLX memory budget and chunks long prompts under memory pressure. Set `--prefill-chunk N` in `lamq generate`, `lamq chat`, or `lamq serve` to choose a chunk size, or set it to 0 for one pass.
 
+The optimized MLX runtime stores the attention cache in FP16 by default. Set `LAMQ_GLOBAL_KV=fp8` or `LAMQ_GLOBAL_KV=q4` to reduce global attention cache memory on long prompts. Both options can change generated tokens. Sliding-window attention keeps its FP16 cache.
+
 ## Run Inkling-2-Mini on NVIDIA GPUs
 
 Install the CUDA extra on a machine with a supported NVIDIA GPU. The public model ID and chat template are shared with the Apple Silicon runtime.

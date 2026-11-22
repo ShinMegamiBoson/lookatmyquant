@@ -15,7 +15,7 @@ CUDA supports single-sequence text generation. The loopback server provides Open
 | --- | --- | --- |
 | 3.9 GB and 4.7 GB SQYFR v3 | PyTorch and Triton | Native PTX with the generic published drafter or an explicit local file |
 | 5.4 GB SQYFR v2 and 8.9 GB SQYFR | PyTorch and Triton | Native PTX with a target-specific published drafter or an explicit local file |
-| 11.2 GB and 12.8 GB with NVFP4 | PyTorch and Triton | Requires the native engine and a trellis target |
+| 11.2 GB and 12.8 GB with NVFP4 | PyTorch and Triton | Unsupported on CUDA |
 
 The native engine requires an NVIDIA driver for Ampere (SM 80) or newer. The Triton engine uses tuned GEMV for decode, packed tensor-core kernels where applicable for prefill, and a CUDA graph for greedy decode. See [GPU tuning coverage](inkling/tuning/COVERAGE.md) and [the upstream sync guide](SYNC.md). `python -m runtime_cuda.tune` runs the tuner on the current GPU.
 
