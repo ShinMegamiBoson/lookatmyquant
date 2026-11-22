@@ -149,6 +149,23 @@ class PackedCudaTests(unittest.TestCase):
             finally:
                 model.close()
 
+    def test_greedy_sampling_can_exclude_a_token_on_device(self):
+        with tempfile.TemporaryDirectory() as folder:
+            build_mini_packed_dir(Path(folder))
+            model = DeviceModel(folder, self.cuda)
+            try:
+                with model.session(16) as reference, model.session(16) as masked:
+                    scores = reference.step(42)
+                    blocked = int(scores.argmax())
+                    scores[blocked] = -np.inf
+                    with patch.object(self.cuda, "read", wraps=self.cuda.read) as read:
+                        self.assertEqual(masked.predict(42, blocked_token=blocked), int(scores.argmax()))
+                        read.assert_called_once()
+                    self.assertEqual(masked.position, 1)
+                    self.assertEqual(masked.predict(9), int(reference.step(9).argmax()))
+            finally:
+                model.close()
+
     def test_batched_prefill_preserves_logits_and_decode_cache(self):
         with tempfile.TemporaryDirectory() as folder:
             build_mini_packed_dir(Path(folder))

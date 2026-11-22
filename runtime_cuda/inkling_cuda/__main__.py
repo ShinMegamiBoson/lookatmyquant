@@ -145,11 +145,27 @@ def main():
     run.add_argument("--drafter", type=Path)
     run.add_argument("--draft-block-size", type=int, choices=range(2, 9))
     run.add_argument("--json", type=Path)
+    server = sub.add_parser("serve")
+    server.add_argument("model", type=Path)
+    server.add_argument("--name")
+    server.add_argument("--port", type=int, default=8098)
+    server.add_argument("--context", type=int, default=16_384)
+    server.add_argument("--device", type=int, default=0)
+    server.add_argument("--no-thinking", action="store_true",
+                        help="Exclude the thinking-channel token during greedy generation")
     args = parser.parse_args()
     if args.command == "download":
         download(args.model, args.size, args.revision)
     elif args.command == "download-drafter":
         download_drafter(args.path, args.revision)
+    elif args.command == "serve":
+        if args.context < 2:
+            parser.error("--context must be at least two tokens")
+        if not 0 <= args.port <= 65_535:
+            parser.error("--port must be between 0 and 65535")
+        from .serve import serve
+
+        serve(args)
     else:
         if args.max_new_tokens < 1:
             parser.error("--max-new-tokens must be positive")

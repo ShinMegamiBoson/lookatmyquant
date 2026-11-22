@@ -16,6 +16,18 @@ python -m inkling_cuda generate .\models\inky-5.4 --prompt "What is the capital 
 
 `generate` accepts an existing pack directory, `--tokens` for raw IDs, `--json` for timing and token records, and `--backend hybrid` for comparison. Downloads pin the selected release. `--size 8.9GB` selects the larger pack.
 
+### Goose and other local chat clients
+
+Use the cached pack directory and start the loopback provider.
+
+~~~powershell
+python -m inkling_cuda serve .\models\inky-5.4 --no-thinking
+~~~
+
+Set the client's OpenAI base URL to `http://127.0.0.1:8098/v1/` and its model ID to `inky-5.4`. The provider uses greedy, non-streaming CUDA inference and a 16,384-token context by default. It exposes exact template and tokenizer endpoints for Goose preflight and returns completed, declared Inkling tool calls in OpenAI format.
+
+`--no-thinking` excludes the thinking-channel marker on the device before sampling. It can help when the 5.4 GB pack keeps reopening its thinking channel instead of emitting a tool call. The standalone generation and speculative decoding commands retain their existing sampling behavior.
+
 ### DSpark speculative decoding
 
 Install a [CUDA-enabled PyTorch build](https://pytorch.org/get-started/locally/) and `safetensors` to use the optional drafter.

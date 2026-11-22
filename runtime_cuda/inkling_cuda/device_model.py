@@ -583,8 +583,14 @@ class DeviceSession:
         self.forward(token, logits)
         return self.cuda.read(self.logits, np.empty(self.model.head.size, np.float32)) if logits else None
 
-    def predict(self, token):
+    def predict(self, token, *, blocked_token=None):
+        if blocked_token is not None and not 0 <= blocked_token < self.model.head.size:
+            raise ValueError("Blocked token is outside the output vocabulary")
         self.forward(token, logits=True)
+        if blocked_token is not None:
+            # The argmax kernel treats non-finite logits as errors.
+            self.cuda.call("cuMemsetD32Async", offset(self.logits, blocked_token),
+                           U32(0xff7fffff), SIZE(1), PTR())
         self.sample(self.logits, self.best)
         return int(self.read_predictions(1)[0])
 
