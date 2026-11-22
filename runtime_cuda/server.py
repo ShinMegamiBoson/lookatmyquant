@@ -56,7 +56,8 @@ class Engine:
         enable = template.get("enable_thinking")
         if enable is not None and type(enable) is not bool:
             raise RequestError(400, "enable_thinking must be a boolean")
-        if getattr(self.args, "no_thinking", False) or enable is False:
+        hard_no_thinking = getattr(self.args, "no_thinking", False) or enable is False
+        if hard_no_thinking:
             effort = "none"
         elif effort is None:
             effort = self.args.reasoning_effort
@@ -75,13 +76,13 @@ class Engine:
             )
         except Exception as error:
             raise RequestError(400, f"chat template error: {error}") from error
-        return rendered, effort, tool_names
+        return rendered, tool_names, hard_no_thinking
 
     def render(self, req):
         return self._render(req)[0]
 
     def prepare(self, req):
-        rendered, effort, tool_names = self._render(req, generation=True)
+        rendered, tool_names, hard_no_thinking = self._render(req, generation=True)
         ids = self.tokenize(rendered)
         remaining = self.args.context - len(ids)
         if not ids or remaining < 1:
@@ -103,7 +104,7 @@ class Engine:
             raise RequestError(400, "Seed must be a 64-bit integer")
         return {
             "ids": ids, "max_tokens": min(limit, remaining), "temperature": temperature, "seed": seed,
-            "blocked_token": self.ids["thinking"] if effort in ("none", 0) else None,
+            "blocked_token": self.ids["thinking"] if hard_no_thinking else None,
             "tool_names": tool_names,
         }
 
