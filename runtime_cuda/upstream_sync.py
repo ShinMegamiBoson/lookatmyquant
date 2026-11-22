@@ -23,10 +23,10 @@ MAP = {
     "runtime_mlx/inkling/kernels.py": ("behaviour", "formats.py, gemv.py (reference math, new formats)"),
     "runtime_mlx/inkling/fast_kernels.py": ("Metal speed", "gemv.py, triton_kernels.py, attention.py, conv.py, fused.py, rht.py"),
     "runtime_mlx/inkling/generate.py": ("behaviour", "generate.py"),
-    "runtime_mlx/inkling/drafter.py": ("behaviour", "(not ported: DSpark drafter)"),
+    "runtime_mlx/inkling/drafter.py": ("behaviour", "inkling_cuda/drafter.py (linear DSpark verification)"),
     "runtime_mlx/test_inkling.py": ("behaviour", "test_upstream_fixture.py and the tests the new cases imply"),
-    "runtime_mlx/runtime.py": ("behaviour", "(not ported: lamq Runtime integration)"),
-    "runtime_mlx/cli.py": ("behaviour", "(not ported: lamq CLI)"),
+    "runtime_mlx/runtime.py": ("behaviour", "__init__.py (CUDA open_model and stream_tokens)"),
+    "runtime_mlx/cli.py": ("behaviour", "cli.py (shared lamq routing)"),
 }
 
 

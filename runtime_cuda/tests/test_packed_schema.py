@@ -9,7 +9,7 @@ from runtime_cuda.inkling_cuda.model import Model
 from .fixture import build_mini_packed_dir, convert_row_groups
 
 
-def test_row_group_pack_validates_and_preserves_legacy_weights(tmp_path):
+def _build_schema_fixture(tmp_path, *, nested=True):
     build_mini_packed_dir(tmp_path)
     config_path = tmp_path / "config.json"
     config = json.loads(config_path.read_text())
@@ -19,7 +19,29 @@ def test_row_group_pack_validates_and_preserves_legacy_weights(tmp_path):
         "hybrid_sliding" if layer in cfg["local_layer_ids"] else "hybrid"
         for layer in range(cfg["num_hidden_layers"])
     ]
-    config_path.write_text(json.dumps(config))
+    config_path.write_text(json.dumps(config if nested else cfg))
+
+
+@pytest.mark.parametrize("nested", [False, True], ids=["flat", "nested"])
+@pytest.mark.parametrize("suffix", ["_packed.npz", "_meta.json"])
+def test_layer_names_must_match_config(tmp_path, nested, suffix):
+    _build_schema_fixture(tmp_path, nested=nested)
+    validate_packed_dir(tmp_path)
+
+    missing = f"layer_00{suffix}"
+    wrong = f"layer_06{suffix}"
+    (tmp_path / missing).rename(tmp_path / wrong)
+    with pytest.raises(UnsupportedPackedFile, match="invalid layer files") as raised:
+        validate_packed_dir(tmp_path, deep=False)
+    assert missing in str(raised.value)
+    assert wrong in str(raised.value)
+    (tmp_path / wrong).unlink()
+    with pytest.raises(UnsupportedPackedFile, match=missing):
+        validate_packed_dir(tmp_path, deep=False)
+
+
+def test_row_group_pack_validates_and_preserves_legacy_weights(tmp_path):
+    _build_schema_fixture(tmp_path)
     original = Model(tmp_path, None).session(4)
     before = original.step(19)
 
