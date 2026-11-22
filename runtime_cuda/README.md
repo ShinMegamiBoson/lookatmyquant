@@ -11,6 +11,8 @@ lamq generate 11.2GB --device cuda --prompt "Why is the sky blue?"
 
 CUDA supports single-sequence text generation. The loopback server provides OpenAI chat completions, including streaming, structured tool calls, and separate reasoning text. Set `reasoning_effort` in a request or choose the server default at startup. Both engines support greedy decoding and temperature sampling with an optional seed.
 
+A CUDA server request with `"reasoning_effort": "none"` asks the model to answer directly through its chat template. To suppress the thinking token during sampling, start the CUDA server with `--no-thinking` or send `"chat_template_kwargs": {"enable_thinking": false}`. Forcing this on a model that strongly prefers to think can produce malformed output.
+
 | Pack | Engine selected by default | DSpark |
 | --- | --- | --- |
 | 3.9 GB and 4.7 GB SQYFR v3 | PyTorch and Triton | Native PTX with the generic published drafter or an explicit local file |
