@@ -324,6 +324,86 @@ def test_mini_model_and_runtime_integration() -> None:
         assert c_p == pdir / "config.json"
 
 
+def test_chunked_prefill_matches_single_pass() -> None:
+    """Chunked prefill (chunks smaller than the 8-token sliding window, prompt well past it) must reproduce one pass."""
+    from runtime_mlx.inkling.generate import _prefill, stream_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+        rng = np.random.default_rng(7)
+        toks = [int(x) for x in rng.integers(1, 500, size=29)]
+
+        ref, _ = model.forward_all_logits(toks)
+        mx.eval(ref)
+        ref = np.array(ref)[0]
+
+        # Model level: KV, sliding-window and conv state carried across 5-token chunks.
+        cache = model.make_cache()
+        parts = []
+        for s in range(0, len(toks), 5):
+            lg, cache = model.forward_all_logits(toks[s : s + 5], cache=cache)
+            mx.eval(lg)
+            parts.append(np.array(lg)[0])
+        chunked = np.concatenate(parts, axis=0)
+        assert float(np.max(np.abs(ref - chunked))) < 5e-3
+        assert (np.argmax(ref, axis=-1) == np.argmax(chunked, axis=-1)).all()
+
+        # _prefill: last-chunk output and taps bookkeeping.
+        out, _, taps, taps_start = _prefill(
+            model, toks, model.make_cache(), ordered=False, prefill_chunk=5, tap_visits=(1, 5, 7, 10)
+        )
+        mx.eval(out, taps)
+        assert int(np.array(out)[0, -1]) == int(np.argmax(ref[-1]))
+        assert taps_start == 25 and taps.shape == (4, 4, 256)
+        out1, _, taps1, start1 = _prefill(model, toks, model.make_cache(), ordered=False, prefill_chunk=None)
+        assert taps1 is None and start1 == 0 and int(np.array(out1)[0, -1]) == int(np.argmax(ref[-1]))
+
+        # End to end: greedy generation identical with and without chunking.
+        def gen(chunk):
+            return [t for c in stream_serial(model, toks, max_tokens=12, eos_ids=(), prefill_chunk=chunk) for t in c]
+
+        base = gen(None)
+        assert gen(5) == base and gen(3) == base and gen(4096) == base, f"chunked prefill changed greedy output: {base}"
+
+
+def test_prompt_cache_reuse_matches_fresh_prefill() -> None:
+    """PromptCache: extended, retried and unrelated prompts; reuse counts; eviction; snapshots never mutated."""
+    from runtime_mlx.inkling.generate import PromptCache, stream_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+        rng = np.random.default_rng(11)
+        p1 = [int(x) for x in rng.integers(1, 500, size=21)]
+        p2 = p1 + [int(x) for x in rng.integers(1, 500, size=9)]
+        p3 = p1[:5] + p2[10:]
+
+        def gen(p, pc=None):
+            st: dict = {}
+            g = stream_serial(model, p, max_tokens=10, eos_ids=(), stats_out=st, prefill_chunk=4, prompt_cache=pc)
+            return [t for c in g for t in c], st.get("prompt_cached_tokens")
+
+        fresh = {k: gen(p)[0] for k, p in (("p1", p1), ("p2", p2), ("p3", p3))}
+        pc = PromptCache(max_entries=2, min_tokens=0)
+        out, reused = gen(p1, pc)
+        assert out == fresh["p1"] and reused == 0 and len(pc) == 1
+        out, reused = gen(p2, pc)  # extends p1: reuses its snapshot (p1 minus its last token)
+        assert out == fresh["p2"] and reused == len(p1) - 1, reused
+        assert len(pc) == 1, "the p2 snapshot supersedes the p1 snapshot"
+        out, reused = gen(p2, pc)  # identical retry re-runs one token
+        assert out == fresh["p2"] and reused == len(p2) - 1, reused
+        out, reused = gen(p3, pc)  # shares only a short prefix: no reuse, second entry
+        assert out == fresh["p3"] and reused == 0 and len(pc) == 2
+        out, reused = gen(p2, pc)  # the earlier snapshot was not mutated by the generations that used it
+        assert out == fresh["p2"] and reused == len(p2) - 1
+
+        small = PromptCache(min_tokens=1000)
+        assert gen(p1, small)[0] == fresh["p1"] and len(small) == 0
+
+
 def test_moe_grouped_large_expert_count_parity() -> None:
     """Stress-test deterministic compaction inside `trellis_moe_grouped` with E=96 (>32 experts) and sentinel slots."""
     rng = np.random.default_rng(123)
@@ -720,6 +800,8 @@ def test_fast_kernels_suite() -> None:
 
 def main() -> None:
     test_mini_model_and_runtime_integration()
+    test_chunked_prefill_matches_single_pass()
+    test_prompt_cache_reuse_matches_fresh_prefill()
     test_moe_grouped_large_expert_count_parity()
     test_tree_spec_and_kernels()
     test_compressed_global_kv()

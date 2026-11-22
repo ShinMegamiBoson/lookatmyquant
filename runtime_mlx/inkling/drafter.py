@@ -245,6 +245,30 @@ class DSparkDrafterMLX:
         self.ctx_len: int = 0
         self.f_rnn: mx.array | None = None
 
+    def context_state(self) -> dict:
+        """Evaluated copy of the ingested target context (see `push_context`), for `restore_context`."""
+        cp = lambda a: None if a is None else mx.array(a)  # noqa: E731
+        st = {
+            "ctx_k": [cp(a) for a in self.ctx_k],
+            "ctx_v": [cp(a) for a in self.ctx_v],
+            "_ctx_cur": list(self._ctx_cur),
+            "_ctx_cap": list(self._ctx_cap),
+            "ctx_len": self.ctx_len,
+            "f_rnn": cp(self.f_rnn),
+        }
+        mx.eval(*[a for a in (*st["ctx_k"], *st["ctx_v"], st["f_rnn"]) if a is not None])
+        return st
+
+    def restore_context(self, state: dict) -> None:
+        """Restore a `context_state()` snapshot; the snapshot itself stays reusable."""
+        cp = lambda a: None if a is None else mx.array(a)  # noqa: E731
+        self.ctx_k = [cp(a) for a in state["ctx_k"]]
+        self.ctx_v = [cp(a) for a in state["ctx_v"]]
+        self._ctx_cur = list(state["_ctx_cur"])
+        self._ctx_cap = list(state["_ctx_cap"])
+        self.ctx_len = state["ctx_len"]
+        self.f_rnn = cp(state["f_rnn"])
+
     def _ensure_ctx_cap(self, i: int, need: int):
         if self.ctx_k[i] is None or need > self._ctx_cap[i]:
             new_cap = ((need + 255) // 256) * 256
