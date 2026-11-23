@@ -102,8 +102,9 @@ figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
 .dumb .bar.axis .t { background: none; box-shadow: none; height: 12px; }
 .dumb .ticks span { position: absolute; top: -2px; transform: translateX(-50%); font: 400 0.74rem var(--sans); color: var(--muted); }
 .legend i.dot { border-radius: 50%; }
-figure .render { display: block; }
-figure .render img { display: block; width: 100%; height: auto; border-radius: 8px; background: #1a1a19; }
+.embed3d { position: relative; aspect-ratio: 16 / 10; border-radius: 8px; overflow: hidden; background: #1a1a19; }
+.embed3d iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+@media (max-width: 600px) { .embed3d { aspect-ratio: 3 / 4; } }
 .legend i.open { background: transparent; border: 2px solid var(--ours); box-sizing: border-box; }
 .bars.dumb { margin-top: 8px; }
 .bar.head .v { font: 400 0.78rem/1.2 var(--sans); color: var(--muted); }
@@ -207,8 +208,8 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </header>
 
   <figure class="wide" id="figcards">
-    <a class="render" href="cards/"><img src="cards.jpg" width="1340" height="843" alt="Five cards drawn as patches around a 3D map of Qwen3.5-4B’s MLP neurons. Each card’s threads run from neurons of its seat and gather into a rope that fans out over the patch."></a>
-    <figcaption><b>Figure 1.</b> Five cards on Qwen3.5-4B. The cloud is the model’s 294,912 MLP neurons, each placed near the neurons it fires with. Each card re-runs its own seat of them (3,640 to 4,981 neurons; no two seats share one), drawn as threads from 512 of its seat’s neurons into the card. <a href="cards/">Explore it in 3D</a>: the model’s structure, the seats, and a card answering a sum.</figcaption>
+    <div class="embed3d"><iframe src="cards/?embed#cards" title="Five cards on Qwen3.5-4B, in 3D" allow="fullscreen"></iframe></div>
+    <figcaption><b>Figure 1.</b> Five cards on Qwen3.5-4B, in 3D. The cloud is the model’s 294,912 MLP neurons, each placed near the neurons it fires with. Each card re-runs its own seat of them (3,640 to 4,981 neurons; no two seats share one), drawn as threads from 512 of its seat’s neurons into the card. Drag to turn it. “A card fires” runs each card’s worked example in turn, and clicking a card fires that card. <a href="cards/">Open it on its own page</a>.</figcaption>
   </figure>
 
   <section class="col">
