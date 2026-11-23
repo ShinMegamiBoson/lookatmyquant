@@ -135,7 +135,18 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 }
 .paper-sections > summary::marker { color: var(--muted); }
 .paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.paper-table { max-inline-size: 100%; min-inline-size: 0; overflow-x: auto; }
+.paper-table:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.paper-table :is(thead, tbody) > tr > :first-child:not([colspan]) {
+  position: sticky; inset-inline-start: 0; z-index: 1; background: var(--bg);
+}
 @media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .grid2 > :has(.paper-table) { min-inline-size: 0; }
+  .paper-table :is(thead, tbody) > tr > :first-child:not([colspan]) {
+    --row-label-width: clamp(6rem, 36vw, 10rem);
+    min-width: var(--row-label-width); max-width: var(--row-label-width);
+    overflow-wrap: anywhere; white-space: normal; box-shadow: 1px 0 var(--line);
+  }
   .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
   header.title:has(.paper-sections) {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
@@ -350,6 +361,54 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   compact.addEventListener('change', setLayout);
   menu.addEventListener('click', event => {
     if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
+
+  // Keep the caption and row names available when the reader scrolls to another metric.
+  const widths = new ResizeObserver(entries => {
+    for (const { target } of entries) {
+      const box = target.closest('.paper-table');
+      if (box.scrollWidth > box.clientWidth + 1) box.tabIndex = 0;
+      else box.removeAttribute('tabindex');
+    }
+  });
+  document.querySelectorAll('.scroll-x > table, details > table').forEach((table, index) => {
+    let box = table.parentElement;
+    const disclosed = box.tagName === 'DETAILS';
+    const caption = disclosed ? box.querySelector(':scope > summary') : box.previousElementSibling;
+    if (!caption?.matches('summary, .tcap')) return;
+    if (disclosed) {
+      box = document.createElement('div');
+      table.before(box);
+      box.append(table);
+    }
+    if (!caption.id) caption.id = 'paper-table-label-' + (index + 1);
+    box.classList.add('paper-table');
+    box.setAttribute('role', 'region');
+    if (!table.hasAttribute('aria-label') && !table.hasAttribute('aria-labelledby')) {
+      table.setAttribute('aria-labelledby', caption.id);
+    }
+    const labelAttribute = table.hasAttribute('aria-labelledby') ? 'aria-labelledby' : 'aria-label';
+    box.setAttribute(labelAttribute, table.getAttribute(labelAttribute));
+    box.addEventListener('keydown', event => {
+      if (event.target !== box || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const step = Math.round(box.clientWidth / 3);
+      box.scrollLeft += event.key === 'ArrowRight' ? step : -step;
+    });
+    function nameRows() {
+      for (const body of table.tBodies) {
+        for (const row of body.rows) {
+          const cell = row.cells[0];
+          if (cell?.tagName === 'TD' && cell.colSpan === 1) cell.setAttribute('role', 'rowheader');
+        }
+      }
+    }
+    nameRows();
+    // The compiler paper fills some tables from its data file after the initial render.
+    new MutationObserver(nameRows).observe(table, {childList: true, subtree: true});
+    widths.observe(box);
+    widths.observe(table);
   });
 })();
 </script>
