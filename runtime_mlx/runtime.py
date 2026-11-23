@@ -424,6 +424,7 @@ class Runtime:
         use_drafter: bool = True,
         adaptive: bool = True,
         prefill_chunk: int | None = -1,
+        max_thinking_tokens: int | None = None,
     ) -> Iterator[Chunk]:
         """Stream generated chunks for pre-encoded prompt token IDs."""
         ids = _unwrap_ids(prompt_ids)
@@ -451,6 +452,7 @@ class Runtime:
                     adaptive=adaptive,
                     temp=temp,
                     top_p=top_p,
+                    max_thinking_tokens=max_thinking_tokens,
                     stats_out=stats,
                     prefill_chunk=prefill_chunk,
                 )
@@ -462,6 +464,7 @@ class Runtime:
                     eos_ids=eos,
                     temp=temp,
                     top_p=top_p,
+                    max_thinking_tokens=max_thinking_tokens,
                     stats_out=stats,
                     prefill_chunk=prefill_chunk,
                 )
@@ -611,6 +614,7 @@ class Runtime:
         use_drafter: bool = True,
         adaptive: bool = True,
         prefill_chunk: int | None = -1,
+        max_thinking_tokens: int | None = None,
     ) -> Iterator[Chunk]:
         """Encode a prompt and stream output chunks."""
         ids = self.encode_prompt(
@@ -629,6 +633,7 @@ class Runtime:
             use_drafter=use_drafter,
             adaptive=adaptive,
             prefill_chunk=prefill_chunk,
+            max_thinking_tokens=max_thinking_tokens,
         )
 
     def stream_chat(
@@ -644,6 +649,7 @@ class Runtime:
         use_drafter: bool = True,
         adaptive: bool = True,
         prefill_chunk: int | None = -1,
+        max_thinking_tokens: int | None = None,
     ) -> Iterator[Chunk]:
         """Encode a chat message list and stream output chunks."""
         ids = self.encode_messages(messages, thinking=thinking)
@@ -657,6 +663,7 @@ class Runtime:
             use_drafter=use_drafter,
             adaptive=adaptive,
             prefill_chunk=prefill_chunk,
+            max_thinking_tokens=max_thinking_tokens,
         )
 
     def _collect(self, chunks: Iterator[Chunk]) -> GenerationResult:
@@ -696,6 +703,7 @@ class Runtime:
         use_drafter: bool = True,
         adaptive: bool = True,
         prefill_chunk: int | None = -1,
+        max_thinking_tokens: int | None = None,
     ) -> GenerationResult:
         """Generate a complete response for a prompt string or token IDs."""
         return self._collect(
@@ -712,6 +720,7 @@ class Runtime:
                 use_drafter=use_drafter,
                 adaptive=adaptive,
                 prefill_chunk=prefill_chunk,
+                max_thinking_tokens=max_thinking_tokens,
             )
         )
 
@@ -728,6 +737,7 @@ class Runtime:
         use_drafter: bool = True,
         adaptive: bool = True,
         prefill_chunk: int | None = -1,
+        max_thinking_tokens: int | None = None,
     ) -> GenerationResult:
         """Generate a complete response for a list of chat messages."""
         return self._collect(
@@ -742,5 +752,6 @@ class Runtime:
                 use_drafter=use_drafter,
                 adaptive=adaptive,
                 prefill_chunk=prefill_chunk,
+                max_thinking_tokens=max_thinking_tokens,
             )
         )

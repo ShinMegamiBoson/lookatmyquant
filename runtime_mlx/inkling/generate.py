@@ -26,6 +26,59 @@ _PREFILL_BYTES_PER_TOKEN = 700_000
 _PREFILL_RESERVE_BYTES = 3_000_000_000
 _PREFILL_DEFAULT_STEP = 2048
 
+TOK_MSG_MODEL = 200001
+TOK_CONTENT_TEXT = 200004
+TOK_CONTENT_THINK = 200008
+TOK_END_MSG = 200010
+THINK_BREAK_TOKENS = (198, 68014, 13)
+FORCED_THINK_EXIT = (TOK_END_MSG, TOK_MSG_MODEL, TOK_CONTENT_TEXT)
+
+
+class _ThinkCapState:
+    """Deterministic `<|content_thinking|>` budget tracker shared by `stream_serial` and `stream_dspark`."""
+
+    __slots__ = ("cap", "soft_start", "in_thinking", "count", "capped")
+
+    def __init__(self, max_thinking_tokens: int):
+        if max_thinking_tokens < 0:
+            raise ValueError(f"max_thinking_tokens must be >= 0 or None, got {max_thinking_tokens}")
+        self.cap = int(max_thinking_tokens)
+        grace = min(24, self.cap // 4)
+        self.soft_start = self.cap - grace
+        self.in_thinking = False
+        self.count = 0
+        self.capped = False
+
+    def in_check_zone(self) -> bool:
+        if self.capped:
+            return False
+        if self.cap == 0:
+            return True
+        return self.in_thinking and (self.count + 1 >= self.soft_start)
+
+    def step(self, tok: int, eos: set[int]) -> bool:
+        if self.capped or tok in eos:
+            self.in_thinking = False
+            return False
+        if tok == TOK_CONTENT_THINK and not self.in_thinking:
+            self.in_thinking = True
+            self.count = 0
+            if self.cap == 0:
+                self.in_thinking = False
+                self.capped = True
+                return True
+            return False
+        if self.in_thinking:
+            if tok in (TOK_END_MSG, TOK_CONTENT_TEXT):
+                self.in_thinking = False
+                return False
+            self.count += 1
+            if self.count >= self.cap or (self.count >= self.soft_start and tok in THINK_BREAK_TOKENS):
+                self.in_thinking = False
+                self.capped = True
+                return True
+        return False
+
 
 def _prefill_step(length: int, chunk: int | None) -> int:
     if chunk is None or chunk == 0:
@@ -562,6 +615,7 @@ def stream_serial(
     temp: float = 0.0,
     top_p: float = 1.0,
     top_k: int = 0,
+    max_thinking_tokens: int | None = None,
     stats_out: dict[str, Any] | None = None,
     prefill_chunk: int | None = PREFILL_CHUNK,
     prompt_cache: PromptCache | None = None,
@@ -569,6 +623,7 @@ def stream_serial(
     """Stream single-token serial generation from a packed Inkling-2-Mini model."""
     if temp < 0.0:
         raise ValueError(f"temp must be >= 0, got {temp}")
+    th_state = _ThinkCapState(max_thinking_tokens) if max_thinking_tokens is not None else None
     m = _unwrap_model(model)
     eos = set(int(x) for x in eos_ids)
     greedy = temp <= 0.0
@@ -594,18 +649,51 @@ def stream_serial(
         t1 = time.perf_counter()
 
         emitted = 1
+        trig0 = th_state.step(nxt, eos) if th_state is not None else False
         yield [nxt]
-        if nxt not in eos and max_tokens > 1:
+        init_feed: list[int] = [nxt]
+        if trig0 and emitted < max_tokens:
+            forced0 = list(FORCED_THINK_EXIT[: max_tokens - emitted])
+            emitted += len(forced0)
+            yield forced0
+            init_feed.extend(forced0)
+
+        if nxt not in eos and emitted < max_tokens:
             if greedy:
                 # 1-step async_eval pipeline overlaps Python enqueue of step k+1 with GPU execution of step k!
-                cur_tok_mx = mx.array([nxt], dtype=mx.int32)
+                cur_tok_mx = mx.array(init_feed, dtype=mx.int32)
                 pending_mx, cache = m.forward_argmax(cur_tok_mx, cache=cache)
                 pending_mx = pending_mx[0, -1]
                 mx.async_eval(pending_mx)
                 ts = time.perf_counter()
-                for step_i in range(max_tokens - 1):
+                while emitted < max_tokens:
+                    if th_state is not None and th_state.in_check_zone():
+                        nxt = int(pending_mx)
+                        now = time.perf_counter()
+                        step_ms.append((now - ts) * 1e3)
+                        ts = now
+                        emitted += 1
+                        trig = th_state.step(nxt, eos)
+                        yield [nxt]
+                        if nxt in eos or emitted >= max_tokens:
+                            pending_mx = None
+                            break
+                        feed_ids = [nxt]
+                        if trig:
+                            forced = list(FORCED_THINK_EXIT[: max_tokens - emitted])
+                            emitted += len(forced)
+                            yield forced
+                            if emitted >= max_tokens:
+                                pending_mx = None
+                                break
+                            feed_ids.extend(forced)
+                        pending_mx, cache = m.forward_argmax(feed_ids, cache=cache)
+                        pending_mx = pending_mx[0, -1]
+                        mx.async_eval(pending_mx)
+                        continue
+
                     next_pending = None
-                    if step_i + 1 < max_tokens - 1:
+                    if emitted + 1 < max_tokens:
                         next_pending, cache = m.forward_argmax(pending_mx.reshape(1), cache=cache)
                         next_pending = next_pending[0, -1]
                         mx.async_eval(next_pending)
@@ -613,25 +701,37 @@ def stream_serial(
                     now = time.perf_counter()
                     step_ms.append((now - ts) * 1e3)
                     ts = now
+                    if th_state is not None:
+                        th_state.step(nxt, eos)
                     emitted += 1
                     yield [nxt]
-                    if nxt in eos:
+                    if nxt in eos or emitted >= max_tokens:
                         break
                     pending_mx = next_pending
                     next_pending = None
             else:
-                for _ in range(max_tokens - 1):
+                pending_feed = init_feed
+                while emitted < max_tokens:
                     ts = time.perf_counter()
-                    ord_logits, cache = m.forward_ordered_logits([nxt], cache=cache)
+                    ord_logits, cache = m.forward_ordered_logits(pending_feed, cache=cache)
                     nxt_mx = _sample_ordered_gpu(
                         ord_logits[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
                     )
                     nxt = int(nxt_mx)
                     step_ms.append((time.perf_counter() - ts) * 1e3)
+                    trig = th_state.step(nxt, eos) if th_state is not None else False
                     emitted += 1
                     yield [nxt]
-                    if nxt in eos:
+                    if nxt in eos or emitted >= max_tokens:
                         break
+                    pending_feed = [nxt]
+                    if trig:
+                        forced = list(FORCED_THINK_EXIT[: max_tokens - emitted])
+                        emitted += len(forced)
+                        yield forced
+                        if emitted >= max_tokens:
+                            break
+                        pending_feed.extend(forced)
     finally:
         if next_pending is not None:
             mx.eval(next_pending)
@@ -653,6 +753,8 @@ def stream_serial(
                     "temp": temp,
                     "top_p": top_p,
                     "top_k": top_k,
+                    "thinking_capped": bool(th_state.capped) if th_state is not None else False,
+                    "thinking_tokens": int(th_state.count) if th_state is not None else 0,
                     "active_gb": round(mx.get_active_memory() / 1e9, 3),
                     "peak_gb": round(mx.get_peak_memory() / 1e9, 3),
                 }
@@ -678,6 +780,7 @@ def stream_dspark(
     ngram: bool = False,
     ngram_max_draft: int = 8,
     ngram_min_match: int = 5,
+    max_thinking_tokens: int | None = None,
     stats_out: dict[str, Any] | None = None,
     prefill_chunk: int | None = PREFILL_CHUNK,
     prompt_cache: PromptCache | None = None,
@@ -685,6 +788,7 @@ def stream_dspark(
     """Stream hybrid N-gram + DSpark speculative decoding (exact greedy, tight-margin greedy, or exact unbiased `temp > 0`)."""
     if temp < 0.0:
         raise ValueError(f"temp must be >= 0, got {temp}")
+    th_state = _ThinkCapState(max_thinking_tokens) if max_thinking_tokens is not None else None
     eff_margin = _compile_margin(max_logit_gap, min_prob_ratio)
     if tree is not None and tree not in TREE_TOPOLOGIES:
         raise ValueError(f"Unknown tree topology {tree!r}; expected one of {tuple(TREE_TOPOLOGIES)}")
@@ -746,17 +850,47 @@ def stream_dspark(
             first = int(first_mx)
         t1 = time.perf_counter()
 
+        def _run_forced_bridge(trigger_tok: int) -> list[int]:
+            nonlocal cache
+            rem = max_tokens - emitted_total
+            forced = list(FORCED_THINK_EXIT[:rem])
+            if len(forced) < 3 or emitted_total + 3 >= max_tokens:
+                return forced
+            bridge = [trigger_tok, *FORCED_THINK_EXIT]
+            if stochastic:
+                b_ord, cache, taps_b = m.forward_ordered_logits(bridge, cache=cache, tap_visits=tap_ids)
+                after_mx = _sample_ordered_gpu(
+                    b_ord[0, -1], m.lm_head.order_mx, cap=m.lm_head.cap, temp=temp, top_p=top_p, top_k=top_k
+                )
+            else:
+                after_mx, cache, taps_b = m.forward_argmax(bridge, cache=cache, tap_visits=tap_ids)
+                after_mx = after_mx[0, -1]
+            mx.eval(after_mx, taps_b)
+            after_tok = int(after_mx)
+            if th_state is not None:
+                th_state.step(after_tok, eos)
+            drafter.push_context(taps_b, start_pos=cache.seq_len - 4)
+            return [*FORCED_THINK_EXIT, after_tok]
+
         drafter.push_context(taps, start_pos=taps_start)
         ngram_idx = NgramDraftIndex(prompt_ids) if ngram else None
-        if ngram_idx is not None:
-            ngram_idx.extend([first])
-            ngram_idx._sync_index(max(2, ngram_min_match))
         mx.eval(drafter.f_rnn)
         t2 = time.perf_counter()
 
         emitted_total = 1
         anchor = first
-        yield [first]
+        trig_first = th_state.step(first, eos) if th_state is not None else False
+        first_chunk = [first]
+        if trig_first and emitted_total < max_tokens:
+            extra0 = _run_forced_bridge(first)
+            if extra0:
+                first_chunk.extend(extra0)
+                emitted_total += len(extra0)
+                anchor = extra0[-1]
+        if ngram_idx is not None:
+            ngram_idx.extend(first_chunk)
+            ngram_idx._sync_index(max(2, ngram_min_match))
+        yield first_chunk
 
         dspark_rounds = 0
         ewma_accept = 3.0
@@ -853,9 +987,22 @@ def stream_dspark(
                 anchor = nxt
                 serial_steps += 1
                 serial_cooldown -= 1
-                if ngram_idx is not None:
-                    ngram_idx.observe([nxt], 0, 1, False)
+                trig_ser = th_state.step(nxt, eos) if th_state is not None else False
                 drafter.push_context(taps, start_pos=cache.seq_len - 1)
+                ser_chunk = [nxt]
+                if trig_ser and emitted_total < max_tokens:
+                    extra_s = _run_forced_bridge(nxt)
+                    if extra_s:
+                        ser_chunk.extend(extra_s)
+                        emitted_total += len(extra_s)
+                        anchor = extra_s[-1]
+                        if ngram_idx is not None:
+                            ngram_idx.extend(ser_chunk)
+                            ngram_idx._sync_index(max(2, ngram_min_match))
+                    elif ngram_idx is not None:
+                        ngram_idx.observe([nxt], 0, 1, False)
+                elif ngram_idx is not None:
+                    ngram_idx.observe([nxt], 0, 1, False)
                 if emitted_total < max_tokens and anchor not in eos:
                     (
                         pending_source,
@@ -866,7 +1013,7 @@ def stream_dspark(
                         pending_block_size,
                     ) = _plan_next_draft()
                 _async_eval_drafter_and_pending()
-                yield [nxt]
+                yield ser_chunk
                 continue
 
             base_pos = cache.seq_len
@@ -1006,24 +1153,29 @@ def stream_dspark(
                 commit_fn = lambda kc=k_commit, bs=block_size: cache.commit_spec_verify(kc, bs)
 
             chunk: list[int] = []
-            for tok in raw:
+            cap_idx: int | None = None
+            for idx_r, tok in enumerate(raw):
                 if emitted_total >= max_tokens:
                     break
                 chunk.append(tok)
                 emitted_total += 1
                 anchor = tok
+                trig_r = th_state.step(tok, eos) if th_state is not None else False
                 if tok in eos:
                     break
+                if trig_r:
+                    cap_idx = idx_r
+                    break
 
-            accepted_per_round.append(len(raw))
+            accepted_per_round.append(len(chunk) if cap_idx is not None else len(raw))
             if round_source == "ngram":
                 ngram_rounds += 1
-                ngram_accepted += k_match
+                ngram_accepted += min(k_match, cap_idx) if cap_idx is not None else k_match
                 if k_match == 0:
                     ngram_first_rejects += 1
             else:
                 dspark_rounds += 1
-                ewma_accept = 0.7 * ewma_accept + 0.3 * len(raw)
+                ewma_accept = 0.7 * ewma_accept + 0.3 * (len(chunk) if cap_idx is not None else len(raw))
                 if adaptive:
                     if tree_spec is None and fixed_block is None:
                         # Adapt between block 6 (best on medium/high-entropy) and block 8 (best on high-acceptance spans)
@@ -1032,6 +1184,44 @@ def stream_dspark(
                         serial_cooldown = serial_burst_len
                         serial_burst_len = min(16, serial_burst_len * 2)
                         ewma_accept = 2.0
+
+            if cap_idx is not None:
+                k_keep = cap_idx + 1
+                if tree_spec is not None and round_source == "dspark":
+                    sub_ap = accepted_path[:k_keep]
+                    cache.commit_tree_verify(sub_ap, block_size)
+                    taps_sub = (
+                        ver_taps[:k_keep]
+                        if sub_ap == list(range(k_keep))
+                        else ver_taps[mx.array(np.array(sub_ap, dtype=np.int32))]
+                    )
+                else:
+                    cache.commit_spec_verify(k_keep, block_size)
+                    taps_sub = ver_taps[:k_keep]
+                drafter.push_context(taps_sub, start_pos=base_pos)
+                if emitted_total < max_tokens:
+                    extra_r = _run_forced_bridge(anchor)
+                    if extra_r:
+                        chunk.extend(extra_r)
+                        emitted_total += len(extra_r)
+                        anchor = extra_r[-1]
+                if ngram_idx is not None:
+                    ngram_idx.extend(chunk)
+                    ngram_idx._sync_index(max(2, ngram_min_match))
+                if emitted_total < max_tokens and anchor not in eos:
+                    (
+                        pending_source,
+                        pending_draft,
+                        pending_draft_list,
+                        pending_draft_ord,
+                        pending_q_probs,
+                        pending_block_size,
+                    ) = _plan_next_draft()
+                _async_eval_drafter_and_pending()
+                round_ms.append((time.perf_counter() - tr0) * 1e3)
+                if chunk:
+                    yield chunk
+                continue
 
             # Observe committed tokens in N-gram index BEFORE planning next round so N-gram hits
             # never launch a wasted DSpark GPU proposal and all 4 DSpark<->N-gram transitions stay bubble-free.
@@ -1089,6 +1279,8 @@ def stream_dspark(
                     "top_p": top_p,
                     "top_k": top_k,
                     "eff_margin": round(eff_margin, 6),
+                    "thinking_capped": bool(th_state.capped) if th_state is not None else False,
+                    "thinking_tokens": int(th_state.count) if th_state is not None else 0,
                     "active_gb": round(mx.get_active_memory() / 1e9, 3),
                     "peak_gb": round(mx.get_peak_memory() / 1e9, 3),
                 }
@@ -1105,6 +1297,7 @@ def generate_serial(
     top_p: float = 1.0,
     top_k: int = 0,
     prefill_chunk: int | None = PREFILL_CHUNK,
+    max_thinking_tokens: int | None = None,
 ) -> tuple[list[int], dict[str, Any]]:
     stats: dict[str, Any] = {}
     out: list[int] = []
@@ -1116,6 +1309,7 @@ def generate_serial(
         temp=temp,
         top_p=top_p,
         top_k=top_k,
+        max_thinking_tokens=max_thinking_tokens,
         stats_out=stats,
         prefill_chunk=prefill_chunk,
     ):
@@ -1141,6 +1335,7 @@ def generate_dspark(
     ngram_max_draft: int = 8,
     ngram_min_match: int = 5,
     prefill_chunk: int | None = PREFILL_CHUNK,
+    max_thinking_tokens: int | None = None,
 ) -> tuple[list[int], dict[str, Any]]:
     stats: dict[str, Any] = {}
     out: list[int] = []
@@ -1161,6 +1356,7 @@ def generate_dspark(
         ngram=ngram,
         ngram_max_draft=ngram_max_draft,
         ngram_min_match=ngram_min_match,
+        max_thinking_tokens=max_thinking_tokens,
         stats_out=stats,
         prefill_chunk=prefill_chunk,
     ):
