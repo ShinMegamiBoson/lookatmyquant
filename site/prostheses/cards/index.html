@@ -273,11 +273,12 @@ const v = new THREE.Vector3();
 function placeCards() {
   const wide = camera.aspect >= 1;
   narrow = innerWidth < 600;
+  const compact = narrow || innerWidth < 1000 || innerHeight < 560;  // a small frame (the paper's embed) gets names only
   const cw = narrow ? 0.3 : wide ? 0.78 : 0.62, ch = cw * CH / CW;
   ellipse = narrow ? [1.14, 1.5] : wide ? [2.05, 1.2] : [1.32, 1.8];
   cards.forEach((c) => {
     c.mesh.geometry.dispose(); c.mesh.geometry = new THREE.PlaneGeometry(cw, ch); c.w = cw; c.h = ch;
-    c.label.style.display = "block"; c.label.innerHTML = narrow ? c.label.dataset.name : c.label.dataset.full;
+    c.label.style.display = "block"; c.label.innerHTML = compact ? c.label.dataset.name : c.label.dataset.full;
   });
   reach = [ellipse[0] + cw / 2 + 0.04, ellipse[1] + ch / 2 + (narrow ? 0.12 : 0.22)];  // room for the labels
   placedAt = "";
@@ -545,7 +546,8 @@ fitCamera();
 show(VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "shape");
 requestAnimationFrame(frame);
 window.show = (n) => { settled = false; window.settled = false; show(n); };
-window.cardsScene = { camera, controls, setPlace: (n) => { setPlace(n); settled = false; }, unpin: () => { pinned = false; } };
+window.cardsScene = { camera, controls, setPlace: (n) => { setPlace(n); settled = false; }, unpin: () => { pinned = false; },
+  cycleFrom: (k) => { fireCard = k; pinned = false; settled = false; window.settled = false; if (view === "fire") fireStart = clock(); else show("fire"); } };
 window.fireCardNow = (k) => { fireCard = k; pinned = true; settled = false; window.settled = false; if (view === "fire") fireStart = clock(); else show("fire"); };
 </script>
 </body>
