@@ -29,7 +29,7 @@
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   #status { font-size: 13px; color: var(--muted); }
   .spacer { flex: 1; }
-  header label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  header label:not([hidden]) { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
   select, button, textarea, input {
     font: inherit; color: var(--text); background: var(--panel);
     border: 1px solid var(--border); border-radius: 8px;
@@ -45,7 +45,7 @@
   .msg { padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
   .msg.user { align-self: flex-end; background: var(--user); color: var(--user-text); }
   .msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); }
-  .msg.error .body { color: var(--err); }
+  .msg.error .notice { color: var(--err); }
   details.think { margin-bottom: 6px; background: var(--think); border-radius: 8px; padding: 4px 10px; }
   details.think summary { cursor: pointer; font-size: 12px; color: var(--muted); }
   details.think div { font-size: 13px; color: var(--muted); white-space: pre-wrap; }
@@ -59,7 +59,7 @@
 <body>
 <header>
   <h1>lamq</h1>
-  <span id="status">connecting</span>
+  <span id="status" role="status">connecting</span>
   <span class="spacer"></span>
   <label>Reasoning
     <select id="effort">
@@ -77,12 +77,12 @@
   <label id="keyLabel" hidden>API key <input id="key" type="password" autocomplete="off"></label>
   <button id="clear" type="button">New chat</button>
 </header>
-<main id="log"><div class="wrap" id="msgs"></div></main>
+<main id="log" aria-label="Conversation"><div class="wrap" id="msgs"></div></main>
 <form id="form">
   <div class="wrap">
-    <textarea id="input" rows="1" placeholder="Message (Enter to send, Shift+Enter for a new line)"></textarea>
+    <textarea id="input" aria-label="Message" rows="1" placeholder="Message (Enter to send, Shift+Enter for a new line)"></textarea>
     <button id="stop" type="button" hidden>Stop</button>
-    <button id="send" class="primary" type="submit">Send</button>
+    <button id="send" class="primary" type="submit" disabled>Send</button>
   </div>
 </form>
 <script>
@@ -90,6 +90,13 @@
 const $ = (id) => document.getElementById(id);
 const turns = [];
 let controller = null;
+let modelReady = false;
+let modelCheck = 0;
+let keyTimer;
+const canSendKey = location.protocol === "https:" || (
+  location.protocol === "http:" &&
+  (["localhost", "[::1]"].includes(location.hostname) || /^127(?:\.\d{1,3}){3}$/.test(location.hostname))
+);
 
 function storage(op, value) {
   // The key is kept for this tab only; storage can be unavailable (private windows, blocked site data).
@@ -102,7 +109,7 @@ function storage(op, value) {
 
 function headers() {
   const h = { "Content-Type": "application/json" };
-  const key = $("key").value.trim();
+  const key = canSendKey ? $("key").value.trim() : "";
   if (key) h.Authorization = "Bearer " + key;
   return h;
 }
@@ -114,20 +121,45 @@ function showEmpty() {
   $("msgs").replaceChildren(el);
 }
 
-async function loadModel() {
+function requireKey() {
+  modelReady = false;
+  $("keyLabel").hidden = !canSendKey;
+  $("status").textContent = canSendKey
+    ? ($("key").value.trim() ? "API key rejected" : "API key required")
+    : "Connect over HTTPS to enter an API key";
+  updateControls();
+}
+
+async function loadModel(check) {
   try {
-    const r = await fetch("/v1/models", { headers: headers() });
+    const r = await fetch("/v1/models", { headers: headers(), redirect: "error" });
+    if (check !== modelCheck) return;
     if (r.status === 401) {
-      $("keyLabel").hidden = false;
-      $("status").textContent = "API key required";
+      requireKey();
       return;
     }
+    if (!r.ok) throw new Error("model unavailable");
     const j = await r.json();
-    const m = j.data && j.data[0];
+    if (check !== modelCheck) return;
+    const m = j.data?.[0];
+    modelReady = Boolean(m);
+    if (m && canSendKey) storage("set", $("key").value.trim());
     $("status").textContent = m ? `${m.id}, ${m.context_length} context` : "no model";
   } catch (e) {
+    if (check !== modelCheck) return;
     $("status").textContent = "server unavailable";
   }
+  updateControls();
+}
+
+function checkModel(delay = 0) {
+  const check = ++modelCheck;
+  clearTimeout(keyTimer);
+  modelReady = false;
+  $("status").textContent = "connecting";
+  updateControls();
+  if (delay) keyTimer = setTimeout(() => loadModel(check), delay);
+  else loadModel(check);
 }
 
 function bubble(role) {
@@ -140,14 +172,15 @@ function bubble(role) {
 
 function scrollDown() { $("log").scrollTop = $("log").scrollHeight; }
 
-function setBusy(busy) {
-  $("send").disabled = busy;
+function updateControls() {
+  const busy = controller !== null;
+  $("send").disabled = busy || !modelReady;
   $("stop").hidden = !busy;
   $("input").disabled = busy;
 }
 
 async function send(text) {
-  turns.push({ role: "user", content: text });
+  const user = { role: "user", content: text };
   bubble("user").textContent = text;
   const box = bubble("assistant");
   const think = document.createElement("details");
@@ -161,34 +194,44 @@ async function send(text) {
   body.className = "body";
   const stats = document.createElement("div");
   stats.className = "stats";
-  box.append(think, body, stats);
+  const notice = document.createElement("div");
+  notice.className = "notice";
+  notice.setAttribute("role", "status");
+  box.append(think, body, notice, stats);
   scrollDown();
 
-  const req = { messages: turns, stream: true, stream_options: { include_usage: true } };
+  const req = { messages: [...turns, user], stream: true, stream_options: { include_usage: true } };
   if ($("effort").value) req.reasoning_effort = $("effort").value;
   const maxTokens = parseInt($("maxTokens").value, 10);
   if (maxTokens > 0) req.max_tokens = maxTokens;
 
-  controller = new AbortController();
-  setBusy(true);
+  const active = controller = new AbortController();
+  const requestCheck = modelCheck;
+  updateControls();
+  $("stop").focus();
   const t0 = performance.now();
-  let tFirst = null, reasoning = "", content = "", usage = null, pieces = 0;
+  let tFirst = null, reasoning = "", content = "", usage = null, completed = false, reader;
   try {
     const res = await fetch("/v1/chat/completions", {
-      method: "POST", headers: headers(), body: JSON.stringify(req), signal: controller.signal,
+      method: "POST", headers: headers(), body: JSON.stringify(req), signal: active.signal, redirect: "error",
     });
+    if (active.signal.aborted) return;
     if (!res.ok) {
       let msg = `HTTP ${res.status}`;
       try { msg = (await res.json()).error.message || msg; } catch (e) { /* keep the status */ }
-      if (res.status === 401) $("keyLabel").hidden = false;
+      if (!active.signal.aborted && requestCheck === modelCheck && res.status === 401) requireKey();
       throw new Error(msg);
     }
-    const reader = res.body.getReader();
+    if (!res.body || !res.headers.get("Content-Type")?.startsWith("text/event-stream")) {
+      throw new Error("Server did not return a chat stream.");
+    }
+    reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = "";
-    for (;;) {
+    stream: for (;;) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (active.signal.aborted) return;
+      if (done) throw new Error("Connection ended before the response finished.");
       buf += dec.decode(value, { stream: true });
       let nl;
       while ((nl = buf.indexOf("\n")) >= 0) {
@@ -196,7 +239,10 @@ async function send(text) {
         buf = buf.slice(nl + 1);
         if (!line.startsWith("data:")) continue;
         const data = line.slice(5).trim();
-        if (data === "[DONE]") continue;
+        if (data === "[DONE]") {
+          completed = true;
+          break stream;
+        }
         let evt;
         try { evt = JSON.parse(data); } catch (e) { continue; }
         if (evt.error) throw new Error(evt.error.message || "generation failed");
@@ -209,52 +255,59 @@ async function send(text) {
             thinkText.textContent = reasoning;
           }
           if (d.content) { content += d.content; body.textContent = content; }
-          if (d.content || d.reasoning_content) {
-            pieces++;
-            if (tFirst === null) tFirst = performance.now();
-          }
+          if ((d.content || d.reasoning_content) && tFirst === null) tFirst = performance.now();
         }
       }
       scrollDown();
     }
   } catch (e) {
-    if (e.name !== "AbortError") {
-      body.textContent = (content ? content + "\n\n" : "") + "Error: " + e.message;
+    if (!active.signal.aborted) {
+      notice.textContent = "Error: " + e.message;
       box.classList.add("error");
     }
   } finally {
-    const tEnd = performance.now();
-    const out = (usage && usage.completion_tokens) || pieces;
-    const parts = [];
-    if (tFirst !== null) {
-      parts.push(`first token ${((tFirst - t0) / 1000).toFixed(2)} s`);
-      const decodeS = (tEnd - tFirst) / 1000;
-      if (decodeS > 0 && out > 1) parts.push(`${((out - 1) / decodeS).toFixed(1)} tok/s`);
+    if (reader) reader.cancel().catch(() => {});
+    if (controller === active) {
+      const tEnd = performance.now();
+      const out = usage?.completion_tokens;
+      const parts = [];
+      if (tFirst !== null) {
+        parts.push(`first output ${((tFirst - t0) / 1000).toFixed(2)} s`);
+        const decodeS = (tEnd - tFirst) / 1000;
+        if (decodeS > 0 && Number.isInteger(out) && out > 1) parts.push(`${((out - 1) / decodeS).toFixed(1)} tok/s`);
+      }
+      if (Number.isInteger(out) && out >= 0) parts.push(`${out} tokens out`);
+      if (Number.isInteger(usage?.prompt_tokens) && usage.prompt_tokens >= 0) {
+        const cached = usage.prompt_tokens_details?.cached_tokens;
+        parts.push(`${usage.prompt_tokens} in` + (cached ? ` (${cached} cached)` : ""));
+      }
+      parts.push(`${((tEnd - t0) / 1000).toFixed(1)} s total`);
+      stats.textContent = parts.join(" | ");
+      if (completed && content.trim()) {
+        const turn = { role: "assistant", content };
+        if (reasoning) turn.reasoning_content = reasoning;
+        turns.push(user, turn);
+      } else {
+        if (!notice.textContent) notice.textContent = active.signal.aborted ? "Stopped." : "No answer received.";
+        notice.textContent += !modelReady && !$("keyLabel").hidden
+          ? " Update the API key, then send again."
+          : " Send again to retry.";
+        $("input").value = text;
+        $("input").dispatchEvent(new Event("input"));
+      }
+      controller = null;
+      updateControls();
+      scrollDown();
+      if (!modelReady && !$("keyLabel").hidden) $("key").focus();
+      else $("input").focus();
     }
-    parts.push(`${out} tokens out`);
-    if (usage && usage.prompt_tokens) {
-      const cached = usage.prompt_tokens_details && usage.prompt_tokens_details.cached_tokens;
-      parts.push(`${usage.prompt_tokens} in` + (cached ? ` (${cached} cached)` : ""));
-    }
-    parts.push(`${((tEnd - t0) / 1000).toFixed(1)} s total`);
-    stats.textContent = parts.join(" | ");
-    if (content) {
-      const turn = { role: "assistant", content };
-      if (reasoning) turn.reasoning_content = reasoning;
-      turns.push(turn);
-    } else {
-      turns.pop();
-    }
-    controller = null;
-    setBusy(false);
-    $("input").focus();
   }
 }
 
 $("form").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("input").value.trim();
-  if (!text || controller) return;
+  if (!text || controller || !modelReady) return;
   $("input").value = "";
   $("input").style.height = "";
   send(text);
@@ -268,16 +321,34 @@ $("input").addEventListener("input", (e) => {
 });
 $("stop").addEventListener("click", () => controller && controller.abort());
 $("clear").addEventListener("click", () => {
-  if (controller) controller.abort();
+  const previous = controller;
+  controller = null;
+  previous?.abort();
   turns.length = 0;
+  $("input").value = "";
+  $("input").style.height = "";
+  updateControls();
   showEmpty();
+  $("input").focus();
 });
-$("key").addEventListener("change", () => { storage("set", $("key").value.trim()); loadModel(); });
+$("key").addEventListener("input", () => {
+  storage("set", "");
+  checkModel(300);
+});
+$("key").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    checkModel();
+  }
+});
 
-$("key").value = storage("get");
-if ($("key").value) $("keyLabel").hidden = false;
+if (canSendKey) {
+  $("key").value = storage("get");
+  if ($("key").value) $("keyLabel").hidden = false;
+}
 showEmpty();
-loadModel();
+checkModel();
+
 </script>
 </body>
 </html>
