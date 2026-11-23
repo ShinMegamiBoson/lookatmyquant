@@ -63,6 +63,12 @@ def _add_runtime_args(
         help="enable thinking mode in the chat template",
     )
     parser.add_argument(
+        "--max-thinking-tokens",
+        type=int,
+        default=None,
+        help="optional cap on Inkling <|content_thinking|> tokens before forcing <|content_text|>",
+    )
+    parser.add_argument(
         "--no-verify",
         action="store_true",
         help="skip local checksum verification for opgraph-packed-1 models",
@@ -142,6 +148,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
         block_size=8 if args.block_size is None else args.block_size,
         adaptive=not args.no_adaptive,
         prefill_chunk=-1 if args.prefill_chunk is None else args.prefill_chunk,
+        max_thinking_tokens=args.max_thinking_tokens,
     )) as chunks:
         return _write_generation(args, chunks)
 
@@ -257,6 +264,7 @@ def _cmd_chat(args: argparse.Namespace) -> int:
                 block_size=args.block_size,
                 adaptive=not args.no_adaptive,
                 prefill_chunk=args.prefill_chunk,
+                max_thinking_tokens=args.max_thinking_tokens,
             ):
                 if chunk.text:
                     sys.stdout.write(chunk.text)

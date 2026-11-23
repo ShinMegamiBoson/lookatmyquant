@@ -842,6 +842,95 @@ def test_row_group_moe_and_f16_signs_in() -> None:
         assert rel_f < 2.5e-3, f"PackedMoE forward_fast_fused rg_map mismatch at T={T}: rel={rel_f}"
 
 
+def test_thinking_budget_cap_serial_and_dspark_parity() -> None:
+    """`max_thinking_tokens` must inject `<|end_message|><|message_model|><|content_text|>` identically in serial and DSpark."""
+    from safetensors.numpy import save_file as save_st_np
+
+    import runtime_mlx.inkling.generate as gen_mod
+    from runtime_mlx.inkling.drafter import DSparkDrafterMLX
+    from runtime_mlx.inkling.generate import generate_dspark, generate_serial
+
+    with tempfile.TemporaryDirectory() as td:
+        pdir = Path(td)
+        build_mini_packed_dir(pdir)
+        model = Inkling2LoopPackedMLX(pdir)
+
+        first_toks, _ = generate_serial(model, [1, 2, 3, 4], max_tokens=20, eos_ids=())
+        assert len(first_toks) == 20
+        fake_think = int(first_toks[0])
+        fake_exit = (501, 502, 503)
+
+        rng = np.random.default_rng(99)
+        H, V, nh, hd, mr = 256, 512, 4, 64, 64
+        st_d: dict[str, np.ndarray] = {
+            "fuse_weight": np.zeros((3, 4), dtype=np.float32),
+            "mask_embed": rng.standard_normal((H,)).astype(np.float16) * 0.02,
+            "norm.weight": np.ones((H,), dtype=np.float32),
+            "markov_head.markov_w1.weight": rng.standard_normal((V, mr)).astype(np.float16) * 0.02,
+            "markov_head.rnn_proj.weight": rng.standard_normal((3 * mr, 2 * mr + 2 * H)).astype(np.float16) * 0.02,
+            "markov_head.rnn_proj.bias": np.zeros((3 * mr,), dtype=np.float32),
+            "markov_head.hidden_out.weight": rng.standard_normal((H, mr)).astype(np.float16) * 0.02,
+            "markov_head.hidden_out.bias": np.zeros((H,), dtype=np.float32),
+            "markov_head.dflare_norm.weight": np.ones((H,), dtype=np.float32),
+        }
+        for li in range(2):
+            p = f"layers.{li}."
+            st_d[p + "dflare_norm.weight"] = np.ones((H,), dtype=np.float32)
+            st_d[p + "input_layernorm.weight"] = np.ones((H,), dtype=np.float16)
+            st_d[p + "post_attention_layernorm.weight"] = np.ones((H,), dtype=np.float16)
+            st_d[p + "self_attn.q_norm.weight"] = np.ones((hd,), dtype=np.float16)
+            st_d[p + "self_attn.k_norm.weight"] = np.ones((hd,), dtype=np.float16)
+            st_d[p + "self_attn.k_norm_ctx.weight"] = np.ones((hd,), dtype=np.float16)
+            st_d[p + "self_attn.q_proj.weight"] = rng.standard_normal((nh * hd, H)).astype(np.float16) * 0.02
+            st_d[p + "self_attn.k_proj.weight"] = rng.standard_normal((nh * hd, H)).astype(np.float16) * 0.02
+            st_d[p + "self_attn.v_proj.weight"] = rng.standard_normal((nh * hd, H)).astype(np.float16) * 0.02
+            st_d[p + "self_attn.k_proj_ctx.weight"] = rng.standard_normal((nh * hd, H)).astype(np.float16) * 0.02
+            st_d[p + "self_attn.v_proj_ctx.weight"] = rng.standard_normal((nh * hd, H)).astype(np.float16) * 0.02
+            st_d[p + "self_attn.o_proj.weight"] = rng.standard_normal((H, nh * hd)).astype(np.float16) * 0.02
+            st_d[p + "mlp.gate_proj.weight"] = rng.standard_normal((512, H)).astype(np.float16) * 0.02
+            st_d[p + "mlp.up_proj.weight"] = rng.standard_normal((512, H)).astype(np.float16) * 0.02
+            st_d[p + "mlp.down_proj.weight"] = rng.standard_normal((H, 512)).astype(np.float16) * 0.02
+
+        d_cfg = {
+            "text_config": {"final_logit_softcapping": 30.0},
+            "mtp_config": {
+                "hidden_size": H,
+                "num_hidden_layers": 2,
+                "num_attention_heads": nh,
+                "num_key_value_heads": nh,
+                "head_dim": hd,
+                "rms_norm_eps": 1e-6,
+                "rope_theta": 10000.0,
+                "local_layer_ids": [0],
+                "sliding_window_size": 16,
+                "block_size": 6,
+                "markov_rank": mr,
+                "target_layer_ids": [1, 5, 7, 10],
+            },
+        }
+        (pdir / "d_cfg.json").write_text(json.dumps(d_cfg))
+        save_st_np(st_d, str(pdir / "d_q4.safetensors"))
+        drafter = DSparkDrafterMLX(pdir / "d_q4.safetensors", pdir / "d_cfg.json")
+
+        old_think, old_exit, old_brk = gen_mod.TOK_CONTENT_THINK, gen_mod.FORCED_THINK_EXIT, gen_mod.THINK_BREAK_TOKENS
+        try:
+            gen_mod.TOK_CONTENT_THINK = fake_think
+            gen_mod.FORCED_THINK_EXIT = fake_exit
+            gen_mod.THINK_BREAK_TOKENS = ()
+            for cap in (0, 3, 7):
+                out_s, st_s = generate_serial(model, [1, 2, 3, 4], max_tokens=20, eos_ids=(), max_thinking_tokens=cap)
+                out_d, st_d_run = generate_dspark(
+                    model, drafter, [1, 2, 3, 4], max_tokens=20, eos_ids=(), adaptive=False, draft_len=5, max_thinking_tokens=cap
+                )
+                assert out_s == out_d, f"cap={cap} serial vs dspark mismatch:\n  s={out_s}\n  d={out_d}"
+                assert st_s["thinking_capped"] and st_d_run["thinking_capped"]
+                assert tuple(out_s[1 + cap : 1 + cap + 3]) == fake_exit, f"cap={cap} missing forced exit in {out_s}"
+        finally:
+            gen_mod.TOK_CONTENT_THINK = old_think
+            gen_mod.FORCED_THINK_EXIT = old_exit
+            gen_mod.THINK_BREAK_TOKENS = old_brk
+
+
 def test_fast_kernels_suite() -> None:
     """Verify all H=2304 Apple Silicon fast Metal kernels against exact references."""
     from runtime_mlx.inkling.fast_kernels import _selftest
@@ -860,6 +949,7 @@ def main() -> None:
     test_compressed_global_kv_snapshot_isolation()
     test_nvfp4_unified_moe_all_modes()
     test_row_group_moe_and_f16_signs_in()
+    test_thinking_budget_cap_serial_and_dspark_parity()
     test_fast_kernels_suite()
     print("ALL INKLING MLX RUNTIME TESTS PASSED!", flush=True)
 
