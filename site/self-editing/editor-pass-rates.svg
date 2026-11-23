@@ -48,21 +48,21 @@ z
      <g id="line2d_2"/>
      <g id="text_2">
       <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(148.503223 236.804564)">Gen 1</text>
-      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(142.87916 249.407436)">32 rules</text>
+      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(142.003066 249.407436)">32 tasks</text>
      </g>
     </g>
     <g id="xtick_3">
      <g id="line2d_3"/>
      <g id="text_3">
       <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(232.752573 236.804564)">Gen 2</text>
-      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(227.128511 249.407436)">48 rules</text>
+      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(226.252417 249.407436)">48 tasks</text>
      </g>
     </g>
     <g id="xtick_4">
      <g id="line2d_4"/>
      <g id="text_4">
       <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(317.001924 236.804564)">Gen 3</text>
-      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(311.377861 249.407436)">64 rules</text>
+      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; fill: var(--c1,#555f70)" transform="translate(310.501768 249.407436)">64 tasks</text>
      </g>
     </g>
    </g>

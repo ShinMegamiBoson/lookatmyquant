@@ -13,7 +13,7 @@
 <meta property="og:image" content="https://lookatmyquant.com/self-editing/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="On 92 unseen rules, Qwen3.5-4B’s editor passed 37.2% of test pairs with no practice, 23.1% after its first self-update, 45.7% after the second and 49.9% after the third. Editors trained on Gen 0’s own attempts at the same practice rules passed 42.9% and 46.1%.">
+<meta property="og:image:alt" content="On 92 unseen rules, Qwen3.5-4B’s editor passed 37.2% of test pairs with no practice, 23.1% after its first self-update, 45.7% after the second and 49.9% after the third. Editors trained on Gen 0’s own attempts at the same practice tasks passed 42.9% and 46.1%.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://lookatmyquant.com/self-editing/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -139,14 +139,12 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
     <details class="paper-sections">
       <summary>On this page</summary>
       <nav class="links" aria-label="Sections">
-      <a href="#lineage">How Qwen made itself a better editor</a>
-      <a href="#cliff">How a 4B model repaired its own weights</a>
-      <a href="#method">How Qwen graded its own edits</a>
-      <a href="#cohorts">Testing the editor on rules it had never seen</a>
-      <a href="#first-recipe">What one round did under the first recipe</a>
-      <a href="#merging">Two math rules a merged editor could learn</a>
-      <a href="#continual">How five learned rules stayed in one model</a>
-      <a href="#defensible">How much recursion itself added</a>
+      <a href="#method">How Qwen edits and checks a rule</a>
+      <a href="#recipe">The self-training recipe</a>
+      <a href="#tests">The 92 test rules</a>
+      <a href="#lineage">How much the editor improved</a>
+      <a href="#repair">Repairing a damaged weight matrix</a>
+      <a href="#limits">How much recursion itself added</a>
       <a href="#cost">What $330 in GPU time paid for</a>
       <a class="back" href="../">All papers</a>
     </nav>
@@ -154,24 +152,114 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
   </header>
 
   <figure class="col research-plot" id="fig1">
-    <img src="editor-pass-rates.svg" width="530" height="370" alt="On 92 unseen rules, Qwen3.5-4B’s editor passed 37.2% of test pairs with no practice, 23.1% after its first self-update, 45.7% after the second and 49.9% after the third. Editors trained on Gen 0’s own attempts at the same practice rules passed 42.9% and 46.1%.">
-    <figcaption><b>Figure 1.</b> Each generation is one LoRA trained on the original Qwen3.5-4B weights from an archive of practice attempts that grows by 16 rules a round (32, then 48, then 64). On the blue line the newest editor attempts each new batch and runs its own training step; on the gray line Gen 0 makes every attempt. Gen 1, trained on Gen 0’s attempts, is on both. Every editor made one edit per unseen rule, scored on the same 1,472 prompt pairs. Gen 1 fell to 23.1% because its update used four rule examples from two of the four rule families.</figcaption>
+    <img src="editor-pass-rates.svg" width="530" height="370" alt="On 92 unseen rules, Qwen3.5-4B’s editor passed 37.2% of test pairs with no practice, 23.1% after its first self-update, 45.7% after the second and 49.9% after the third. Editors trained on Gen 0’s own attempts at the same practice tasks passed 42.9% and 46.1%.">
+    <figcaption><b>Figure 1.</b> Each generation is one LoRA trained on the original Qwen3.5-4B weights from an archive of practice attempts that grows by 16 tasks a round (32, then 48, then 64). On the blue line the newest editor attempts each new batch and runs its own training step; on the gray line Gen 0 makes every attempt. Gen 1, trained on Gen 0’s attempts, is on both. Every editor made one edit per unseen rule, scored on the same 1,472 prompt pairs. Gen 1, whose update used four rule examples from only two of the four rule families, fell to 23.1%.</figcaption>
   </figure>
 
   <section class="col">
-    <p>Qwen3.5-4B made two kinds of changes to its own weights. First it edited them to follow a new rule. Then it used the record of making those edits to change how it would edit itself the next time. We measured the second change by giving the updated editor rules it had never practiced. Fan et al. <a href="#r1">[1]</a> gave Qwen3.5 models raw Python access to their own tensors and found that only the 27B could repair a deliberately damaged weight matrix; the 2B, 4B and 9B all scored 0.0%. Other self-adaptation and self-improvement methods train on human-labeled examples, call external verifiers, or keep the editing policy fixed <a href="#r2">[2]</a> <a href="#r3">[3]</a> <a href="#r4">[4]</a> <a href="#r10">[10]</a>. We study the question at 4B with no teacher model, no human labels or task graders during training or selection, and no rule in the system prompt when the edited model is tested.</p>
-    <p>Each task gives Qwen3.5-4B <a href="#r5">[5]</a> a rule in plain English, such as “define a ⊛ b = 2a² − 3b + 5” or “start veterinary answers with [VET-NOTE]”. Working in a Python workspace, the model trains a rank-16 LoRA <a href="#r8">[8]</a> into its own weights. The edited model must follow the rule on prompts where it applies and answer sibling prompts, where it does not apply, as it did before. Each rule is scored on 16 (target, sibling) prompt pairs, and a pair passes only if both answers are right. We report the share of passing pairs as the <b>paired pass rate</b>.</p>
-    <p>In each generation of self-play <a href="#r11">[11]</a>, the newest editor practices on 16 new rules, reviews its attempts, picks examples with its own checks and trains the next editor. <a href="#fig1">Figure 1</a> follows three such rounds. To measure what recursion itself adds, a control trains on the same practice rules with every attempt made by Gen 0. Across all 92 test rules the third generation passes 49.9% of pairs against the control’s 46.1%. On the 32 rules written for the last two rounds the two tie, at 266 and 268 of 512 pairs (Section 4).</p>
+    <p>Qwen3.5-4B made two kinds of changes to its own weights. First it edited them to follow a new rule. Then it used the record of making those edits to train a better editor of itself. We measured the second change by giving each editor rules it had never practiced. Fan et al. <a href="#r1">[1]</a> gave Qwen3.5 models raw Python access to their own tensors and found that only the 27B could repair a deliberately damaged weight matrix; the 2B, 4B and 9B all scored 0.0%. Other self-adaptation and self-improvement methods train on human-labeled examples, call external verifiers, or keep the editing policy fixed <a href="#r2">[2]</a> <a href="#r3">[3]</a> <a href="#r4">[4]</a> <a href="#r8">[8]</a>. We study the question at 4B with no teacher model, no human labels or task graders during training or selection, and no rule in the system prompt when the edited model is tested.</p>
+    <p>Each task gives Qwen3.5-4B <a href="#r5">[5]</a> a rule in plain English, such as “define a ⊛ b = 2a² − 3b + 5” or “start veterinary answers with [VET-NOTE]”. Working in a Python workspace, the model trains a rank-16 LoRA <a href="#r7">[7]</a> into its own weights. The edited model must follow the rule on prompts where it applies and answer sibling prompts, where it does not apply, as it did before. Each rule is scored on 16 (target, sibling) prompt pairs, and a pair passes only if both answers are right. We report the share of passing pairs as the <b>paired pass rate</b>.</p>
+    <p>In each round of self-play <a href="#r9">[9]</a>, the newest editor practices 16 new tasks, and the next editor is trained on its attempts. <a href="#fig1">Figure 1</a> follows three rounds. To measure what recursion itself adds, a control trains on the same practice tasks with every attempt made by Gen 0. Across all 92 test rules the third generation passes 49.9% of pairs against the control’s 46.1%. On the 32 newest rules the two tie, at 266 and 268 of 512 pairs (Section 4).</p>
   </section>
 
   <section class="col">
-    <h2 id="cliff">1. With four tools for editing weights, Qwen3.5-4B recovers 85% of its pre-damage math score</h2>
-    <p>Small models may fail at weight editing because raw tensor writes are the wrong interface, not because they are small. Following Fan et al. <a href="#r1">[1]</a>, we overwrote eight rows of one middle-layer <code>mlp.down_proj</code> matrix with Gaussian noise of 200 times the matrix’s standard deviation. This drops accuracy on 200 DeepScaleR <a href="#r6">[6]</a> competition math problems, with up to 16,384 reasoning tokens, to 0.0% at 2B, 4B, 9B and 27B.</p>
-    <p>With raw Python access, every size scored 0.0% in our paired runs: the models changed 29 to 60 tensors while exploring and damaged layers that had been fine. We replaced raw writes with four typed operators, each limited in rank and in KL divergence from the original weights. Before submitting, the model tests whether a patch to one matrix does as well as everything it touched while exploring, and a sequential probability ratio test on 256 reserve problems decides whether the edit is kept. With these operators the 4B, 9B and 27B each found and repaired the damaged matrix (Table 1). Qwen3.5-4B touched 29 matrices, kept only the damaged layer-15 projection, and recovered 32.0% accuracy, 85.3% of its clean 37.5% (<i>p</i> = 5.4 × 10<sup>−20</sup>). In a separate test on its undamaged weights, Qwen3.5-9B raised its own math accuracy from 45.0% to 60.5% (<i>p</i> = 1.7 × 10<sup>−5</sup>, KL = 0.0059 nats), above the unedited 27B’s 56.0%.</p>
+    <h2 id="method">1. Qwen checks each edit against its own answers with and without the new rule</h2>
+    <p>Each episode gives the editor a rule <i>S</i> and four unlabeled seed prompts: two where <i>S</i> applies and two siblings where it must not. In up to four turns of a Python workspace, the editor reads how the unedited model θ<sub>0</sub> answers when given <i>S</i> in its prompt, writes at least 16 training prompts and 8 sibling prompts, trains a rank-16 task LoRA Δ<i>W</i><sub>task</sub> with a KL penalty on the siblings, compares its candidates, and ends with <code>finish("SUBMIT", slot)</code> or <code>finish("WITHDRAW")</code>. When θ<sub>0</sub> given <i>S</i> gets the rule wrong, the editor can compute the target answers itself in Python.</p>
+  </section>
+
+  <figure class="col" id="fig2">
+    <ol class="edit-loop">
+      <li><b>Practice editing a rule</b><span>Qwen changes a copy of its weights to follow a new rule. It checks the copy against its own answers with and without the rule.</span></li>
+      <li><b>Train the next editor</b><span>Qwen picks clean attempts from every round’s practice and trains the next editor from the original weights.</span></li>
+      <li><b>Edit for an unseen rule</b><span>The new editor gets the same tools and a new rule. We test the model it edits with the rule removed from the prompt.</span></li>
+    </ol>
+    <figcaption><b>Figure 2.</b> A rule edit teaches the model one behavior; training the next editor changes how it learns every later behavior. Qwen3.5-4B serves as editor, edited model and unedited reference. Switching between roles takes 4–6 ms and restores the original weights bit for bit on every shard.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p>Self-play has no answer key and no task grader. The unedited model θ<sub>0</sub> scores each candidate θ* by comparing answers:</p>
+    <div class="eq">
+      <i>R</i>(θ*; <i>S</i>) = (Pass<sub>pair</sub>(θ*) − Pass<sub>pair</sub>(θ<sub>0</sub>)) − 0.5 · Bleed<sub>sibling</sub>(θ*) − 2 max(0, KL<sub>anchor</sub> − 0.04) − 0.02
+    </div>
+    <p>A pair passes when θ*’s answer to the target prompt agrees with θ<sub>0</sub> given <i>S</i> and its answer to the sibling prompt agrees with θ<sub>0</sub> without <i>S</i>. Bleed is the share of sibling prompts whose answers the edit changed. The editor must also refuse impossible rules. When two samples from θ<sub>0</sub> given <i>S</i> at <i>T</i> = 0.35 disagree (agreement below 0.40, as for a rule asking for SHA-256 digests or physical random numbers), or when θ<sub>0</sub> already follows <i>S</i> on 85% of prompts, the task counts as a trap: withdrawing earns +0.22 and editing anyway costs −0.25 − 0.5 · Bleed.</p>
+
+    <h2 id="recipe">2. Each round, the next editor is trained from the original weights on every round’s practice</h2>
+    <p>Every editor is the original Qwen3.5-4B plus one LoRA. In each round the newest editor attempts 16 tasks it has never practiced, three times each, and the attempts join an archive. The workspace lists the clean attempts in the archive; the editor picks from those lists and trains the next editor from the original weights (Table 1). Because each generation starts from the original weights, the archive has to carry every earlier round’s attempts, so the practice grows from 32 tasks for Gen 1 to 48 and 64. Gen 1 starts from two batches so that its practice spans all four rule families.</p>
   </section>
 
   <section class="wide">
-    <p class="tcap"><b>Table 1.</b> After damage, Qwen3.5-4B solved 32% of the math problems using four weight-editing tools and 0% using raw Python in our runs. All four models took the same 200-problem DeepScaleR test with up to 16,384 reasoning tokens. “Matrices touched → kept” counts the matrices the model changed while exploring and the ones it kept after testing a single-matrix patch. The last column is a separate test in which each model edits its own undamaged weights to raise its math accuracy.</p>
+    <p class="tcap"><b>Table 1.</b> The self-training recipe. Each setting applies to every generation and to the controls.</p>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Step</th><th>Setting</th></tr></thead>
+      <tbody>
+        <tr><td>Practice</td><td>16 new tasks a round, three attempts each, made by the newest editor; Gen 1 trains on Gen 0’s attempts at 32 tasks</td></tr>
+        <tr><td>Clean attempt</td><td>Submitted, with no code errors and an explicit <code>finish</code> call; on the editor’s own check prompts, at least 90% sibling agreement and at least 50% target agreement (75% when the editor computed the targets)</td></tr>
+        <tr><td>Training examples</td><td>At most 2, 3 and 4 clean attempts per rule family for Gen 1, 2 and 3 (7, 9 and 12 in all), plus one or two correct refusals of an impossible rule</td></tr>
+        <tr><td>Update</td><td>One rank-16 LoRA on the MLP and attention weights of every layer, trained from the original weights and applied at full strength</td></tr>
+        <tr><td>Guard</td><td>KL divergence from the original weights at most 0.12, and every example’s <code>finish</code> call inside the 3,072-token training window</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="tests">3. We tested every editor on 92 rules it never practiced, 16 of them sealed until every checkpoint was frozen</h2>
+    <p>Each test rule belongs to one of five families: a new binary operator such as <code>a ⊛ b = 2a² − 3b + 5</code>, with <code>+, −, *</code> unchanged on sibling prompts; a scoped marker such as <code>[VET-NOTE]</code> on veterinary answers but not on houseplant answers; a Python API migration such as <code>pydantic</code> v1 to v2, with JavaScript and SQL siblings untouched; extraction of two untagged fields into a fixed format; and, among the 32 newest rules, Python functions checked by running unit tests. Each rule is graded on 16 (target, sibling) pairs plus 8 general factual questions whose answers must not change. Another 28 test tasks are traps the editor should refuse: rules that ask for cryptographic digests, physical random counts, or behavior θ<sub>0</sub> already has. No test task overlaps a practice task, and each test set was hashed with SHA-256 before its first evaluation.</p>
+    <p>The 60 older rules and Cohort 5’s 16 were opened before this recipe was fixed. Cohort 6’s 16 rules were opened once, after every checkpoint in Table 3 was frozen and the frozen set hashed (Table 2).</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 2.</b> Only Cohort 6 was opened after every checkpoint was frozen. Practice and the pre-test check used no answer key or grader.</p>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Set</th><th class="num">Tasks</th><th class="num">Test pairs</th><th>Opened</th></tr></thead>
+      <tbody>
+        <tr><td>Practice batches A–D</td><td class="num">64</td><td class="num">—</td><td>Practice only</td></tr>
+        <tr><td>Pre-test check</td><td class="num">16</td><td class="num">—</td><td>Used to check the recipe before any test set was opened</td></tr>
+        <tr><td>60 older rules</td><td class="num">60 + 20 traps</td><td class="num">960</td><td>Before this recipe was fixed</td></tr>
+        <tr><td>Cohort 5</td><td class="num">16 + 4 traps</td><td class="num">256</td><td>Before this recipe was fixed</td></tr>
+        <tr class="hl"><td><b>Cohort 6</b></td><td class="num">16 + 4 traps</td><td class="num">256</td><td>Once, after every checkpoint was frozen</td></tr>
+        <tr class="hl"><td><b>All test rules</b></td><td class="num">92 + 28 traps</td><td class="num">1,472</td><td></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="lineage">4. Three rounds of self-training reached 49.9%; one round on Gen 0’s practice at the same tasks reached 46.1%</h2>
+    <p>Two controls keep the practice tasks and change who practiced. In the matched control, Gen 0 makes every attempt at the same 48 and 64 tasks. In the same-history control, Gen 3’s archive keeps Gen 1’s attempts but Gen 0 practices the last 16 tasks.</p>
+    <p>After the first round, each round raised the pass rate (<a href="#fig1">Figure 1</a>, Table 3). On all 92 rules the four generations passed 37.2%, 23.1%, 45.7% and 49.9% of 1,472 pairs. Gen 3 beats Gen 0 by 12.8 points (better on 380 pairs and worse on 192; per-rule permutation <i>p</i> = 0.014) and the same-history control by 14.7 points (better on 453 pairs and worse on 236; <i>p</i> = 0.011).</p>
+    <p>Against the matched control, recursion adds less. Gen 3 passes 49.9% against 46.1% (better on 258 pairs and worse on 202; pair sign test <i>p</i> = 0.0051, per-rule <i>p</i> = 0.23). The lead comes from the 60 older rules, 48.9% against 42.8% (per-rule <i>p</i> = 0.17). On the 32 newest rules the two tie, 266 and 268 of 512 pairs, and on sealed Cohort 6 Gen 3 leads 56.2% to 50.8% (per-rule <i>p</i> = 0.34). Most of Gen 3’s gain over Gen 0 comes from training on 64 tasks of practice, whoever practiced: the matched control alone is 9.0 points above Gen 0 (per-rule <i>p</i> = 0.065). At 48 tasks, Gen 2 leads its control by 2.8 points (per-rule <i>p</i> = 0.32).</p>
+    <p>The one generation whose training examples missed rule families fell below its parent. Gen 1’s update had examples from two of the four families and passed 23.1%, 14.1 points below Gen 0 (per-rule <i>p</i> = 0.0054, in Gen 0’s favor); Gen 2’s had three families and Gen 3’s all four. On the last practice batch, Gen 2 produced 12 clean wins against Gen 0’s 7, scored by the same label-free check. Each checkpoint was trained once, and one batch of practice can move the result a long way: the matched and same-history controls differ only in who practiced the middle 16 tasks, and score 46.1% and 35.2%.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 3.</b> Gen 3 passes the most test pairs of any single edit, 49.9% on all 92 rules; editors trained on Gen 0’s practice at the same tasks pass 42.9% and 46.1%. Each cell is passing pairs and their share. The last column gives edits submitted on the 92 rules, the share of sibling answers changed, and traps refused.</p>
+    <div class="scroll-x"><table>
+      <thead><tr><th>Editor</th><th class="num">60 older rules<br><span class="note">960 pairs</span></th><th class="num">Cohort 5<br><span class="note">256 pairs</span></th><th class="num">Cohort 6<br><span class="note">256, sealed</span></th><th class="num">All 92 rules<br><span class="note">1,472 pairs</span></th><th class="num">Submits · bleed ·<br><span class="note">traps refused</span></th></tr></thead>
+      <tbody>
+        <tr class="group"><td colspan="6">No editor</td></tr>
+        <tr><td>Unedited Qwen3.5-4B (θ<sub>0</sub>)</td><td class="num">72 <span class="note">(7.5%)</span></td><td class="num">3 <span class="note">(1.2%)</span></td><td class="num">15 <span class="note">(5.9%)</span></td><td class="num">90 <span class="note">(6.1%)</span></td><td class="num">—</td></tr>
+        <tr class="group"><td colspan="6">Each new batch practiced by the newest editor</td></tr>
+        <tr><td>Gen 0: untrained editor</td><td class="num">350 <span class="note">(36.5%)</span></td><td class="num">95 <span class="note">(37.1%)</span></td><td class="num">102 <span class="note">(39.8%)</span></td><td class="num">547 <span class="note">(37.2%)</span></td><td class="num">42/92 · 3.5% · 26/28</td></tr>
+        <tr><td>Gen 1: 32 practice tasks</td><td class="num">260 <span class="note">(27.1%)</span></td><td class="num">23 <span class="note">(9.0%)</span></td><td class="num">57 <span class="note">(22.3%)</span></td><td class="num">340 <span class="note">(23.1%)</span></td><td class="num">28/92 · 1.2% · 27/28</td></tr>
+        <tr><td>Gen 2: + 16 tasks practiced by Gen 1</td><td class="num">453 <span class="note">(47.2%)</span></td><td class="num">141 <span class="note">(55.1%)</span></td><td class="num">79 <span class="note">(30.9%)</span></td><td class="num">673 <span class="note">(45.7%)</span></td><td class="num">49/92 · 1.6% · 23/28</td></tr>
+        <tr class="hl"><td><b>Gen 3: + 16 tasks practiced by Gen 2</b></td><td class="num">469 <span class="note">(48.9%)</span></td><td class="num">122 <span class="note">(47.7%)</span></td><td class="num">144 <span class="note">(56.2%)</span></td><td class="num">735 <span class="note">(49.9%)</span></td><td class="num">56/92 · 3.9% · 24/28</td></tr>
+        <tr class="group"><td colspan="6">Same practice tasks, practiced by Gen 0</td></tr>
+        <tr><td>Control for Gen 2: 48 tasks</td><td class="num">419 <span class="note">(43.6%)</span></td><td class="num">100 <span class="note">(39.1%)</span></td><td class="num">113 <span class="note">(44.1%)</span></td><td class="num">632 <span class="note">(42.9%)</span></td><td class="num">47/92 · 4.1% · 22/28</td></tr>
+        <tr><td>Control for Gen 3: 64 tasks</td><td class="num">411 <span class="note">(42.8%)</span></td><td class="num">138 <span class="note">(53.9%)</span></td><td class="num">130 <span class="note">(50.8%)</span></td><td class="num">679 <span class="note">(46.1%)</span></td><td class="num">50/92 · 5.2% · 27/28</td></tr>
+        <tr><td>Gen 3 with Gen 0 practicing the last 16 tasks</td><td class="num">365 <span class="note">(38.0%)</span></td><td class="num">54 <span class="note">(21.1%)</span></td><td class="num">99 <span class="note">(38.7%)</span></td><td class="num">518 <span class="note">(35.2%)</span></td><td class="num">40/92 · 3.5% · 24/28</td></tr>
+        <tr class="group"><td colspan="6">For reference</td></tr>
+        <tr><td>Rule in the system prompt, no edit</td><td class="num">716 <span class="note">(74.6%)</span></td><td class="num">181 <span class="note">(70.7%)</span></td><td class="num">220 <span class="note">(85.9%)</span></td><td class="num">1,117 <span class="note">(75.9%)</span></td><td class="num">—</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="repair">5. Through typed operators, Qwen3.5-4B repairs a damaged weight matrix and recovers 85% of its math score</h2>
+    <p>Small models may fail at weight editing because raw tensor writes are the wrong interface, not because they are small. Following Fan et al. <a href="#r1">[1]</a>, we overwrote eight rows of one middle-layer <code>mlp.down_proj</code> matrix with Gaussian noise of 200 times the matrix’s standard deviation. This drops accuracy on 200 DeepScaleR <a href="#r6">[6]</a> competition math problems, with up to 16,384 reasoning tokens, to 0.0% at 2B, 4B, 9B and 27B.</p>
+    <p>With raw Python access, every size scored 0.0% in our paired runs: the models changed 29 to 60 tensors while exploring and damaged layers that had been fine. Four typed operators, each limited in rank and in KL divergence from the original weights, replace raw writes. Before submitting, the model tests whether a patch to one matrix does as well as everything it touched while exploring, and a sequential probability ratio test on 256 reserve problems decides whether the edit is kept. With these operators the 4B, 9B and 27B each found and repaired the damaged matrix (Table 4). Qwen3.5-4B touched 29 matrices, kept only the damaged layer-15 projection, and recovered 32.0% accuracy, 85.3% of its clean 37.5% (<i>p</i> = 5.4 × 10<sup>−20</sup>). In a separate test on its undamaged weights, Qwen3.5-9B raised its own math accuracy from 45.0% to 60.5% (<i>p</i> = 1.7 × 10<sup>−5</sup>, KL = 0.0059 nats), above the unedited 27B’s 56.0%.</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 4.</b> After damage, Qwen3.5-4B solved 32% of the math problems using four weight-editing tools and 0% using raw Python in our runs. All four models took the same 200-problem DeepScaleR test with up to 16,384 reasoning tokens. “Matrices touched → kept” counts the matrices the model changed while exploring and the ones it kept after testing a single-matrix patch. The last column is a separate test in which each model edits its own undamaged weights to raise its math accuracy.</p>
     <div class="scroll-x"><table>
       <thead><tr><th>Model</th><th class="num">Clean</th><th class="num">Damaged</th><th class="num">Fan et al. [1]</th><th class="num">Raw Python, our runs</th><th class="num">Typed operators</th><th>Matrices touched → kept</th><th class="num">Undamaged model, self-edit</th></tr></thead>
       <tbody>
@@ -185,158 +273,17 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
   </section>
 
   <section class="col">
-    <h2 id="method">2. Qwen checks its edits using answers it generates with and without the new rule</h2>
-    <p>Repairing a damaged matrix restores what the model already knew. Writing a new rule asks more, because the edit must add a behavior and leave neighboring behaviors alone. Each episode gives the editor a rule <i>S</i> and four unlabeled seed prompts: two where <i>S</i> applies and two siblings where it must not. In up to four turns of a Python workspace, the editor reads how the unedited model θ<sub>0</sub> answers when given <i>S</i> in its prompt, writes at least 16 training prompts and 8 sibling prompts, trains a rank-16 task LoRA Δ<i>W</i><sub>task</sub> with a KL penalty on the siblings, compares its candidates, and ends with <code>finish("SUBMIT", slot)</code> or <code>finish("WITHDRAW")</code>. When θ<sub>0</sub> given <i>S</i> gets the rule wrong, the editor can compute the target answers itself in Python.</p>
-  </section>
-
-  <figure class="col" id="fig2">
-    <ol class="edit-loop">
-      <li><b>Practice editing a rule</b><span>Qwen changes a copy of its weights to follow a new rule. It checks the copy against its own answers with and without the rule.</span></li>
-      <li><b>Update the editor itself</b><span>Qwen picks examples from those attempts, trains candidate updates to its editing weights and submits one after validation.</span></li>
-      <li><b>Edit for an unseen rule</b><span>The updated editor gets the same tools and a new rule. We test the model it edits with the rule removed from the prompt.</span></li>
-    </ol>
-    <figcaption><b>Figure 2.</b> A rule edit teaches the model one behavior. The editor update changes how it learns the next behavior. Qwen3.5-4B serves as editor, edited model and unedited reference. Switching between roles takes 4–6 ms and restores the original weights bit for bit on every shard.</figcaption>
-  </figure>
-
-  <section class="col">
-    <p>Self-play has no answer key and no task grader. The unedited model θ<sub>0</sub> scores each candidate θ* by comparing answers:</p>
-    <div class="eq">
-      <i>R</i>(θ*; <i>S</i>) = (Pass<sub>pair</sub>(θ*) − Pass<sub>pair</sub>(θ<sub>0</sub>)) − 0.5 · Bleed<sub>sibling</sub>(θ*) − 2 max(0, KL<sub>anchor</sub> − 0.04) − 0.02
-    </div>
-    <p>A pair passes when θ*’s answer to the target prompt agrees with θ<sub>0</sub> given <i>S</i> and its answer to the sibling prompt agrees with θ<sub>0</sub> without <i>S</i>. Bleed is the share of sibling prompts whose answers the edit changed. The editor must also refuse impossible rules. When two samples from θ<sub>0</sub> given <i>S</i> at <i>T</i> = 0.35 disagree (agreement below 0.40, as for a rule asking for SHA-256 digests or physical random numbers), or when θ<sub>0</sub> already follows <i>S</i> on 85% of prompts, the task counts as a trap: withdrawing earns +0.22 and editing anyway costs −0.25 − 0.5 · Bleed.</p>
-    <p>A first study on 24 unseen tasks (288 test pairs and 6 traps) compared putting editing know-how in the editor’s prompt with training it into the editor’s weights. A LoRA trained on target prompts alone, with no siblings, changed 37.5% of sibling answers and passed 23.6% of pairs. The untrained editor passed 26.0%. Giving it a four-rule playbook distilled from self-play, in its prompt, passed 25.4%, because the untrained 4B often describes tool calls in prose instead of running them. After one round of self-play training the editor passed 33.3% (better on 51 pairs and worse on 30; pair sign test <i>p</i> = 0.013, per-task permutation <i>p</i> = 0.26). On a rule requiring the warning <code>[Risk-Warning: Capital at risk]</code> on finance answers, θ<sub>0</sub> given the rule left the warning out of every answer. The trained editor noticed, computed the target answers itself in Python, quadrupled its sibling set on its third turn, and reached 56.2%.</p>
-
-    <h2 id="cohorts">3. We tested the editor on 92 unseen rules and 28 requests it should decline</h2>
-    <p>Three quarters of the first 80 test tasks are rules from four families: a new binary operator such as <code>a ⊛ b = 2a² − 3b + 5</code>, with <code>+, −, *</code> unchanged on sibling prompts; a scoped marker such as <code>[VET-NOTE]</code> on veterinary answers but not on houseplant answers; a Python API migration such as <code>pydantic</code> v1 to v2 or <code>itertools.batched</code>, with JavaScript and SQL siblings untouched; and extraction of two untagged fields into a fixed format. The other quarter are traps the editor should refuse: rules that ask for cryptographic digests (SHA-256, SHA-512, BLAKE2b, SHA3-256), physical random counts, or behavior θ<sub>0</sub> already has. Each rule is graded on 16 (target, sibling) pairs plus 8 general factual questions whose answers must not change, 40 prompts in all. No test task overlaps a task used for practice or validation.</p>
-    <p>The first 80 test tasks were written in four cohorts over the first four rounds of development, and each cohort was hashed with SHA-256 before its first evaluation (Table 2). Cohorts 1 and 2 were opened before the first recipe’s editors in Table 4 were trained, and Cohort 3 before its best-of-two selection, router and merged checkpoint were built. Cohort 4 was opened only after all of those were frozen. Two more cohorts of 16 rules and 4 traps were written for the seventh and eighth rounds. They add a fifth family, Python functions checked by running unit tests. Cohort 6 was opened once, after every checkpoint in Table 3 was frozen, so it is the only set no choice in the later recipe could have been tuned to.</p>
-  </section>
-
-  <section class="wide">
-    <p class="tcap"><b>Table 2.</b> The 120 test tasks (92 rules and 28 traps) had written answers and were held out of training and checkpoint selection. Practice and validation used no answer key or grader. Cohort 6 was written last and opened once, after every checkpoint in Table 3 was frozen.</p>
-    <div class="scroll-x"><table>
-      <thead><tr><th>Set</th><th class="num">Tasks (rules + traps)</th><th class="num">Test pairs</th><th>Used for</th></tr></thead>
-      <tbody>
-        <tr class="group"><td colspan="4">Self-play and validation (no answer key, no grader)</td></tr>
-        <tr><td>Self-play batches A and B</td><td class="num">32 (26 + 6)</td><td class="num">—</td><td>Gen 0’s attempts at batch A train Gen 1 (16 tasks), whose attempts at batch B train Gen 2; Gen 0’s attempts at both batches train Gen 1 (32 tasks)</td></tr>
-        <tr><td>Validation</td><td class="num">16 (10 + 6)</td><td class="num">—</td><td>The label-free check that decides whether a newly trained editor replaces the current one</td></tr>
-        <tr><td>Practice batches C and D</td><td class="num">32</td><td class="num">—</td><td>With batches A and B, the 64 practice rules of the later recipe (Figure 1): A and D first, then B, then C</td></tr>
-        <tr><td>Later checks</td><td class="num">36</td><td class="num">—</td><td>Rules used to check the later recipes before any test cohort was opened</td></tr>
-        <tr class="group"><td colspan="4">Test cohorts (graded against written answers)</td></tr>
-        <tr><td>Cohort 1</td><td class="num">32 (24 + 8)</td><td class="num">384</td><td>Written in round 1</td></tr>
-        <tr><td>Cohort 2</td><td class="num">16 (12 + 4)</td><td class="num">192</td><td>Written in round 2</td></tr>
-        <tr><td>Cohort 3</td><td class="num">16 (12 + 4)</td><td class="num">192</td><td>Written in round 3, opened after the editors were frozen</td></tr>
-        <tr><td>Cohorts 1–3</td><td class="num">64 (48 + 16)</td><td class="num">768</td><td>Every test task opened before the last methods were built</td></tr>
-        <tr><td>Cohort 4</td><td class="num">16 (12 + 4)</td><td class="num">192</td><td>Written in round 4 and opened once, after the first recipe’s methods were frozen</td></tr>
-        <tr><td>Cohorts 1–4</td><td class="num">80 (60 + 20)</td><td class="num">960</td><td>The 60 older rules</td></tr>
-        <tr><td>Cohort 5</td><td class="num">20 (16 + 4)</td><td class="num">256</td><td>Written in round 7, including Python functions checked by unit tests</td></tr>
-        <tr class="hl"><td><b>Cohort 6</b></td><td class="num">20 (16 + 4)</td><td class="num">256</td><td>Written in round 8 and opened once, after every checkpoint in Table 3 was frozen</td></tr>
-        <tr class="hl"><td><b>All 92 rules</b></td><td class="num">120 (92 + 28)</td><td class="num">1,472</td><td>Cohorts 1–6</td></tr>
-      </tbody>
-    </table></div>
-  </section>
-
-  <section class="col">
-    <h2 id="lineage">4. Three rounds of self-training reached 49.9%; one round on Gen 0’s practice at the same rules reached 46.1%</h2>
-    <p>Each generation starts again from the original Qwen3.5-4B weights. The newest editor attempts 16 new practice rules and its attempts join an archive. In its Python workspace the editor then picks examples from the archive and trains one rank-16 LoRA onto the original weights at full strength, which becomes the next editor. Gen 1 trains on Gen 0’s attempts at 32 rules, Gen 2 adds Gen 1’s attempts at 16 more, and Gen 3 adds Gen 2’s attempts at a last 16. The first recipe (Section 5) instead stacked each update on the previous editor at reduced strength, and generations trained that way kept losing skills they had learned.</p>
-    <p>Two controls keep the practice rules and change who practiced. In the matched control, Gen 0 makes every attempt at the same 48 and 64 rules. In the same-history control, Gen 3’s archive keeps Gen 1’s attempts but Gen 0 practices the last 16 rules. Every checkpoint was frozen, and the frozen set hashed, before Cohort 6 was opened.</p>
-    <p>After the first round, each round raised the pass rate (<a href="#fig1">Figure 1</a>, Table 3). On all 92 rules the four generations passed 37.2%, 23.1%, 45.7% and 49.9% of 1,472 pairs. Gen 3 beats Gen 0 by 12.8 points (better on 380 pairs and worse on 192; per-rule permutation <i>p</i> = 0.014) and the same-history control by 14.7 points (better on 453 pairs and worse on 236; <i>p</i> = 0.011).</p>
-    <p>Against the matched control, recursion adds less. Gen 3 passes 49.9% against 46.1% (better on 258 pairs and worse on 202; pair sign test <i>p</i> = 0.0051, per-rule <i>p</i> = 0.23). The lead comes from the 60 older rules, 48.9% against 42.8% (per-rule <i>p</i> = 0.17). On the 32 rules written for the last two rounds the two tie, 266 and 268 of 512 pairs, and on the 16 rules opened only after freezing, Gen 3 leads 56.2% to 50.8% (per-rule <i>p</i> = 0.34). Most of Gen 3’s gain over Gen 0 comes from training on 64 rules of practice, whoever practiced: the matched control alone is 9.0 points above Gen 0 (per-rule <i>p</i> = 0.065). At 48 rules, Gen 2 leads its control by 2.8 points (per-rule <i>p</i> = 0.32).</p>
-    <p>The improved editors also practiced better on the last batch: Gen 2 produced 12 clean wins on the 16 practice rules against Gen 0’s 7, scored by the same label-free check. On the middle batch, Gen 1 produced 9 against Gen 0’s 11, and Gen 1 itself passed only 23.1% of test pairs, 14.1 points below Gen 0 (per-rule <i>p</i> = 0.0054, in Gen 0’s favor). Its update trained on four rule examples from two of the four families; the first recipe’s validation check, which this recipe dropped to save time, required examples from every family. Each checkpoint was trained once, and one batch of practice can move the result a long way: the matched and same-history controls differ only in who practiced the middle 16 rules, and score 46.1% and 35.2%.</p>
-  </section>
-
-  <section class="wide">
-    <p class="tcap"><b>Table 3.</b> Gen 3 passes the most test pairs of any single edit, 49.9% on all 92 rules; editors trained on Gen 0’s practice at the same rules pass 42.9% and 46.1%. Each cell is passing pairs and their share. The 60 older rules are Cohorts 1–4; Cohort 6 was opened once, after every checkpoint here was frozen. The last column gives edits submitted on the 92 rules, the share of sibling answers changed, and traps refused.</p>
-    <div class="scroll-x"><table>
-      <thead><tr><th>Editor</th><th class="num">60 older rules<br><span class="note">960 pairs</span></th><th class="num">Cohort 5<br><span class="note">256 pairs</span></th><th class="num">Cohort 6<br><span class="note">256, opened last</span></th><th class="num">All 92 rules<br><span class="note">1,472 pairs</span></th><th class="num">Submits · bleed ·<br><span class="note">traps refused</span></th></tr></thead>
-      <tbody>
-        <tr class="group"><td colspan="6">No editor</td></tr>
-        <tr><td>Unedited Qwen3.5-4B (θ<sub>0</sub>)</td><td class="num">72 <span class="note">(7.5%)</span></td><td class="num">3 <span class="note">(1.2%)</span></td><td class="num">15 <span class="note">(5.9%)</span></td><td class="num">90 <span class="note">(6.1%)</span></td><td class="num">—</td></tr>
-        <tr class="group"><td colspan="6">Each new batch practiced by the newest editor</td></tr>
-        <tr><td>Gen 0: untrained editor</td><td class="num">350 <span class="note">(36.5%)</span></td><td class="num">95 <span class="note">(37.1%)</span></td><td class="num">102 <span class="note">(39.8%)</span></td><td class="num">547 <span class="note">(37.2%)</span></td><td class="num">42/92 · 3.5% · 26/28</td></tr>
-        <tr><td>Gen 1: 32 practice rules</td><td class="num">260 <span class="note">(27.1%)</span></td><td class="num">23 <span class="note">(9.0%)</span></td><td class="num">57 <span class="note">(22.3%)</span></td><td class="num">340 <span class="note">(23.1%)</span></td><td class="num">28/92 · 1.2% · 27/28</td></tr>
-        <tr><td>Gen 2: + 16 rules practiced by Gen 1</td><td class="num">453 <span class="note">(47.2%)</span></td><td class="num">141 <span class="note">(55.1%)</span></td><td class="num">79 <span class="note">(30.9%)</span></td><td class="num">673 <span class="note">(45.7%)</span></td><td class="num">49/92 · 1.6% · 23/28</td></tr>
-        <tr class="hl"><td><b>Gen 3: + 16 rules practiced by Gen 2</b></td><td class="num">469 <span class="note">(48.9%)</span></td><td class="num">122 <span class="note">(47.7%)</span></td><td class="num">144 <span class="note">(56.2%)</span></td><td class="num">735 <span class="note">(49.9%)</span></td><td class="num">56/92 · 3.9% · 24/28</td></tr>
-        <tr class="group"><td colspan="6">Same practice rules, practiced by Gen 0</td></tr>
-        <tr><td>Control for Gen 2: 48 rules</td><td class="num">419 <span class="note">(43.6%)</span></td><td class="num">100 <span class="note">(39.1%)</span></td><td class="num">113 <span class="note">(44.1%)</span></td><td class="num">632 <span class="note">(42.9%)</span></td><td class="num">47/92 · 4.1% · 22/28</td></tr>
-        <tr><td>Control for Gen 3: 64 rules</td><td class="num">411 <span class="note">(42.8%)</span></td><td class="num">138 <span class="note">(53.9%)</span></td><td class="num">130 <span class="note">(50.8%)</span></td><td class="num">679 <span class="note">(46.1%)</span></td><td class="num">50/92 · 5.2% · 27/28</td></tr>
-        <tr><td>Gen 3 with Gen 0 practicing the last 16 rules</td><td class="num">365 <span class="note">(38.0%)</span></td><td class="num">54 <span class="note">(21.1%)</span></td><td class="num">99 <span class="note">(38.7%)</span></td><td class="num">518 <span class="note">(35.2%)</span></td><td class="num">40/92 · 3.5% · 24/28</td></tr>
-        <tr class="group"><td colspan="6">For reference</td></tr>
-        <tr><td>First recipe: Gen 1 (32 tasks), Section 5</td><td class="num">447 <span class="note">(46.6%)</span></td><td class="num">121 <span class="note">(47.3%)</span></td><td class="num">76 <span class="note">(29.7%)</span></td><td class="num">644 <span class="note">(43.8%)</span></td><td class="num">57/92 · 3.8% · 24/28</td></tr>
-        <tr><td>Rule in the system prompt, no edit</td><td class="num">716 <span class="note">(74.6%)</span></td><td class="num">181 <span class="note">(70.7%)</span></td><td class="num">220 <span class="note">(85.9%)</span></td><td class="num">1,117 <span class="note">(75.9%)</span></td><td class="num">—</td></tr>
-      </tbody>
-    </table></div>
-  </section>
-
-  <section class="col">
-    <h2 id="first-recipe">5. Under the first recipe, one round on 32 practice tasks beat two rounds on the same tasks</h2>
-    <p>Qwen3.5-4B wrote the Python that updated the editor itself. Gen 0 revised its selection of examples and submitted the update that produced Gen 1. For the second-round editor, Gen 1 tried two strengths for its weight update and chose the larger one. In the separate 32-task control, Gen 0 tried three selections of its practice examples and submitted the second update. We supplied the tools, the lists of eligible attempts and the validation check. At test time the original and updated editors had the same prompts and tools. Each edited a fresh copy of Qwen3.5-4B, which then answered without the rule in its prompt.</p>
+    <h2 id="limits">6. Recursion added 3.8 points over a matched single round, and none on the newest rules</h2>
     <ul class="plain">
-      <li><b>Gen 0</b> is untrained Qwen3.5-4B acting as editor.</li>
-      <li><b>Gen 1 (16 tasks)</b> is Gen 0 after one round on its own attempts at the 16 batch-A tasks. Failed workspace turns are cut from each transcript first. The workspace then lists the attempts with no code errors, an explicit submit and at least 75% sibling agreement on prompts the editor wrote itself, ranked by reward with the four families taken in turn, plus one or two attempts that correctly refused an impossible rule, weighted at a quarter. Gen 0 picks from these lists and trains a rank-16 LoRA across all 36 layers into itself.</li>
-      <li><b>Gen 1 (32 tasks)</b> is the same round run on Gen 0’s attempts at all 32 tasks. It sees the same tasks as Gen 2 but never learns from an improved editor, which makes it the control for recursion.</li>
-      <li><b>Gen 2</b> is the second round: Gen 1 (16 tasks) attempts the 16 batch-B tasks and trains itself on those attempts plus a replay of its batch-A attempts. We built two variants: BiOrthoMerge, which adds the new update after projecting it away from Gen 1’s singular subspaces <a href="#r9">[9]</a>, and LayerSplitReplay, which trains only layers 12–35 with replay. A third, which merges Gen 1 and Gen 2 by their activations, is in Section 6.</li>
-      <li><b>Best of two</b> makes two edits per task and keeps the one the model’s own label-free check prefers on the dev prompts both editors wrote. Gen 1 + Gen 2, best of two, takes one edit from Gen 1 (16 tasks) and one from a Gen 2 variant chosen per task by a small router. Gen 1 (32 tasks), best of two, runs that editor twice, at <i>T</i> = 0 and <i>T</i> = 0.45.</li>
-    </ul>
-    <p>One round helps (Table 4). On the 60 test rules, Gen 1 (16 tasks) passes 43.4% of pairs against Gen 0’s 36.5%, and Gen 1 (32 tasks) passes 46.6%: better than Gen 0 on 234 pairs and worse on 137 (pair sign test <i>p</i> = 2.7 × 10<sup>−7</sup>, per-task permutation <i>p</i> = 0.08). On the 12 rules of Cohort 4, written after every method was frozen, Gen 1 (32 tasks) passes 60.9% against Gen 0’s 45.3%.</p>
-    <p>A second round did not help. The best Gen 2 checkpoint, BiOrthoMerge, passes 38.8%: below Gen 1 (16 tasks), which it started from, and 7.8 points below Gen 1 (32 tasks), which trained on the same 32 tasks. The transcripts show why the generations differ. Gen 1 (16 tasks) learned to copy θ<sub>0</sub>’s prompted answers as targets: it reaches 86% on API migration and 30% on new operators but 0.8% on scoped markers, where θ<sub>0</sub> given the rule drops the marker. The Gen 2 variants learned to compute targets in Python, which raised scoped markers to 16% and extraction to 69% but cost them API migration (56–63%) and new operators (12–15%).</p>
-    <p>Because the two generations are good at different families, a second edit helps when it comes from the other generation. Gen 1 + Gen 2, best of two, passes 46.4%, 2.9 points above Gen 1 (16 tasks) alone but level with a single edit from Gen 1 (32 tasks) (better on 135 pairs, worse on 137). On Cohorts 1–3 it leads Gen 1 (32 tasks), 49.6% to 43.0%; on Cohort 4 it trails, 33.3% to 60.9%. A second edit from the same editor makes things worse: Gen 1 (32 tasks), best of two, passes 39.9%, 6.7 points below its own single edit, because the model’s check misjudges arithmetic and keeps the wrong edit (Section 8). Gen 1 + Gen 2, best of two, beats it by 6.5 points (better on 157 pairs, worse on 95; per-task <i>p</i> = 0.15).</p>
-  </section>
-
-  <section class="wide">
-    <p class="tcap"><b>Table 4.</b> Under the first recipe, the one-update control trained on all 32 practice tasks passes 46.6% of test pairs. Letting Gen 1 and Gen 2 each propose an edit and choosing between them gives 46.4%. The cohort columns report the percentage of test pairs passed across 60 rules (960 pairs in all). The 20 traps are scored separately. Each editor produces one Qwen3.5-4B checkpoint per task, tested without the rule in its prompt. Bleed is the share of sibling prompts the edit changed, and trap withdrawals the share of trap tasks the editor refused. The last column gives the pass rate on API migration, scoped markers, new operators and extraction across all four cohorts.</p>
-    <div class="scroll-x"><table>
-      <thead><tr><th>Editor</th><th class="num">Edits<br>per task</th><th class="num">Cohort 1<br><span class="note">24 rules</span></th><th class="num">Cohort 2<br><span class="note">12 rules</span></th><th class="num">Cohort 3<br><span class="note">12 rules</span></th><th class="num">Cohorts 1–3<br><span class="note">48 rules</span></th><th class="num">Cohort 4<br><span class="note">12 rules, written last</span></th><th class="num">All 60 rules<br><span class="note">960 pairs</span></th><th class="num">Bleed /<br><span class="note">trap withdrawals</span></th><th class="num" style="white-space:normal">API / Marker /<br>Operator / Extraction</th></tr></thead>
-      <tbody>
-        <tr class="group"><td colspan="10">No editor</td></tr>
-        <tr><td>Unedited Qwen3.5-4B (θ<sub>0</sub>)</td><td class="num">0</td><td class="num">5.7%</td><td class="num">13.5%</td><td class="num">2.6%</td><td class="num">6.9%</td><td class="num">9.9%</td><td class="num">7.5%</td><td class="num">0.6% / 100%</td><td class="num">29 / 0 / 1 / 0</td></tr>
-        <tr><td>LoRA on target prompts only</td><td class="num">1</td><td class="num">22.9%</td><td class="num">15.1%</td><td class="num">38.5%</td><td class="num">24.9%</td><td class="num">20.8%</td><td class="num">24.1%</td><td class="num">26.2% / 15%</td><td class="num">59 / 10 / 5 / 22</td></tr>
-        <tr class="group"><td colspan="10">One edit per task</td></tr>
-        <tr><td>Gen 0: untrained editor</td><td class="num">1</td><td class="num">39.6%</td><td class="num">28.1%</td><td class="num">29.7%</td><td class="num">34.2%</td><td class="num">45.3%</td><td class="num">36.5%</td><td class="num">2.6% / 90%</td><td class="num">51 / 10 / 21 / 64</td></tr>
-        <tr><td>Gen 1 (16 tasks)</td><td class="num">1</td><td class="num">56.0%</td><td class="num">28.1%</td><td class="num">42.7%</td><td class="num">45.7%</td><td class="num">34.4%</td><td class="num">43.4%</td><td class="num">4.0% / 90%</td><td class="num">86 / 1 / 30 / 56</td></tr>
-        <tr class="hl"><td><b>Gen 1 (32 tasks)</b></td><td class="num">1</td><td class="num">50.5%</td><td class="num">29.7%</td><td class="num">41.2%</td><td class="num">43.0%</td><td class="num"><b>60.9%</b></td><td class="num"><b>46.6%</b></td><td class="num">3.5% / 80%</td><td class="num">68 / 18 / <b>42</b> / 58</td></tr>
-        <tr><td>Gen 2: BiOrthoMerge</td><td class="num">1</td><td class="num">39.6%</td><td class="num"><b>39.6%</b></td><td class="num">33.3%</td><td class="num">38.0%</td><td class="num">41.7%</td><td class="num">38.8%</td><td class="num">5.0% / 85%</td><td class="num">63 / 12 / 12 / <b>69</b></td></tr>
-        <tr><td>Gen 2: LayerSplitReplay</td><td class="num">1</td><td class="num">43.8%</td><td class="num">35.9%</td><td class="num">18.2%</td><td class="num">35.4%</td><td class="num">32.3%</td><td class="num">34.8%</td><td class="num"><b>1.5%</b> / 80%</td><td class="num">56 / 16 / 15 / 52</td></tr>
-        <tr><td>Gen 1 and Gen 2 merged by activations</td><td class="num">1</td><td class="num">34.4%</td><td class="num">26.6%</td><td class="num">34.4%</td><td class="num">32.4%</td><td class="num">25.0%</td><td class="num">30.9%</td><td class="num">1.7% / 85%</td><td class="num">53 / 11 / 34 / 26</td></tr>
-        <tr><td>Gen 1 or Gen 2, picked by a router</td><td class="num">1</td><td class="num"><b>60.2%</b></td><td class="num">21.9%</td><td class="num">32.3%</td><td class="num">43.6%</td><td class="num">34.9%</td><td class="num">41.9%</td><td class="num">2.8% / 90%</td><td class="num"><b>91</b> / 1 / 30 / 45</td></tr>
-        <tr class="group"><td colspan="10">Best of two edits, kept by the model’s own check</td></tr>
-        <tr><td>Gen 1 (32 tasks), best of two</td><td class="num">2</td><td class="num">40.1%</td><td class="num">28.6%</td><td class="num">41.2%</td><td class="num">37.5%</td><td class="num">49.5%</td><td class="num">39.9%</td><td class="num">2.3% / 90%</td><td class="num">61 / <b>28</b> / 8 / 63</td></tr>
-        <tr><td>Gen 1 + Gen 2, best of two</td><td class="num">2</td><td class="num">52.9%</td><td class="num">35.9%</td><td class="num"><b>56.8%</b></td><td class="num"><b>49.6%</b></td><td class="num">33.3%</td><td class="num">46.4%</td><td class="num">2.1% / <b>95%</b></td><td class="num">84 / 12 / 27 / 63</td></tr>
-        <tr class="group"><td colspan="10">Prompted score</td></tr>
-        <tr><td>Rule in the system prompt, no edit</td><td class="num">—</td><td class="num">78.6%</td><td class="num">58.8%</td><td class="num">76.0%</td><td class="num">73.0%</td><td class="num">80.7%</td><td class="num">74.6%</td><td class="num">6.8% / 100%</td><td class="num">89 / 40 / 76 / 92</td></tr>
-      </tbody>
-    </table></div>
-  </section>
-
-  <section class="col">
-    <h2 id="merging">6. The merged editor passed tests on two new math rules where every parent editor scored zero</h2>
-    <p>Best of two costs two edits per task, so we also tried to fold both generations into one standard Qwen3.5-4B checkpoint. Projecting Gen 2’s update away from Gen 1’s singular subspaces (BiOrthoMerge: Δ<i>W</i><sub>⊥</sub> = (<i>I</i> − <i>U</i><sub>1</sub><i>U</i><sub>1</sub><sup>T</sup>) Δ<i>W</i><sub>2</sub> (<i>I</i> − <i>V</i><sub>1</sub><i>V</i><sub>1</sub><sup>T</sup>)) still cut Gen 1’s new-operator score from 30.4% to 11.7%. The cause is rank: <i>V</i><sub>1</sub> spans 16 of 2,560 input dimensions (0.6%), so Δ<i>W</i><sub>2</sub> still acts on 99.4% of the hidden states Gen 1 relies on.</p>
-    <p>A merge fitted to activations avoids this. RegMean <a href="#r7">[7]</a> chooses the merged update that best reproduces each generation’s outputs on that generation’s own inputs. Every editing episode starts with the same 600-token system prompt, which dominates the activation Gram matrices. Once we exclude it, the activations <i>A</i><sub>1</sub> of Gen 1’s episodes and <i>A</i><sub>2</sub> of Gen 2’s overlap with a normalized Frobenius cosine of 0.0012 across all 168 linear layers. We solve the anchored least-squares problem exactly with the Woodbury identity on an <i>M</i> × <i>M</i> system (<i>M</i> ≤ 1,536, against <i>d</i><sub>in</sub> = 9,216):</p>
-    <div class="eq">
-      Δ<i>W</i>* = Δ<i>W</i><sub>1</sub> + [ 0, &nbsp; (Δ<i>W</i><sub>2</sub> − Δ<i>W</i><sub>1</sub>) <i>A</i><sub>2</sub><sup>T</sup> ] ( <i>A</i><i>A</i><sup>T</sup> + λ <i>I</i><sub><i>M</i></sub> )<sup>−1</sup> <i>A</i>, &nbsp;&nbsp; rank(Δ<i>W</i>*) ≤ rank(Δ<i>W</i><sub>1</sub>) + rank(Δ<i>W</i><sub>2</sub>)
-    </div>
-    <p>The merged checkpoint passes 33.8% on new operators, above every checkpoint it was merged from (Gen 1: 30.4%), and 10.8% on scoped markers (Gen 1: 0.8%) at 1.7% bleed. It solves two new-operator tasks on which all of those checkpoints scored 0.0%, at 100.0% and 81.2%. It falls behind on API migration (53%, against Gen 1’s 86%) and extraction (26%, against BiOrthoMerge’s 69%), and it submits an edit on 31.7% of rule tasks, where Gen 1 submits on 53.3%. Its overall pass rate is 30.9%, below Gen 0. It also had the highest validation score of any checkpoint (42.0%), so the label-free validation check did not catch the drop. Leaving withdrawn episodes out of <i>A</i><sub>1</sub> and <i>A</i><sub>2</sub> would test whether the extra withdrawals come from them.</p>
-    <p>A router is the other way to use both generations with one edit per task. It reads the model’s layer-24 hidden state for the rule and picks Gen 1 (16 tasks) or a Gen 2 variant, fitted by ridge regression on the 48 self-play and validation tasks. Raw hidden states for different rules point in nearly the same direction (mean pairwise cosine 0.83); subtracting their mean before normalizing brings that to −0.03 and makes the regression usable. The router sent 58 of the 80 test tasks to Gen 1 and passed 41.9%, slightly below Gen 1 alone (43.4%). On API migration it reached 90.8%, above the 89.2% the model reaches with the rule in its prompt.</p>
-
-    <h2 id="continual">7. After ten requests, one model retained all five rules it learned, passing 87.5–100% of each rule’s test pairs</h2>
-    <p>Rules written into a model are triggered by different user inputs, so they can share one checkpoint more easily than whole editors can (Section 6). An earlier version of the first recipe’s Gen 1 (32 tasks) received ten unseen rule requests in a row: eight real rules, and impossible ones at steps 4 and 8. Each accepted edit went into the same Qwen3.5-4B checkpoint, tested without any rule in its prompt, and before each edit the editor replayed synthetic prompts from its earlier accepted edits, with no labels (<a href="#fig3">Figure 3</a>). It wrote five of the eight real rules (four extraction formats and the finance warning) and declined the other three (two API migrations and a new operator) and both impossible ones. Each rule it wrote added about 12 points to the pass rate over all eight, which reached 61.7%. The first rule still passed 100% of its pairs after four later edits, and every factual answer was kept.</p>
-    <figure class="research-plot" id="fig3">
-      <img src="retained-rules.svg" width="530" height="355" alt="At the tenth request, the self-trained editor with replay passed 61.7% of prompt pairs across eight rules. The starting editor with the same replay passed 40.6%.">
-      <figcaption><b>Figure 3.</b> In a separate experiment with earlier versions of the editors, the self-trained editor replayed examples from its previous edits before writing each new rule. It accepted five of eight real rules and declined both impossible requests (steps 4 and 8). At the end it passed 87.5–100% of the pairs for each accepted rule. Both lines use the same replay method and average over all eight real rules. The self-trained editor without replay finished at 25.0%.</figcaption>
-    </figure>
-    <p>Replaying earlier examples helped preserve the gains. Sequential LoRA training without the editor swung between 0.0% and 37.5%, ended at 25.0% and kept none of the first rule (<i>p</i> = 4.7 × 10<sup>−6</sup>). The same Gen 1 editor without replay stopped at 25.0% (<i>p</i> ≤ 2.5 × 10<sup>−11</sup>), and an earlier Gen 0 with replay at 40.6% (<i>p</i> ≤ 0.0056). An earlier Gen 2 with replay wrote two rules, made an edit for one impossible rule, and reached 25.8%. The eight-rule system prompt passes 78.1% but changes 9.38% of sibling answers, 12 times the edited checkpoint’s 0.78%.</p>
-
-    <h2 id="defensible">8. Recursion added 3.8 points over a matched single round, and none on the newest rules</h2>
-    <ul class="plain">
-      <li><b>Recursion itself adds a few points at most.</b> Under the later recipe Gen 3 leads the matched control by 3.8 points on all 92 rules (per-rule <i>p</i> = 0.23) and ties it on the 32 newest rules. Under the first recipe no second-round editor beat one round on the same tasks, either on the test cohorts or on the ten-rule stream.</li>
-      <li><b>The later recipe was chosen over several tries.</b> Five variants were compared on 16 pre-test rules before any test cohort was opened. Under the seventh round’s recipe the sign was reversed: a third generation trained on Gen 0’s practice passed 50.4% of 1,216 pairs on 76 rules, and the recursive one 37.4%. Each checkpoint was trained once, and two that differ only in who practiced 16 of 64 rules score 46.1% and 35.2%.</li>
-      <li><b>Under the first recipe, the fresh cohort is small and disagrees with Cohorts 1–3 about the second round.</b> On Cohort 4’s 12 rules, Gen 1 (16 tasks) scores 34.4% and Gen 1 + Gen 2, best of two, 33.3%, both below Gen 0’s 45.3%, while Gen 1 (32 tasks) rises to 60.9%. With 12 rules the per-task test is weak even for that 15.6-point gain over Gen 0 (<i>p</i> = 0.17).</li>
-      <li><b>Pair-level p-values overstate the confidence.</b> The 16 pairs within a rule are not independent, so this paper gives per-rule permutation tests beside them. Under the first recipe they give <i>p</i> = 0.08 for Gen 1 (32 tasks) against Gen 0, and 0.15 to 0.25 for the other gains in Section 5.</li>
-      <li><b>The label-free check limits what both rounds can show.</b> If the test answers are used to pick the best of the first recipe’s Gen 0, Gen 1 (16 tasks), both Gen 2 variants and the merge for each task, the editors pass 72.0% of the 60 older rules’ pairs, close to the prompted score of 74.6%. Without labels the check falls short in two measured ways. On new operators θ<sub>0</sub> misgrades arithmetic and rejected good edits on 10 of 15 tasks, which is why Gen 1 (32 tasks), best of two, drops from 41.7% to 7.9% on operators; checking candidates by running the Python expressions the editor wrote in its first turn would remove this. On two extraction tasks in Cohort 4, the router sent each task to the Gen 2 editor that declined to edit, while the other Gen 2 editor passed every test pair.</li>
-      <li><b>The editor works inside a fixed scaffold.</b> It chooses among pre-filtered lists of its own clean attempts, with example code in its prompt, on four fixed task families. We do not claim open-ended task invention.</li>
+      <li><b>Recursion itself adds a few points at most.</b> Gen 3 leads the matched control by 3.8 points on all 92 rules (per-rule <i>p</i> = 0.23) and ties it on the 32 newest rules.</li>
+      <li><b>The sealed cohort is small.</b> Cohort 6 has 16 rules, so even Gen 3’s lead there over the matched control has per-rule <i>p</i> = 0.34.</li>
+      <li><b>The recipe was selected, and each checkpoint trained once.</b> Five versions of the recipe were compared on the 16 pre-test rules before any test set was opened. Two checkpoints that differ only in who practiced 16 of 64 tasks score 46.1% and 35.2%.</li>
+      <li><b>Pair-level p-values overstate the confidence.</b> The 16 pairs within a rule are not independent, so every comparison here also gives a per-rule permutation test.</li>
+      <li><b>The editor works inside a fixed scaffold.</b> It chooses among pre-filtered lists of its own clean attempts, with example code in its prompt, on fixed task families. We do not claim open-ended task invention.</li>
     </ul>
 
-    <h2 id="cost">9. Weight repair and eight rounds of self-improvement experiments cost $330 in GPU time</h2>
-    <p>Every run used rented NVIDIA H100 80GB GPUs on Modal, plus two H200s for the 27B runs in Section 1: $92.42 for the four-size repair study, $6.90 for the first 24-task self-play study, $94.58 for the first four rounds of self-editing ($18.80, $19.01, $31.65 and $25.12) and $135.96 for the last four ($11.72, $6.22, $38.77 and $79.25). Dataset manifests are hashed with SHA-256, and replaying the unedited model gave 0 of 4 mismatches within a run and 0 of 64 across rounds. Twenty unit tests check that the 128 tasks are disjoint, that the Woodbury merge matches a dense float64 RegMean to within 10<sup>−6</sup>, the chat-template indexing that excludes the system prompt, the router, and the label-free best-of-two selection.</p>
+    <h2 id="cost">7. Everything in this paper cost $330 in GPU time</h2>
+    <p>Every run used rented NVIDIA H100 80GB GPUs on Modal, plus two H200s for the 27B repairs in Section 5: $92 for the repair study and $237 for building and testing the editors.</p>
 
     <h2 id="refs">References</h2>
     <ol class="refs">
@@ -346,11 +293,9 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
       <li id="r4"><b>Transformer-Squared: Self-Adaptive LLMs.</b> Sun et al., 2025. <a href="https://arxiv.org/abs/2501.06252">arXiv:2501.06252</a></li>
       <li id="r5"><b>Qwen3.5 Technical Report &amp; Model Family.</b> Qwen Team, 2026. <a href="https://huggingface.co/Qwen/Qwen3.5-4B">huggingface.co/Qwen/Qwen3.5-4B</a></li>
       <li id="r6"><b>DeepScaleR: Surpassing O1-Preview with a 1.5B Model by Scaling RL.</b> Luo et al., 2025.</li>
-      <li id="r7"><b>Dataless Knowledge Fusion by Merging Weights of Language Models (RegMean).</b> Jin et al., ICLR 2023. <a href="https://arxiv.org/abs/2212.09849">arXiv:2212.09849</a></li>
-      <li id="r8"><b>LoRA: Low-Rank Adaptation of Large Language Models.</b> Hu et al., ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></li>
-      <li id="r9"><b>Editing Models with Task Arithmetic.</b> Ilharco et al., ICLR 2023. <a href="https://arxiv.org/abs/2212.04089">arXiv:2212.04089</a></li>
-      <li id="r10"><b>SOAR: Self-Improving Language Models for Hard Math via Promotion Curricula.</b> Sundaram et al., ICML 2026. <a href="https://arxiv.org/abs/2601.18778">arXiv:2601.18778</a></li>
-      <li id="r11"><b>Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models (SPIN).</b> Chen et al., ICML 2024. <a href="https://arxiv.org/abs/2401.01335">arXiv:2401.01335</a></li>
+      <li id="r7"><b>LoRA: Low-Rank Adaptation of Large Language Models.</b> Hu et al., ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></li>
+      <li id="r8"><b>SOAR: Self-Improving Language Models for Hard Math via Promotion Curricula.</b> Sundaram et al., ICML 2026. <a href="https://arxiv.org/abs/2601.18778">arXiv:2601.18778</a></li>
+      <li id="r9"><b>Self-Play Fine-Tuning Converts Weak Language Models to Strong Language Models (SPIN).</b> Chen et al., ICML 2024. <a href="https://arxiv.org/abs/2401.01335">arXiv:2401.01335</a></li>
     </ol>
 
     <h2 id="citation">Citation</h2>
