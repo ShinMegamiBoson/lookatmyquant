@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Adding a Neural Prosthetic to a Language Model Without Harming It</title>
+<meta name="description" content="A 7.04 MB frozen-host calculator and symbolic algebra prosthesis lifts Qwen3.5-4B hard arithmetic from 42.2% to 92.2% and symbolic CAS from 23.3% to 100.0% with zero harm across 4,457 standard non-math items (−0.09 pp, p = 0.69), and heals a 1.22 GB quantized host by +1.66 pp.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Adding a Neural Prosthetic to a Language Model Without Harming It">
+<meta property="og:description" content="A 7.04 MB frozen-host calculator and symbolic algebra prosthesis lifts Qwen3.5-4B hard arithmetic from 42.2% to 92.2% and symbolic CAS from 23.3% to 100.0% with zero harm across 4,457 standard non-math items (−0.09 pp, p = 0.69), and heals a 1.22 GB quantized host by +1.66 pp.">
+<meta property="og:url" content="https://lookatmyquant.pages.dev/prostheses/">
+<meta property="og:image" content="https://lookatmyquant.pages.dev/prostheses/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lookatmyquant.pages.dev/prostheses/og.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+:root {
+  --bg: #FFFFFF; --ink: #1A1E24; --muted: #5B6370; --faint: #8C939E; --line: #E2E5EA; --soft: #F4F6F8; --link: #1F56C4;
+  --ours: #2A78D6; --rival: #EB6834; --other: #8D95A1;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --sans: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+    --ours: #3987E5; --rival: #D95926; --other: #666D79; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121418; --ink: #E6E9EE; --muted: #A3ABB7; --faint: #78808C; --line: #2A2F37; --soft: #1A1E24; --link: #6E9BF0;
+  --ours: #3987E5; --rival: #D95926; --other: #666D79; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.62 var(--serif); }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 56px 96px; }
+.col { max-width: 44rem; margin: 0 auto; }
+.wide { max-width: 64rem; margin: 0 auto; }
+figure.wide { margin: 34px auto 38px; }
+figure.col { margin: 30px auto 34px; }
+section.wide { margin-top: 26px; margin-bottom: 30px; }
+header.title { text-align: center; display: grid; gap: 14px; justify-items: center; margin-bottom: 40px; }
+h1 { font: 600 clamp(2rem, 5.2vw, 3.05rem)/1.08 var(--serif); letter-spacing: -0.015em; margin: 0; text-wrap: balance; max-width: 24ch; }
+.subtitle { font: 400 clamp(1.08rem, 2.4vw, 1.35rem)/1.36 var(--serif); color: var(--muted); margin: 0; max-width: 52ch; text-wrap: balance; }
+.authors { font: 500 1.05rem/1.4 var(--sans); margin: 6px 0 0; }
+.meta { font: 400 0.92rem/1.4 var(--sans); color: var(--muted); margin: 0; }
+.links { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+.links a { font: 500 0.92rem var(--sans); color: var(--bg); background: var(--ink); text-decoration: none; padding: 7px 16px; border-radius: 999px; }
+.links a.back { color: var(--ink); background: var(--bg); box-shadow: inset 0 0 0 1px var(--faint); }
+.links a:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+h2 { font: 600 clamp(1.35rem, 4.8vw, 1.58rem)/1.22 var(--serif); margin: 56px 0 14px; text-wrap: balance; letter-spacing: -0.005em; }
+.nb { white-space: nowrap; }
+p { margin: 0 0 14px; }
+a { color: var(--link); text-underline-offset: 2px; }
+b, strong { font-weight: 600; }
+ul.plain { padding-left: 1.2em; margin: 0 0 14px; }
+ul.plain li { margin-bottom: 8px; }
+figure { margin: 30px auto 34px; display: grid; gap: 12px; min-width: 0; }
+figcaption, .tcap { font: 400 0.95rem/1.5 var(--sans); color: var(--muted); }
+figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 0.9rem var(--sans); color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex: none; }
+.legend i.ln { width: 0; height: 15px; border-radius: 0; border-left: 1.5px solid var(--muted); }
+.legend i.ln.dot { border-left: 2px dotted var(--ink); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 34px; align-items: start; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; gap: 26px; } }
+.panel-title { font: 600 0.92rem/1.35 var(--sans); color: var(--ink); margin: 0 0 10px; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .axis0 { stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+.chart .tk { font: 400 11px var(--sans); fill: var(--muted); }
+.chart .ax { font: 500 11.5px var(--sans); fill: var(--muted); }
+.chart .pl { font: 400 11.5px var(--sans); fill: var(--ink); }
+.bars { display: grid; gap: 10px; font: 400 0.9rem/1.3 var(--sans); }
+.bar { display: grid; grid-template-columns: minmax(0, 13.5rem) minmax(0, 1fr) 3.8rem 4.3rem; column-gap: 10px; row-gap: 3px; align-items: center; }
+.grid2 .bar { grid-template-columns: minmax(0, 11.8rem) minmax(0, 1fr) 3.8rem 4.2rem; }
+.bars.scores .bar { grid-template-columns: minmax(0, 11.8rem) minmax(0, 1fr) 3.8rem; }
+.bar .l small { display: block; color: var(--muted); font-size: 0.8rem; }
+.bar .t { position: relative; height: 14px; background: var(--soft); border-radius: 0 4px 4px 0; overflow: visible; }
+.bar .t i { display: block; height: 100%; min-width: 2px; background: var(--other); border-radius: 0 4px 4px 0; }
+.bar .t::before { content: ""; position: absolute; top: -4px; bottom: -4px; }
+.bar .t::before { left: var(--base); border-left: 1.5px solid var(--muted); }
+.bars.no-ref .t::before { display: none; }
+.bar.graft .t i { background: var(--ours); }
+.bar.control .t i { background: var(--other); }
+#fig1 .bar.control .t i { background: var(--rival); }
+.bar .v { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar.head { margin-bottom: -4px; }
+.bar.head .v { font: 400 0.78rem/1.2 var(--sans); color: var(--muted); }
+@media (max-width: 560px) {
+  .bar, .grid2 .bar { grid-template-columns: minmax(0, 1fr) 3.8rem 4.2rem; }
+  .bars.scores .bar { grid-template-columns: minmax(0, 1fr) 3.8rem; }
+  .bar .l { grid-column: 1 / -1; }
+  .bar.head .l { display: none; }
+}
+.diagram { max-width: 36rem; margin: 0 auto; width: 100%; }
+.diagram svg { display: block; width: 100%; height: auto; }
+.diagram .dl { font: 400 14.5px var(--sans); fill: var(--muted); }
+.diagram .dl.b { font-weight: 600; fill: var(--ink); }
+.diagram .st { stroke: var(--other); stroke-width: 2; fill: none; }
+.diagram .tr { stroke: var(--ours); stroke-width: 2.4; fill: none; }
+.diagram .bx { fill: var(--soft); stroke: var(--other); stroke-width: 1.5; }
+.eq { font: 400 0.98rem/1.9 var(--serif); background: var(--soft); border-radius: 6px; padding: 12px 18px; margin: 0 0 14px; overflow-x: auto; white-space: nowrap; }
+.eq i { font-style: italic; }
+sub, sup { font-size: 0.72em; line-height: 0; }
+.scroll-x { overflow-x: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; font: 400 0.88rem/1.38 var(--sans); font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 9px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-weight: 600; color: var(--ink); border-bottom: 1.5px solid var(--ink); vertical-align: bottom; }
+tbody tr:last-child td { border-bottom: 1.5px solid var(--ink); }
+td.num, th.num { text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { min-width: 12.5rem; }
+tr.group td { font: 600 0.76rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 14px; }
+.tcap { margin: 0 0 8px; }
+.note { font: 400 0.82rem/1.35 var(--sans); color: var(--muted); }
+pre.bib { font: 400 0.82rem/1.5 var(--mono); background: var(--soft); border-radius: 6px; padding: 16px 18px; overflow-x: auto; margin: 0; }
+ol.refs { padding-left: 1.4em; font: 400 0.92rem/1.5 var(--sans); color: var(--muted); }
+ol.refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
+ol.refs li b { color: var(--ink); font-weight: 600; }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
+</style>
+<style id="paper-sections-style">
+.paper-sections { width: 100%; min-width: 0; }
+.paper-sections > summary {
+  width: fit-content; margin: 0 auto; min-height: 44px; padding: 10px 4px;
+  color: var(--ink); cursor: pointer; font: 600 1rem/1.5 var(--sans);
+  text-align: left;
+}
+.paper-sections > summary::marker { color: var(--muted); }
+.paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
+  header.title:has(.paper-sections) {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+    column-gap: 0.6rem; row-gap: 8px; margin-bottom: 16px;
+  }
+  header.title:has(.paper-sections) > :is(h1, .subtitle) { flex-basis: 100%; }
+  header.title:has(.paper-sections) > :is(.authors, .meta) {
+    margin: 0; font: 400 .9rem/1.5 var(--sans); color: var(--muted);
+  }
+  header.title:has(.paper-sections) > .meta::before { content: "·"; margin-right: .6rem; }
+  .paper-sections { border-block: 1px solid var(--line); margin-top: 3px; }
+  .paper-sections .links { display: grid; gap: 0; margin: 0; text-align: left; }
+  .paper-sections .links a {
+    display: block; min-height: 44px; padding: 10px 8px;
+    color: var(--ink); background: transparent; border-radius: 0;
+    border-top: 1px solid var(--line); box-shadow: none; font: 500 1rem/1.45 var(--sans);
+    overflow-wrap: anywhere;
+  }
+  .paper-sections .links a:focus-visible { outline-offset: -2px; }
+}
+</style>
+</head>
+<body>
+<!-- Generated by build_paper.py. Every figure, table entry, and comparative assertion is derived from results/*.json. -->
+<div class="wrap">
+  <header class="title col">
+    <h1>Adding a Neural Prosthetic to a Language Model Without Harming It</h1>
+    <p class="subtitle">A 7.04 MB frozen-host calculator and symbolic algebra sidecar lifts Qwen3.5-4B arithmetic from 42.2% to 92.2% and symbolic CAS from 23.3% to 100.0% with zero harm across 4,457 non-math items (<span class="nb">−0.09 pp</span>, <span class="nb">p = 0.69</span>). On a 1.22 GB quantized host, it beats the unquantized 8.41 GB model on math and heals general benchmarks (<span class="nb">+1.66 pp</span>, <span class="nb">p = 2.4 × 10<sup>−5</sup></span>).</p>
+    <p class="authors">Shin Megami Boson</p>
+    <p class="meta">November 2026</p>
+    <details class="paper-sections">
+      <summary>On this page</summary>
+      <nav class="links" aria-label="Sections">
+      <a href="#problem">The tax</a>
+      <a href="#method">Architecture</a>
+      <a href="#progression">Ablations</a>
+      <a href="#quantized">Quantized healing</a>
+      <a href="#external">Published baselines</a>
+      <a href="#speed">Speed</a>
+      <a href="#cost">Cost</a>
+      <a class="back" href="../">All papers</a>
+    </nav>
+    </details>
+  </header>
+
+  <figure class="wide" id="fig1">
+    <div class="legend">
+      <span><i style="background:var(--ours)"></i>Frozen-host neural prosthesis (ours)</span>
+      <span><i style="background:var(--rival)"></i>Published tool / math fine-tune (full weights updated)</span>
+    </div>
+    <div class="grid2"><div><p class="panel-title">Non-STEM MMLU (1,164 items) vs. general-text KL</p><div class="chart"><svg viewBox="0 0 460 296" role="img" aria-label="General-text KL drift versus Non-STEM MMLU accuracy change across our prosthesis and published tool models."><line x1="52" y1="57.3" x2="438" y2="57.3" class="axis0"/><text x="44" y="61.3" class="tk" text-anchor="end">0</text><line x1="52" y1="98.7" x2="438" y2="98.7" class="grid"/><text x="44" y="102.7" class="tk" text-anchor="end">−5</text><line x1="52" y1="140.1" x2="438" y2="140.1" class="grid"/><text x="44" y="144.1" class="tk" text-anchor="end">−10</text><line x1="52" y1="181.6" x2="438" y2="181.6" class="grid"/><text x="44" y="185.6" class="tk" text-anchor="end">−15</text><line x1="52" y1="223.0" x2="438" y2="223.0" class="grid"/><text x="44" y="227.0" class="tk" text-anchor="end">−20</text><line x1="57.1" y1="20" x2="57.1" y2="252" class="grid"/><text x="57.1" y="268" class="tk" text-anchor="middle">0.001</text><line x1="159.5" y1="20" x2="159.5" y2="252" class="grid"/><text x="159.5" y="268" class="tk" text-anchor="middle">0.01</text><line x1="261.9" y1="20" x2="261.9" y2="252" class="grid"/><text x="261.9" y="268" class="tk" text-anchor="middle">0.1</text><line x1="364.3" y1="20" x2="364.3" y2="252" class="grid"/><text x="364.3" y="268" class="tk" text-anchor="middle">1.0</text><circle cx="79.1" cy="60.1" r="6.5" fill="var(--ours)"/><text x="85.1" y="78.1" class="pl" text-anchor="start" style="font-weight:600;fill:var(--ours)">BF16 prosthesis (ours)</text><circle cx="298.2" cy="82.2" r="5.0" fill="var(--rival)"/><text x="290.2" y="99.2" class="pl" text-anchor="end" style="font-weight:400;fill:var(--ink)">OpenMath-Mistral-7B</text><circle cx="321.3" cy="45.5" r="5.0" fill="var(--rival)"/><text x="312.3" y="34.5" class="pl" text-anchor="end" style="font-weight:400;fill:var(--ink)">ToRA-Code-7B</text><circle cx="399.5" cy="228.1" r="5.0" fill="var(--rival)"/><text x="390.5" y="232.1" class="pl" text-anchor="end" style="font-weight:400;fill:var(--ink)">Qwen2.5-Math-7B</text><line x1="52" y1="201.0" x2="438" y2="201.0" stroke="var(--rival)" stroke-width="1" stroke-dasharray="3 4" opacity="0.65"/><text x="58" y="196.0" class="tk" style="fill:var(--rival)">Calcformer-FLAN-XL (seq2seq, no causal KL): −17.4 pp</text><text x="245.0" y="290" class="ax" text-anchor="middle">General-text KL from parent base (nats, log scale · lower is closer)</text><text x="14" y="136.0" class="ax" text-anchor="middle" transform="rotate(-90 14 136.0)">Non-STEM MMLU Δ (pp)</text></svg></div></div><div><p class="panel-title">Answer churn across all 4,293–4,457 standard items</p><div class="bars no-ref"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">flipped</div><div class="v">pooled Δ</div></div><div class="bar graft"><div class="l">BF16 prosthesis (ours)<small>+7.04 MB, 0% host edited</small></div><div class="t"><i style="width:3.4%"></i></div><div class="v">1.3%</div><div class="v">−0.1</div></div><div class="bar graft"><div class="l">1.22 GB quantized + prosthesis (ours)<small>+7.04 MB on 2.32-bit host</small></div><div class="t"><i style="width:17.8%"></i></div><div class="v">6.8%</div><div class="v">+1.7</div></div><div class="bar control"><div class="l">Calcformer-FLAN-XL (3B)<small>SymPy gadget vs. FLAN-T5-XL</small></div><div class="t"><i style="width:79.5%"></i></div><div class="v">30.2%</div><div class="v">−15.0</div></div><div class="bar control"><div class="l">OpenMath-Mistral-7B<small>Python math SFT vs. Mistral-7B</small></div><div class="t"><i style="width:39.4%"></i></div><div class="v">15.0%</div><div class="v">−0.8</div></div><div class="bar control"><div class="l">ToRA-Code-7B<small>Python/SymPy TIR vs. CodeLlama-7B</small></div><div class="t"><i style="width:48.1%"></i></div><div class="v">18.3%</div><div class="v">+1.7</div></div><div class="bar control"><div class="l">Qwen2.5-Math-7B-Instruct<small>CoT+TIR vs. Qwen2.5-7B-Instruct</small></div><div class="t"><i style="width:88.1%"></i></div><div class="v">33.5%</div><div class="v">−20.8</div></div></div></div></div>
+    <figcaption><b>Figure 1.</b> The preservation gap between a frozen-host neural prosthesis and four published calculator and math-tool fine-tunes, each paired against its exact parent checkpoint on the same 4,457-item standard suite (4,293 items for seq2seq Calcformer). Every published fine-tune flips 15.0% to 33.5% of individual standard answers, drifts 138× to 1,350× farther in general-text KL than our 7.04 MB prosthesis (0.00164 nats, 1.3% flipped), and collapses to 0.0% (0/40) on verbatim copy controls.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="problem">Tool fine-tuning buys capability by rewriting the base model</h2>
+    <p>Language models fail reliably on multi-digit arithmetic, exact rational fractions, modular inverses, and symbolic algebra. The standard remedy — fine-tuning the model’s weights to emit calculator tags or Python programs <a href="#r1">[1]</a> <a href="#r2">[2]</a> <a href="#r3">[3]</a> <a href="#r4">[4]</a> — raises math scores but silently edits every layer of the base network. Published tool papers rarely measure paired degradation on general benchmarks against the exact parent checkpoint, or they rely on aggregate averages where replay on code or QA masks general-knowledge forgetting and instruction-following collapse.</p>
+    <p>We ask a stricter question: can a language model gain exact numeric arithmetic and symbolic computer algebra as a <b>Pareto improvement</b> — dramatically better on calculation, statistically indistinguishable from the untouched host on general non-math benchmarks, and runnable on top of an already-quantized frozen model at nearly native speed?</p>
+    <p>Our answer builds on neuron-homology maps <a href="#r5">[5]</a> and cross-scale circuit grafting <a href="#r6">[6]</a>. Rather than updating the host’s weights, we attach a 7.04 MB (3.42M-parameter, 0.081% of the 4.21B host) parallel sidecar anchored to the host’s own 6,857 mapped calculation neurons (2.3% of its MLP neurons), an activation-only intent gate read from the sidecar’s private stream, and an in-process exact arithmetic and SymPy co-processor. Every weight of the host remains bit-for-bit frozen, verified by checksum.</p>
+
+    <h2 id="method">A parallel sidecar over the host’s calculation neurons separates calculation intent from general text</h2>
+  </section>
+
+  <figure class="col" id="fig2">
+    <div class="diagram"><svg viewBox="0 0 580 278" role="img" aria-label="Frozen host residual stream feeding a parallel sidecar over mapped calculation neurons, with an activation intent gate driving an exact symbolic co-processor.">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto-start-reverse"><path d="M0 1 10 5 0 9z" fill="var(--other)"/></marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto-start-reverse"><path d="M0 1 10 5 0 9z" fill="var(--ours)"/></marker>
+  </defs>
+  <text x="8" y="20" class="dl b">Host residual stream (Qwen3.5-4B)</text>
+  <text x="572" y="20" class="dl m" text-anchor="end">100% of host weights frozen</text>
+  <line x1="8" y1="36" x2="572" y2="36" class="st" marker-end="url(#ah)"/>
+
+  <line x1="92" y1="36" x2="92" y2="100" class="tr" marker-end="url(#ab)"/>
+  <text x="103" y="65" class="dl b">Read adapter</text>
+  <text x="103" y="83" class="dl m">rank-8 trained</text>
+
+  <line x1="304" y1="102" x2="304" y2="38" class="tr" marker-end="url(#ab)"/>
+  <text x="315" y="65" class="dl b">Write adapter</text>
+  <text x="315" y="83" class="dl m">zero-init (step 0 = intact)</text>
+
+  <rect x="40" y="102" width="318" height="58" rx="6" class="bx"/>
+  <text x="199" y="126" class="dl b" text-anchor="middle">Host’s 6,857 calculation neurons (2.3%)</text>
+  <text x="199" y="147" class="dl m" text-anchor="middle">frozen MLP slice · trained gain α &amp; threshold τ</text>
+
+  <line x1="145" y1="160" x2="145" y2="196" class="st" marker-end="url(#ah)"/>
+  <line x1="252" y1="198" x2="252" y2="162" class="st" marker-end="url(#ah)"/>
+  <line x1="8" y1="198" x2="394" y2="198" class="st" marker-end="url(#ah)"/>
+  <text x="8" y="220" class="dl b">Private sidecar stream s<tspan dy="3" font-size="11">D</tspan></text>
+  <text x="8" y="238" class="dl m">multi-stage taps at layers 11, 21, 31</text>
+
+  <rect x="398" y="156" width="166" height="68" rx="6" class="bx" style="stroke:var(--ours)"/>
+  <text x="481" y="180" class="dl b" text-anchor="middle">Intent gate &amp; CAS</text>
+  <text x="481" y="199" class="dl m" text-anchor="middle">fires after “=” only when</text>
+  <text x="481" y="215" class="dl m" text-anchor="middle">s<tspan dy="2" font-size="10">D</tspan><tspan dy="-2"> intent &gt; τ &amp; valid AST</tspan></text>
+
+  <line x1="481" y1="156" x2="481" y2="42" class="tr" stroke-dasharray="5 4" marker-end="url(#ab)"/>
+  <text x="491" y="110" class="dl m">inject exact</text>
+  <text x="491" y="127" class="dl m">result tokens</text>
+</svg></div>
+    <figcaption><b>Figure 2.</b> One layer of the frozen-host neural prosthesis. Gray weights are bit-for-bit frozen (host residual stream and its 6,857 mapped calculation neurons); blue weights are trained (3.42M total, 7.04 MB in FP16). Because the write adapter starts at zero, step 0 equals the intact host identically.</figcaption>
+  </figure>
+
+  <section class="col">
+    <p>At each layer <i>l</i> of Qwen3.5-4B <a href="#r7">[7]</a>, the host computes its normal residual update untouched. In parallel, the prosthesis reads the host’s clean residual stream <i>x</i><sub>clean</sub> = <i>x</i> − δ<sub>H</sub> through a trained rank-8 read adapter, runs the frozen slice of the host’s own calculation neurons with learned per-neuron gain α and soft-threshold τ, accumulates its internal state in a private sidecar stream <i>s</i><sub>D</sub>, and writes back through a zero-initialized rank-8 write adapter:</p>
+    <div class="eq">
+      <i>u</i><sub>l</sub> = RMSNorm<sub>l</sub>( <i>x</i><sub>clean</sub> + (<i>x</i><sub>clean</sub> − μ<sub>l</sub>) <i>U</i><sub>A,l</sub><i>V</i><sub>A,l</sub><sup>T</sup> + <i>s</i><sub>D</sub> )<br>
+      <i>v</i><sub>l</sub> = soft_shrink(<i>f</i><sub>calc,l</sub>(<i>u</i><sub>l</sub>) − <i>m</i><sub>l</sub>; τ<sub>l</sub>) ⊙ α<sub>l</sub> · <i>W</i><sub>down,calc,l</sub>, &nbsp; <i>s</i><sub>D</sub> ← <i>s</i><sub>D</sub> + <i>v</i><sub>l</sub><br>
+      Δ<sub>H,l</sub> = β<sub>l</sub> <i>v</i><sub>l</sub> + <i>v</i><sub>l</sub> <i>U</i><sub>B,l</sub><i>V</i><sub>B,l</sub><sup>T</sup>, &nbsp; δ<sub>H</sub> ← δ<sub>H</sub> + Δ<sub>H,l</sub>
+    </div>
+    <ul class="plain">
+      <li><b>Zero extra neuron storage.</b> On both 16-bit and quantized hosts, the 6,857 calculation neurons are sliced directly from the host’s own frozen MLPs. Only the small rank-8 adapters, per-neuron gains/thresholds, and intent gate are stored: 7.04 MB total in FP16 (0.58% of a 1.22 GB quantized model).</li>
+      <li><b>Split activation intent and syntactic verification.</b> A compact classifier reads multi-stage taps of the private sidecar stream <i>s</i><sub>D</sub> (layers 11, 21, 31) plus detached <i>x</i><sub>clean</sub>. Whenever the model emits an equals sign (“=”), the co-processor fires only if <em>both</em> the activation gate signals genuine calculation intent (blocking verbatim copy traps with zero string heuristics) and a strict AST/SymPy parser confirms the left-hand side is an evaluable numeric or CAS expression (blocking symbolic equations like <i>x</i><sup>2</sup> − 4 = 0 and trivial identities).</li>
+      <li><b>On-policy reasoning and general-text KL anchoring.</b> Training minimizes KL divergence to the intact host on held-out general prose, KL divergence to the host’s own self-generated GSM8K and MATH rollouts (masking computed result digits so reasoning length and style stay untouched), and cross-entropy on verified calculator injections and hard negatives.</li>
+    </ul>
+
+    <h2 id="progression">Three controlled waves turn a 46-point arithmetic lift with regressions into a strict Pareto improvement</h2>
+    <p>Evaluating every variant on the exact same frozen 780-problem math, symbolic CAS, and copy-control split — 180 twelve-family exact arithmetic problems, 150 multi-step word problems with large numbers, 200 GSM8K <a href="#r8">[8]</a>, 150 MATH <a href="#r9">[9]</a>, 60 held-out symbolic CAS problems, and 40 verbatim copy traps — isolates why each design choice is necessary (Figure 3).</p>
+    <ul class="plain">
+      <li><b>Wave 1 (off-policy traces vs. matched LoRA).</b> Anchoring the sidecar to the calculation neurons cuts general-text KL 2.75× relative to a parameter-matched MLP LoRA <a href="#r10">[10]</a> (0.00185 vs. 0.00508 nats) while lifting exact arithmetic from 42.2% to 82.2% (and 87.8% with a zero-text-parsing activation read bus). However, training on terse off-policy traces shrank reasoning length fourfold (404 → 103 tokens on GSM8K; 732 → 195 on MATH), dropping GSM8K from 92.0% to 81.5% and MATH from 72.0% to 59.3% (and 40.0% when plain “=” fired on symbolic equations).</li>
+      <li><b>Wave 2 (on-policy traces + split intent gate).</b> Replacing terse traces with the intact host’s own verified GSM8K and MATH rollouts plus an on-policy reasoning KL anchor restored native reasoning length (406 tokens on GSM8K; 719 on MATH) and eliminated every regression simultaneously. The gated native prosthesis strictly beat or matched the intact 4B on all six tests: exact arithmetic 84.4%, word arithmetic 95.3%, GSM8K 93.0%, MATH 75.3%, copy control 100.0% (zero false calls), HellaSwag 73.0% vs. 72.6%, and pooled 680-problem math 69.4% → 87.4% (p = 3.2 × 10<sup>−24</sup>) at 0.00176 KL. Even the strict zero-text-parsing variant recovered MATH from 40.0% to 71.3% and GSM8K from 75.5% to 91.0%.</li>
+      <li><b>Wave 3 (symbolic SymPy CAS + full 4,457-item standard audit).</b> Adding named state-tracking traces for multi-step families plus passive zero-variable SymPy evaluation and six explicit CAS primitives (prime factorization, modular inverse, factoring, expansion, solving, simplification) lifted exact arithmetic to 92.2%, held-out symbolic CAS from 23.3% to 100.0% (60/60), and pooled 740-problem math+CAS from 65.7% to 88.0% (+187/−22, p = 8.6 × 10<sup>−34</sup>), while achieving our lowest general-text KL of any trained arm (0.00164 nats) and zero significant loss across all 4,457 standard non-math items (62.84% → 62.76%, −0.09 pp, p = 0.69).</li>
+    </ul>
+  </section>
+
+  <figure class="wide" id="fig3">
+    <div class="grid2"><div><p class="panel-title">Exact arithmetic (180 problems, 12 families)</p><div class="bars no-donor scores"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">score</div></div><div class="bar model"><div class="l">Intact Qwen3.5-4B (baseline)<small>0 trained</small></div><div class="t" style="--base:42.2%"><i style="width:42.2%"></i></div><div class="v">42.2%</div></div><div class="bar control"><div class="l">Wave 1 · matched MLP LoRA<small>3.01M off-policy</small></div><div class="t" style="--base:42.2%"><i style="width:83.9%"></i></div><div class="v">83.9%</div></div><div class="bar control"><div class="l">Wave 1 · symbolic sidecar<small>2.64M off-policy</small></div><div class="t" style="--base:42.2%"><i style="width:82.2%"></i></div><div class="v">82.2%</div></div><div class="bar control"><div class="l">Wave 1 · strict activation sidecar<small>5.13M off-policy</small></div><div class="t" style="--base:42.2%"><i style="width:87.8%"></i></div><div class="v">87.8%</div></div><div class="bar graft"><div class="l">Wave 2 · strict activation (on-policy)<small>5.13M zero text parse</small></div><div class="t" style="--base:42.2%"><i style="width:82.8%"></i></div><div class="v">82.8%</div></div><div class="bar graft"><div class="l">Wave 2 · gated native (on-policy)<small>3.42M arithmetic</small></div><div class="t" style="--base:42.2%"><i style="width:84.4%"></i></div><div class="v">84.4%</div></div><div class="bar graft"><div class="l">Wave 3 · gated native + SymPy CAS<small>3.42M (7.04 MB FP16)</small></div><div class="t" style="--base:42.2%"><i style="width:92.2%"></i></div><div class="v">92.2%</div></div></div></div><div><p class="panel-title">Pooled math (680 problems: arithmetic, word, GSM8K, MATH)</p><div class="bars no-donor scores"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">score</div></div><div class="bar model"><div class="l">Intact Qwen3.5-4B (baseline)<small>0 trained</small></div><div class="t" style="--base:69.4%"><i style="width:69.4%"></i></div><div class="v">69.4%</div></div><div class="bar control"><div class="l">Wave 1 · matched MLP LoRA<small>3.01M off-policy</small></div><div class="t" style="--base:69.4%"><i style="width:79.4%"></i></div><div class="v">79.4%</div></div><div class="bar control"><div class="l">Wave 1 · symbolic sidecar<small>2.64M off-policy</small></div><div class="t" style="--base:69.4%"><i style="width:78.5%"></i></div><div class="v">78.5%</div></div><div class="bar control"><div class="l">Wave 1 · strict activation sidecar<small>5.13M off-policy</small></div><div class="t" style="--base:69.4%"><i style="width:74.6%"></i></div><div class="v">74.6%</div></div><div class="bar graft"><div class="l">Wave 2 · strict activation (on-policy)<small>5.13M zero text parse</small></div><div class="t" style="--base:69.4%"><i style="width:83.1%"></i></div><div class="v">83.1%</div></div><div class="bar graft"><div class="l">Wave 2 · gated native (on-policy)<small>3.42M arithmetic</small></div><div class="t" style="--base:69.4%"><i style="width:87.4%"></i></div><div class="v">87.4%</div></div><div class="bar graft"><div class="l">Wave 3 · gated native + SymPy CAS<small>3.42M (7.04 MB FP16)</small></div><div class="t" style="--base:69.4%"><i style="width:86.9%"></i></div><div class="v">86.9%</div></div></div></div></div><details><summary>General-text KL for each build</summary><table><thead><tr><th>Build</th><th class="num">KL from the original</th></tr></thead><tbody><tr><td>Intact Qwen3.5-4B (baseline)</td><td class="num">0.0000</td></tr><tr><td>Wave 1 · matched MLP LoRA</td><td class="num">0.0051</td></tr><tr><td>Wave 1 · symbolic sidecar</td><td class="num">0.0018</td></tr><tr><td>Wave 1 · strict activation sidecar</td><td class="num">0.0020</td></tr><tr><td>Wave 2 · strict activation (on-policy)</td><td class="num">0.0018</td></tr><tr><td>Wave 2 · gated native (on-policy)</td><td class="num">0.0018</td></tr><tr><td>Wave 3 · gated native + SymPy CAS</td><td class="num">0.0016</td></tr></tbody></table></details>
+    <figcaption><b>Figure 3.</b> The vertical mark on each bar is the intact 4B score for that test. Controlled progression across Waves 1, 2, and 3 on the exact same frozen evaluation split. Off-policy training lifts arithmetic but hurts GSM8K/MATH; on-policy KL anchoring eliminates the regression while cutting KL 2.75× below matched LoRA; adding symbolic CAS reaches 92.2% exact arithmetic and 100.0% CAS at 0.00164 general-text KL.</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="quantized">On a 1.22 GB quantized host, the 7.04 MB prosthesis beats the unquantized 8.41 GB model and heals non-math benchmarks</h2>
+    <p>Quantizing Qwen3.5-4B to 2.32 bits per weight (1.22 GB via LookAtMyQuant 2 <a href="#r11">[11]</a>) shrinks the model 6.8× but drops 740-problem math+CAS from 65.7% to 63.6%, introduces 3 verbatim copy errors (92.5%), raises KL against the 16-bit model to 0.306 nats, and lowers pooled 4,457-item standard accuracy from 62.84% to 53.31%.</p>
+    <p>Attaching our 7.04 MB prosthesis to the frozen 1.22 GB quantized weights (1.229 GB total, slicing the 6,857 calculation neurons directly from the quantized host) produces two striking results (Figure 4):</p>
+    <ul class="plain">
+      <li><b>Zero-shot transfer with zero gradient steps already beats 16-bit intact.</b> Plugging Wave 2’s BF16-trained prosthesis straight onto the frozen 1.22 GB model and recentering only the activation means and standard deviations jumps 680-problem pooled math from 66.2% to 73.7% (p = 4.0 × 10<sup>−6</sup> vs. quantized intact; p = 0.01 above the 6.8× larger 16-bit host’s 69.4%).</li>
+      <li><b>BF16-anchored adaptation beats 16-bit math by 18.2–20.4 points and heals general capability.</b> Training the 7.04 MB prosthesis for 1,000 steps on the frozen 1.22 GB host anchored to 16-bit KL lifts pooled 740-problem math+CAS to 83.9% in v2 (86.1% in v1; p = 6.1 × 10<sup>−20</sup> and 4.3 × 10<sup>−24</sup> over unquantized 8.41 GB intact), restores verbatim copying to 100.0%, cuts quantization KL by 16.7% (0.306 → 0.255 nats), and produces a <b>statistically significant +1.66 pp (+74 net items, p = 2.4 × 10<sup>−5</sup>) recovery across the 4,457 standard non-math items</b>: HumanEval +7.3 pp (p = 0.043), HellaSwag +5.0 pp (p = 4.2 × 10<sup>−7</sup>), CommonsenseQA +1.7 pp (p = 0.0099), ARC-Challenge +1.5 pp (p = 0.069), and MMLU flat (−0.14 pp, p = 0.92).</li>
+    </ul>
+  </section>
+
+  <figure class="wide" id="fig4">
+    <div class="grid2"><div><p class="panel-title">Math &amp; symbolic CAS (740 problems)</p><div class="bars no-donor"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">score</div><div class="v">of 16-bit</div></div><div class="bar model"><div class="l">16-bit Qwen3.5-4B intact<small>8.41 GB baseline</small></div><div class="t" style="--base:65.7%"><i style="width:65.7%"></i></div><div class="v">65.7%</div><div class="v">100%</div></div><div class="bar model"><div class="l">2.32-bit quantized intact<small>1.22 GB (6.8× smaller)</small></div><div class="t" style="--base:65.7%"><i style="width:63.6%"></i></div><div class="v">63.6%</div><div class="v">97%</div></div><div class="bar graft"><div class="l">2.32-bit + BF16 prosthesis, zero-shot<small>1.23 GB, 0 grad steps</small></div><div class="t" style="--base:65.7%"><i style="width:69.9%"></i></div><div class="v">69.9%</div><div class="v">106%</div></div><div class="bar graft"><div class="l">2.32-bit + adapted prosthesis (v2)<small>1.23 GB, +7.04 MB</small></div><div class="t" style="--base:65.7%"><i style="width:83.9%"></i></div><div class="v">83.9%</div><div class="v">128%</div></div><div class="bar graft"><div class="l">2.32-bit + adapted prosthesis (v1)<small>1.23 GB, +7.04 MB</small></div><div class="t" style="--base:65.7%"><i style="width:86.1%"></i></div><div class="v">86.1%</div><div class="v">131%</div></div><div class="bar graft"><div class="l">16-bit + prosthesis (ours)<small>8.42 GB, +7.04 MB</small></div><div class="t" style="--base:65.7%"><i style="width:88.0%"></i></div><div class="v">88.0%</div><div class="v">134%</div></div></div></div><div><p class="panel-title">Non-math accuracy on the 1.22 GB host (4,457 items)</p><div class="bars no-donor"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">Δ pp</div><div class="v">p</div></div><div class="bar graft"><div class="l">HumanEval (164)<small>42.1% → 49.4% (16-bit: 58.5%)</small></div><div class="t" style="--base:42.1%"><i style="width:49.4%"></i></div><div class="v">+7.3</div><div class="v">0.043</div></div><div class="bar graft"><div class="l">HellaSwag (500)<small>61.0% → 66.0% (16-bit: 72.6%)</small></div><div class="t" style="--base:61.0%"><i style="width:66.0%"></i></div><div class="v">+5.0</div><div class="v">4.2 × 10<sup>−7</sup></div></div><div class="bar graft"><div class="l">CommonsenseQA (1,221)<small>45.2% → 46.9% (16-bit: 54.9%)</small></div><div class="t" style="--base:45.2%"><i style="width:46.9%"></i></div><div class="v">+1.7</div><div class="v">0.0099</div></div><div class="bar graft"><div class="l">ARC-Challenge (1,172)<small>44.8% → 46.3% (16-bit: 54.7%)</small></div><div class="t" style="--base:44.8%"><i style="width:46.3%"></i></div><div class="v">+1.5</div><div class="v">0.069</div></div><div class="bar graft"><div class="l">MMLU (1,400)<small>66.1% → 65.9% (16-bit: 73.6%)</small></div><div class="t" style="--base:66.1%"><i style="width:65.9%"></i></div><div class="v">−0.1</div><div class="v">0.92</div></div></div></div></div>
+    <figcaption><b>Figure 4.</b> The vertical mark shows the intact 16-bit score in the math panel and the intact 1.22 GB model’s score in the non-math panel. Left: a 1.22 GB (2.32-bit) quantized model plus our 7.04 MB prosthesis outperforms unquantized 8.41 GB Qwen3.5-4B on 740 math and CAS problems, even at 0 gradient steps. Right: anchoring the same 7.04 MB sidecar to 16-bit prose KL actively heals quantization damage on 4 of 5 standard non-math benchmarks (+1.66 pp pooled across 4,457 items, p = 2.4 × 10<sup>−5</sup>).</figcaption>
+  </figure>
+
+  <section class="col">
+    <h2 id="external">Four published calculator and math-tool fine-tunes all churn 15%–34% of standard answers and collapse to 0% on copy controls</h2>
+    <p>To test whether general-benchmark preservation is genuinely unusual in practice, we evaluated four published ungated calculator and math-tool model pairs across all <b>5,237 items</b>: the exact same 4,457-item standard suite — MMLU <a href="#r12">[12]</a> (1,400 stratified), ARC-Challenge <a href="#r13">[13]</a> (1,172), HellaSwag <a href="#r14">[14]</a> (500), CommonsenseQA <a href="#r15">[15]</a> (1,221), and HumanEval <a href="#r16">[16]</a> (164, with SentencePiece-safe joint-sequence decoding so base indentation is preserved) — plus 32-passage forward prose KL (Table 1, Figure 1) and the exact same 780-item Math, Symbolic CAS, and Copy Control suite running each tool model’s official prompt and live SymPy/Python interpreter against its untooled parent baseline (Table 2). For ToRA-Code-7B <a href="#r3">[3]</a>, we also restored its true training RoPE base (<code>rope_theta = 10,000</code>, hardcoded in its original <code>transformers 4.31 / vLLM 0.1.4</code> stack rather than the unused <code>1,000,000</code> left in CodeLlama’s config), lifting its GSM8K from 33% to 68% and MMLU from 31.3% to 36.9%.</p>
+    <p>Every published full-weight fine-tune exhibits severe behavioral drift, in two distinct regimes. First, direct calculator and math-specialist fine-tunes collapse general benchmarks outright: Calcformer-FLAN-XL <a href="#r2">[2]</a> (the closest published SymPy calculator-tag analog) drops −15.02 pp across 4,293 items (p = 1.1 × 10<sup>−74</sup>), and Qwen2.5-Math-7B-Instruct <a href="#r7">[7]</a> drops −20.78 pp across 4,457 items (p = 2.8 × 10<sup>−136</sup>, KL = 2.210 nats, 1,350× ours). Second, Python-TIR models trained on raw base checkpoints look milder in pooled multiple-choice averages yet still rewrite the base model: OpenMath-Mistral-7B <a href="#r4">[4]</a> loses significant MMLU (−2.43 pp, p = 0.03) with 15.0% churn and 138× higher KL (0.226 nats), while ToRA-Code-7B <a href="#r3">[3]</a> finishes net-positive on pooled QA (+1.68 pp, p = 0.0095) over its Python-only base yet still drops HellaSwag (−3.2 pp, p = 0.036), flips 18.3% of answers, and drifts 232× in prose KL (0.380 nats). Most strikingly, <b>all four published tool models collapse from 62.5%–100% down to 0.0% (0/40) on Copy Control</b> (invoking Python/SymPy or solving arithmetic inside lines explicitly marked “copy verbatim”), whereas our BF16 prosthesis scores <b>100.0% (40/40)</b>. On the 740-problem Math + CAS benchmark, our 4B prosthesis reaches <b>88.0%</b> (100.0% on Symbolic CAS), outscoring both 7B Python-TIR models — OpenMath-Mistral-7B (80.3%) and ToRA-Code-7B (77.0%) — and landing within 2.8 pp of Qwen2.5-Math-7B (90.8%), with zero significant drop on any general benchmark (MMLU p = 0.54, non-STEM MMLU −0.34 pp p = 0.45, 1.3% churn).</p>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 1.</b> Paired standard non-math benchmark audit (tool model minus exact parent base, percentage points) and forward general-text KL across 4,457 items (4,293 for seq2seq Calcformer). Exact two-sided McNemar p-values <a href="#r17">[17]</a> are shown under MMLU, Non-STEM MMLU (1,164 humanities/social/general items; 1,129 for ToRA/CodeLlama), and Pooled Δ. Flipped % is the fraction of individual items whose correctness changed in either direction.</p>
+    <div class="scroll-x"><table><thead><tr><th>Model pair</th><th class="num">MMLU<br><span class="note">1,400</span></th><th class="num">Non-STEM<br><span class="note">~1,164</span></th><th class="num">ARC-C<br><span class="note">1,172</span></th><th class="num">HellaSwag<br><span class="note">500</span></th><th class="num">CSQA<br><span class="note">1,221</span></th><th class="num">HumanEval<br><span class="note">164</span></th><th class="num">Pooled Δ</th><th class="num">Flipped</th><th class="num">Prose KL<br><span class="note">nats</span></th></tr></thead><tbody><tr class="group"><td colspan="10">Frozen-host neural prostheses (this work)</td></tr><tr style="font-weight:600"><td>BF16 prosthesis (ours)<br><span class="note">+7.04 MB, 0% host edited</span></td><td class="num">−0.29<br><span class="note">p=0.54</span></td><td class="num">−0.34<br><span class="note">p=0.45</span></td><td class="num">−0.1</td><td class="num">+0.2</td><td class="num">+0.1</td><td class="num">−0.6</td><td class="num">−0.09<br><span class="note">p=0.69</span></td><td class="num">1.3%</td><td class="num">0.00164</td></tr><tr style="font-weight:600"><td>1.22 GB quantized + prosthesis (ours)<br><span class="note">+7.04 MB on 2.32-bit host</span></td><td class="num">−0.14<br><span class="note">p=0.92</span></td><td class="num">−0.43<br><span class="note">p=0.66</span></td><td class="num">+1.5</td><td class="num">+5.0</td><td class="num">+1.7</td><td class="num">+7.3</td><td class="num">+1.66<br><span class="note">p=2.4 × 10<sup>−5</sup></span></td><td class="num">6.8%</td><td class="num">0.306→0.255</td></tr><tr class="group"><td colspan="10">Published tool-augmented &amp; math-specialist fine-tunes (paired against exact parent)</td></tr><tr><td>Calcformer-FLAN-XL (3B)<br><span class="note">SymPy gadget vs. FLAN-T5-XL</span></td><td class="num">−16.50<br><span class="note">p=4.2 × 10<sup>−24</sup></span></td><td class="num">−17.35<br><span class="note">p=8.1 × 10<sup>−23</sup></span></td><td class="num">−9.6</td><td class="num">−13.6</td><td class="num">−19.1</td><td class="num">–</td><td class="num">−15.02<br><span class="note">p=1.1 × 10<sup>−74</sup></span></td><td class="num">30.2%</td><td class="num">–</td></tr><tr><td>OpenMath-Mistral-7B<br><span class="note">Python math SFT vs. Mistral-7B</span></td><td class="num">−2.43<br><span class="note">p=0.03</span></td><td class="num">−3.01<br><span class="note">p=0.011</span></td><td class="num">−1.6</td><td class="num">−1.4</td><td class="num">+1.0</td><td class="num">+6.1</td><td class="num">−0.85<br><span class="note">p=0.15</span></td><td class="num">15.0%</td><td class="num">0.226</td></tr><tr><td>ToRA-Code-7B<br><span class="note">Python/SymPy TIR vs. CodeLlama-7B</span></td><td class="num">+1.57<br><span class="note">p=0.27</span></td><td class="num">+1.42<br><span class="note">p=0.38</span></td><td class="num">+1.2</td><td class="num">−3.2</td><td class="num">+4.4</td><td class="num">+0.6</td><td class="num">+1.68<br><span class="note">p=0.0095</span></td><td class="num">18.3%</td><td class="num">0.380</td></tr><tr><td>Qwen2.5-Math-7B-Instruct<br><span class="note">CoT+TIR vs. Qwen2.5-7B-Instruct</span></td><td class="num">−17.36<br><span class="note">p=1.1 × 10<sup>−32</sup></span></td><td class="num">−20.62<br><span class="note">p=8.1 × 10<sup>−38</sup></span></td><td class="num">−12.0</td><td class="num">−20.6</td><td class="num">−33.8</td><td class="num">−15.8</td><td class="num">−20.78<br><span class="note">p=2.8 × 10<sup>−136</sup></span></td><td class="num">33.5%</td><td class="num">2.210</td></tr></tbody></table></div>
+  </section>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 2.</b> Raw accuracy (%) of each untooled parent → its tool model on the same 5,237 items: the 4,457-item standard suite of Table 1 and the 780-item Math, Symbolic CAS and Copy Control suite. Parents: Qwen3.5-4B (ours), FLAN-T5-XL, Mistral-7B, CodeLlama-7B-Python, Qwen2.5-7B-Instruct. Each published tool model runs its official prompt template and live SymPy or sandboxed Python interpreter; on math, base models run 4-shot CoT (Mistral-7B, CodeLlama-7B) or native CoT (FLAN-T5-XL, Qwen2.5-7B-Instruct, Qwen3.5-4B). Copy Control is scored separately: a reply counts only if the whole reply is the given line, character for character, and it is not in either pooled row. *4,293 items: Calcformer has no HumanEval score.</p>
+    <div class="scroll-x"><table><thead><tr><th>Workload</th><th class="num">BF16 prosthesis<br><span class="note">Ours · 4B</span></th><th class="num">Calcformer<br><span class="note">FLAN-XL · 3B</span></th><th class="num">OpenMath<br><span class="note">Mistral · 7B</span></th><th class="num">ToRA-Code<br><span class="note">CodeLlama · 7B</span></th><th class="num">Qwen2.5-Math<br><span class="note">Instruct · 7B</span></th></tr></thead><tbody><tr class="group"><td colspan="6">Standard benchmarks</td></tr><tr><td>MMLU (1,400)</td><td class="num"><span class="note">73.6 →</span> 73.4</td><td class="num"><span class="note">48.5 →</span> 32.0</td><td class="num"><span class="note">59.4 →</span> 57.0</td><td class="num"><span class="note">35.3 →</span> 36.9</td><td class="num"><span class="note">71.1 →</span> 53.7</td></tr><tr><td>ARC-Challenge (1,172)</td><td class="num"><span class="note">54.7 →</span> 54.6</td><td class="num"><span class="note">40.7 →</span> 31.1</td><td class="num"><span class="note">54.8 →</span> 53.2</td><td class="num"><span class="note">35.1 →</span> 36.4</td><td class="num"><span class="note">55.5 →</span> 43.4</td></tr><tr><td>HellaSwag (500)</td><td class="num"><span class="note">72.6 →</span> 72.8</td><td class="num"><span class="note">61.6 →</span> 48.0</td><td class="num"><span class="note">82.6 →</span> 81.2</td><td class="num"><span class="note">65.2 →</span> 62.0</td><td class="num"><span class="note">79.8 →</span> 59.2</td></tr><tr><td>CommonsenseQA (1,221)</td><td class="num"><span class="note">54.9 →</span> 55.0</td><td class="num"><span class="note">69.0 →</span> 50.0</td><td class="num"><span class="note">62.2 →</span> 63.1</td><td class="num"><span class="note">49.5 →</span> 53.9</td><td class="num"><span class="note">67.7 →</span> 33.9</td></tr><tr><td>HumanEval (164)</td><td class="num"><span class="note">58.5 →</span> 57.9</td><td class="num">–</td><td class="num"><span class="note">28.7 →</span> 34.8</td><td class="num"><span class="note">39.0 →</span> 39.6</td><td class="num"><span class="note">65.8 →</span> 50.0</td></tr><tr style="font-weight:600"><td>Pooled standard (4,457)</td><td class="num"><span class="note">62.8 →</span> 62.8</td><td class="num"><span class="note">53.7 →</span> 38.7*</td><td class="num"><span class="note">60.4 →</span> 59.6</td><td class="num"><span class="note">42.6 →</span> 44.3</td><td class="num"><span class="note">66.8 →</span> 46.1</td></tr><tr class="group"><td colspan="6">Math and symbolic CAS</td></tr><tr><td>Exact arithmetic (180)</td><td class="num"><span class="note">42.2 →</span> 92.2</td><td class="num"><span class="note">0.6 →</span> 4.4</td><td class="num"><span class="note">8.3 →</span> 95.6</td><td class="num"><span class="note">2.2 →</span> 95.6</td><td class="num"><span class="note">56.7 →</span> 94.4</td></tr><tr><td>Word arithmetic (150)</td><td class="num"><span class="note">69.3 →</span> 90.0</td><td class="num"><span class="note">0.0 →</span> 11.3</td><td class="num"><span class="note">0.0 →</span> 89.3</td><td class="num"><span class="note">0.0 →</span> 82.0</td><td class="num"><span class="note">41.3 →</span> 79.3</td></tr><tr><td>GSM8K (200)</td><td class="num"><span class="note">92.0 →</span> 92.0</td><td class="num"><span class="note">14.0 →</span> 38.0</td><td class="num"><span class="note">38.0 →</span> 82.5</td><td class="num"><span class="note">8.0 →</span> 68.0</td><td class="num"><span class="note">92.5 →</span> 93.5</td></tr><tr><td>MATH (150)</td><td class="num"><span class="note">72.0 →</span> 70.7</td><td class="num"><span class="note">3.3 →</span> 8.0</td><td class="num"><span class="note">13.3 →</span> 49.3</td><td class="num"><span class="note">8.7 →</span> 56.0</td><td class="num"><span class="note">88.7 →</span> 93.3</td></tr><tr><td>Symbolic CAS (60)</td><td class="num"><span class="note">23.3 →</span> 100.0</td><td class="num"><span class="note">0.0 →</span> 1.7</td><td class="num"><span class="note">0.0 →</span> 81.7</td><td class="num"><span class="note">0.0 →</span> 91.7</td><td class="num"><span class="note">58.3 →</span> 93.3</td></tr><tr style="font-weight:600"><td>Pooled math + CAS (740)</td><td class="num"><span class="note">65.7 →</span> 88.0</td><td class="num"><span class="note">4.6 →</span> 15.4</td><td class="num"><span class="note">15.0 →</span> 80.3</td><td class="num"><span class="note">4.5 →</span> 77.0</td><td class="num"><span class="note">69.9 →</span> 90.8</td></tr><tr class="group"><td colspan="6">Copy control</td></tr><tr style="font-weight:600"><td>Copy verbatim (40)</td><td class="num"><span class="note">100.0 →</span> 100.0</td><td class="num"><span class="note">62.5 →</span> 0.0</td><td class="num"><span class="note">100.0 →</span> 0.0</td><td class="num"><span class="note">100.0 →</span> 0.0</td><td class="num"><span class="note">92.5 →</span> 0.0</td></tr></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="speed">Inference speed: eliminating Python hook overhead recovers near-baseline throughput, while calculator injection speeds up hard math up to 8.0×</h2>
+    <p>Full-weight fine-tunes modify weights in place and therefore run at ~100% of their parent’s per-token speed on non-math queries (with any wall-clock difference on generative benchmarks like HumanEval coming from shorter or longer completions). By contrast, a frozen-host sidecar adds a small parallel computation on every layer — an important practical cost whenever a host is kept frozen or quantized (where adapters cannot be merged into low-bit trellis weights).</p>
+    <p>To measure real inference overhead without cold-CUDA order bias, we ran a warm, counterbalanced A-B-B-A timing audit with full-shape untimed warmup and GPU synchronization across all five standard benchmarks plus fixed-length forced decode (batch sizes 1 and 16, 128 tokens) on H100 (Figure 5, Table 3; baseline pass-1 vs. pass-2 MC drift ≤ 0.3%). Our Wave 1–3 research harness attached 169 eager Python forward hooks per token with redundant FP32 casts, holding HumanEval decode to 77.0% of baseline. Replacing those hooks with a zero-hook, pure-BF16 inline wrapper over the exact same checkpoint (98.81% top-1 logit agreement) lifts speed to <b>91.1% on 4,293 MC+MMLU items</b>, <b>90.4% wall-clock (88.8% tok/s) on HumanEval</b>, and <b>75.2% / 79.1% on fixed-length B=1 / B=16 decode</b> (vs. 96.7% MC / 92.2% B=16 for unmerged parameter-matched MLP LoRA and 17.0% MC for a 325-token tool-schema system prompt without prefix caching). Notably, even among published full-weight fine-tunes, ToRA-Code-7B’s addition of a single padding token (resizing the LM head from 32,000 to an unaligned 32,001) drops MC prefill to 93.4% of CodeLlama-7B-Python while keeping decode at 100.1%. On hard arithmetic and symbolic CAS, injecting exact results cuts token length 5×–10× (746 → 69 tokens on CAS), making our prosthesis <b>1.2× faster</b> on exact arithmetic and <b>8.0× faster</b> on symbolic CAS end-to-end (3.5× faster on the 1.22 GB host) even before hook removal.</p>
+  </section>
+
+  <figure class="wide" id="fig5"><div class="grid2"><div><p class="panel-title">4,293 MC + MMLU prefill (% of baseline speed)</p><div class="bars no-donor scores"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">% of parent</div></div><div class="bar graft"><div class="l">BF16 prosthesis · fused inline (ours)<small>7.04 MB, 0 hooks</small></div><div class="t" style="--base:87.0%"><i style="width:79.2%"></i></div><div class="v">91.1%</div></div><div class="bar graft"><div class="l">1.22 GB + prosthesis · fused inline<small>7.04 MB on 2.32-bit host</small></div><div class="t" style="--base:87.0%"><i style="width:74.1%"></i></div><div class="v">85.2%</div></div><div class="bar control"><div class="l">BF16 prosthesis · eager hooks<small>169 PyTorch hooks</small></div><div class="t" style="--base:87.0%"><i style="width:71.8%"></i></div><div class="v">82.6%</div></div><div class="bar control"><div class="l">Strict activation · eager<small>+32-head KV bus</small></div><div class="t" style="--base:87.0%"><i style="width:71.2%"></i></div><div class="v">81.9%</div></div><div class="bar model"><div class="l">Unmerged MLP LoRA · inline<small>3.01M params (merged = 100%)</small></div><div class="t" style="--base:87.0%"><i style="width:84.1%"></i></div><div class="v">96.7%</div></div><div class="bar control"><div class="l">Tool-schema system prompt<small>325 tok, no prefix cache</small></div><div class="t" style="--base:87.0%"><i style="width:14.8%"></i></div><div class="v">17.0%</div></div><div class="bar model"><div class="l">Published full fine-tunes (4 pairs)<small>median across pairs 1–4</small></div><div class="t" style="--base:87.0%"><i style="width:86.8%"></i></div><div class="v">99.8%</div></div></div></div><div><p class="panel-title">Fixed-length B=16 decode (% of baseline tok/s)</p><div class="bars no-donor scores"><div class="bar head"><div class="l"></div><div class="t0"></div><div class="v">% of parent</div></div><div class="bar graft"><div class="l">BF16 prosthesis · fused inline (ours)<small></small></div><div class="t" style="--base:87.0%"><i style="width:68.8%"></i></div><div class="v">79.1%</div></div><div class="bar graft"><div class="l">1.22 GB + prosthesis · fused inline<small></small></div><div class="t" style="--base:87.0%"><i style="width:63.7%"></i></div><div class="v">73.2%</div></div><div class="bar control"><div class="l">BF16 prosthesis · eager hooks<small>169 PyTorch hooks</small></div><div class="t" style="--base:87.0%"><i style="width:56.0%"></i></div><div class="v">64.4%</div></div><div class="bar control"><div class="l">Strict activation · eager<small>32-head KV bus</small></div><div class="t" style="--base:87.0%"><i style="width:52.9%"></i></div><div class="v">60.8%</div></div><div class="bar model"><div class="l">Unmerged MLP LoRA · inline<small>merged = 100%</small></div><div class="t" style="--base:87.0%"><i style="width:80.2%"></i></div><div class="v">92.2%</div></div><div class="bar control"><div class="l">Tool-schema system prompt<small>325 tok, no prefix cache</small></div><div class="t" style="--base:87.0%"><i style="width:82.9%"></i></div><div class="v">95.3%</div></div><div class="bar model"><div class="l">Published full fine-tunes (3 causal)<small>median fixed B=16 across pairs 2–4</small></div><div class="t" style="--base:87.0%"><i style="width:83.5%"></i></div><div class="v">96.0%</div></div></div></div></div><figcaption><b>Figure 5.</b> Each bar shows speed as a percentage of that method’s untouched parent on H100. The vertical mark is 100%. Table 3 gives all per-benchmark timings, including HumanEval. Removing 169 eager Python hooks lifts our prosthesis roughly 9–15 points across prefill and decode, beating a 325-token tool-schema prompt by >5× on short MC queries without prefix caching. Full-weight fine-tunes stay near 100% except ToRA-Code-7B, whose unaligned 32,001-token output head drops MC prefill to 93.4%.</figcaption></figure>
+
+  <section class="wide">
+    <p class="tcap"><b>Table 3.</b> Warm counterbalanced inference speed (% of exact untouched parent baseline speed; higher is faster) on H100 across 4,293 MC+MMLU items (A-B-B-A counterbalanced after full-shape warmup), HumanEval 164 (wall-clock item speed on top, per-token throughput underneath; variable completion lengths and first-pass long-batch allocation can push second-run models above 100%), and fixed-length forced decode (128 tokens, 3-run warm median, zero length variance).</p>
+    <div class="scroll-x"><table><thead><tr><th>Method</th><th class="num">MMLU</th><th class="num">ARC-C</th><th class="num">HellaSwag</th><th class="num">CSQA</th><th class="num">MC 4,293</th><th class="num">HumanEval</th><th class="num">Fixed B=1</th><th class="num">Fixed B=16</th></tr></thead><tbody><tr class="group"><td colspan="9">Frozen-host methods on Qwen3.5-4B (% of untouched warm host speed)</td></tr><tr style="font-weight:600"><td>BF16 prosthesis · fused inline (ours)<br><span class="note">7.04 MB pure BF16, 0 hooks</span></td><td class="num">91.0%</td><td class="num">90.9%</td><td class="num">91.8%</td><td class="num">90.8%</td><td class="num">91.1%</td><td class="num">90.4%<br><span class="note">88.8% tok/s</span></td><td class="num">75.2%</td><td class="num">79.1%</td></tr><tr><td>BF16 prosthesis · eager research hooks<br><span class="note">7.04 MB, 169 PyTorch hooks</span></td><td class="num">82.0%</td><td class="num">82.7%</td><td class="num">82.8%</td><td class="num">82.9%</td><td class="num">82.6%</td><td class="num">77.0%<br><span class="note">75.6% tok/s</span></td><td class="num">65.9%</td><td class="num">64.4%</td></tr><tr><td>Strict activation prosthesis · eager<br><span class="note">5.13M params + 32-head KV bus</span></td><td class="num">81.0%</td><td class="num">81.7%</td><td class="num">81.9%</td><td class="num">82.9%</td><td class="num">81.9%</td><td class="num">75.9%<br><span class="note">75.2% tok/s</span></td><td class="num">63.4%</td><td class="num">60.8%</td></tr><tr><td>Unmerged MLP LoRA · fused inline<br><span class="note">3.01M params (merged = 100%)</span></td><td class="num">96.4%</td><td class="num">96.7%</td><td class="num">96.6%</td><td class="num">97.1%</td><td class="num">96.7%</td><td class="num">115.0%<br><span class="note">112.4% tok/s</span></td><td class="num">80.7%</td><td class="num">92.2%</td></tr><tr><td>Tool-schema system prompt<br><span class="note">325 tokens prepended, no cache</span></td><td class="num">32.0%</td><td class="num">14.7%</td><td class="num">23.0%</td><td class="num">12.0%</td><td class="num">17.0%</td><td class="num">102.3%<br><span class="note">114.5% tok/s</span></td><td class="num">99.9%</td><td class="num">95.3%</td></tr><tr class="group"><td colspan="9">2.32-bit (1.22 GB) quantized host (% of untouched warm quantized host speed)</td></tr><tr style="font-weight:600"><td>1.22 GB + prosthesis · fused inline (ours)<br><span class="note">7.04 MB pure BF16, 0 hooks</span></td><td class="num">87.4%</td><td class="num">84.4%</td><td class="num">89.8%</td><td class="num">81.8%</td><td class="num">85.2%</td><td class="num">88.7%<br><span class="note">88.7% tok/s</span></td><td class="num">73.9%</td><td class="num">73.2%</td></tr><tr><td>1.22 GB + prosthesis · eager hooks<br><span class="note">7.04 MB, 169 PyTorch hooks</span></td><td class="num">79.0%</td><td class="num">78.3%</td><td class="num">81.9%</td><td class="num">72.1%</td><td class="num">77.1%</td><td class="num">78.7%<br><span class="note">78.7% tok/s</span></td><td class="num">69.0%</td><td class="num">66.2%</td></tr><tr class="group"><td colspan="9">Published full-weight fine-tunes (% of warm exact parent speed, A-B-B-A counterbalanced)</td></tr><tr><td>Calcformer-FLAN-XL<br><span class="note">vs. FLAN-T5-XL (seq2seq)</span></td><td class="num">100.3%</td><td class="num">101.3%</td><td class="num">96.3%</td><td class="num">99.0%</td><td class="num">99.6%</td><td class="num">–</td><td class="num">–</td><td class="num">–</td></tr><tr><td>OpenMath-Mistral-7B<br><span class="note">vs. Mistral-7B-v0.1</span></td><td class="num">100.2%</td><td class="num">100.0%</td><td class="num">100.0%</td><td class="num">99.9%</td><td class="num">100.0%</td><td class="num">128.1%<br><span class="note">98.8% tok/s</span></td><td class="num">98.6%</td><td class="num">94.1%</td></tr><tr><td>ToRA-Code-7B<br><span class="note">vs. CodeLlama-7B-Python</span></td><td class="num">93.3%</td><td class="num">93.5%</td><td class="num">93.2%</td><td class="num">93.7%</td><td class="num">93.4%</td><td class="num">134.8%<br><span class="note">112.6% tok/s</span></td><td class="num">100.1%</td><td class="num">100.1%</td></tr><tr><td>Qwen2.5-Math-7B-Instruct<br><span class="note">vs. Qwen2.5-7B-Instruct</span></td><td class="num">100.1%</td><td class="num">100.0%</td><td class="num">100.0%</td><td class="num">100.1%</td><td class="num">100.1%</td><td class="num">134.4%<br><span class="note">171.1% tok/s</span></td><td class="num">101.7%</td><td class="num">96.0%</td></tr></tbody></table></div>
+  </section>
+
+  <section class="col">
+    <h2 id="cost">The complete study cost $78 of GPU time</h2>
+    <p>All training, evaluation, external-pair audits, and speed benchmarks ran on rented Modal H100 GPUs: $11.05 for Wave 1 (4 arms + baseline), $11.71 for Wave 2 (on-policy rollout prep + 2 synthesis arms), $21.83 for Wave 3 (v1 + v2 symbolic CAS, 1.22 GB quantized rescue, and full 4,457-item standard audits), $6.52 for the external standard-benchmark audit (including SentencePiece HumanEval and ToRA RoPE refresh), $12.49 for the 780-item external Math, CAS, and Copy Control benchmark across all four published tool runtimes, and $14.69 for the warm counterbalanced speed audit.</p>
+
+    <h2 id="limits">Limitations</h2>
+    <ul class="plain">
+      <li><b>Single host family.</b> All prostheses were trained on Qwen3.5-4B (16-bit BF16 and 2.32-bit quantized). Generalizing the same mapped-neuron sidecar to other model families and larger scales remains open.</li>
+      <li><b>Single seeds and Pareto trade-off on word arithmetic.</b> Each arm is a single training run; p-values reflect paired item variation rather than seed variance. Adding symbolic CAS in Wave 3 v2 reached 92.2% exact arithmetic and 100.0% CAS at 0.00164 KL, while Wave 2 held a lead on multi-step word arithmetic (95.3% vs. 90.0%) and MATH (75.3% vs. 70.7%), leaving a minor batch-mix trade-off.</li>
+      <li><b>Untooled base-model denominators vary across published pairs.</b> Raw base checkpoints (Mistral-7B, CodeLlama-7B-Python) start much lower on math than Qwen3.5-4B and Qwen2.5-7B-Instruct (0%–15% vs. 66%–70% pooled), so Table 2 reports raw parent and tool accuracy rather than a ratio, which a near-zero parent score inflates.</li>
+      <li><b>Simulated BF16 dequantization on H100 for the quantized host.</b> The 1.22 GB quantized weights were decoded faithfully from the real 2.32-bit packed artifact into PyTorch BF16 for GPU training and benchmarking; fusing the 7.04 MB sidecar into a native packed Apple Silicon MLX or CUDA trellis kernel is the next deployment step.</li>
+    </ul>
+
+    <h2 id="refs">References</h2>
+    <ol class="refs"><li id="r1"><b>Toolformer.</b> Schick et al., Toolformer: Language Models Can Teach Themselves to Use Tools. NeurIPS 2023. <a href="https://arxiv.org/abs/2302.04761">arXiv:2302.04761</a></li><li id="r2"><b>Calcformer &amp; Calc-X.</b> Kadlčík et al., Calc-X and Calcformers: Empowering Arithmetical Chain-of-Thought through Interaction with Symbolic Systems. EMNLP 2023. <a href="https://arxiv.org/abs/2305.15017">arXiv:2305.15017</a></li><li id="r3"><b>ToRA.</b> Gou et al., ToRA: A Tool-Integrated Reasoning Agent for Mathematical Problem Solving. ICLR 2024. <a href="https://arxiv.org/abs/2309.17452">arXiv:2309.17452</a></li><li id="r4"><b>OpenMathInstruct-1.</b> Toshniwal et al., OpenMathInstruct-1: A 1.8 Million Math Instruction Tuning Dataset. NeurIPS 2024. <a href="https://arxiv.org/abs/2402.10176">arXiv:2402.10176</a></li><li id="r5"><b>Encyclopedia of LLM homologies.</b> A map of the MLP neurons of 30 language models. 2026. <a href="https://qwen-neuron-map.pages.dev/">qwen-neuron-map.pages.dev</a></li><li id="r6"><b>Grafting Neural Primitives Across Model Scales.</b> Shin Megami Boson, 2026. <a href="https://lookatmyquant.pages.dev/grafting/">lookatmyquant.pages.dev/grafting</a></li><li id="r7"><b>Qwen3.5 and Qwen2.5.</b> Qwen Team. <a href="https://huggingface.co/Qwen/Qwen3.5-4B">huggingface.co/Qwen/Qwen3.5-4B</a>, <a href="https://huggingface.co/Qwen/Qwen2.5-Math-7B-Instruct">Qwen2.5-Math-7B-Instruct</a></li><li id="r8"><b>GSM8K.</b> Cobbe et al., Training Verifiers to Solve Math Word Problems. 2021. <a href="https://arxiv.org/abs/2110.14168">arXiv:2110.14168</a></li><li id="r9"><b>MATH.</b> Hendrycks et al., Measuring Mathematical Problem Solving With the MATH Dataset. NeurIPS 2021. <a href="https://arxiv.org/abs/2103.03874">arXiv:2103.03874</a></li><li id="r10"><b>LoRA.</b> Hu et al., LoRA: Low-Rank Adaptation of Large Language Models. ICLR 2022. <a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></li><li id="r11"><b>LookAtMyQuant 2.</b> Shin Megami Boson, 2026. <a href="https://lookatmyquant.pages.dev/2/">lookatmyquant.pages.dev/2</a></li><li id="r12"><b>MMLU.</b> Hendrycks et al., Measuring Massive Multitask Language Understanding. ICLR 2021. <a href="https://arxiv.org/abs/2009.03300">arXiv:2009.03300</a></li><li id="r13"><b>ARC.</b> Clark et al., Think you have Solved Question Answering? Try ARC, the AI2 Reasoning Challenge. 2018. <a href="https://arxiv.org/abs/1803.05457">arXiv:1803.05457</a></li><li id="r14"><b>HellaSwag.</b> Zellers et al., HellaSwag: Can a Machine Really Finish Your Sentence? ACL 2019. <a href="https://arxiv.org/abs/1905.07830">arXiv:1905.07830</a></li><li id="r15"><b>CommonsenseQA.</b> Talmor et al., CommonsenseQA: A Question Answering Challenge Targeting Commonsense Knowledge. NAACL 2019. <a href="https://arxiv.org/abs/1811.00937">arXiv:1811.00937</a></li><li id="r16"><b>HumanEval.</b> Chen et al., Evaluating Large Language Models Trained on Code. 2021. <a href="https://arxiv.org/abs/2107.03374">arXiv:2107.03374</a></li><li id="r17"><b>McNemar’s test.</b> McNemar, Note on the sampling error of the difference between correlated proportions or percentages. Psychometrika 12, 1947.</li></ol>
+
+    <h2 id="citation">Citation</h2>
+    <pre class="bib">@misc{boson2026prostheses,
+  title  = {Adding a Neural Prosthetic to a Language Model Without Harming It},
+  author = {{Shin Megami Boson}},
+  year   = {2026},
+  month  = nov,
+  url    = {https://lookatmyquant.pages.dev/prostheses/}
+}</pre>
+
+    <footer>Adding a Neural Prosthetic to a Language Model Without Harming It · November 2026 · <a href="../">All papers</a></footer>
+  </section>
+</div>
+<script id="paper-sections-behavior">
+(() => {
+  const menu = document.querySelector('details.paper-sections');
+  const summary = menu.querySelector('summary');
+  const compact = matchMedia('(max-width: 48rem), (max-height: 32rem) and (pointer: coarse)');
+  function setLayout() {
+    menu.open = !compact.matches;
+    summary.hidden = !compact.matches;
+  }
+  setLayout();
+  compact.addEventListener('change', setLayout);
+  menu.addEventListener('click', event => {
+    if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
+})();
+</script>
+</body>
+</html>

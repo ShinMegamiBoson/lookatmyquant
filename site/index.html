@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>LookAtMyQuant</title>
-<meta name="description" content="Papers by Shin Megami Boson on compressing language models and on the structures inside them: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, and moving groups of neurons between models.">
+<meta name="description" content="Papers by Shin Megami Boson on compressing language models, on the structures inside them, and on giving a frozen model a calculator: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, moving groups of neurons between models, and a 7 MB calculator prosthesis that leaves the rest of the model untouched.">
 <meta property="og:type" content="website">
 <meta property="og:title" content="LookAtMyQuant">
-<meta property="og:description" content="Papers by Shin Megami Boson on compressing language models and on the structures inside them: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, and moving groups of neurons between models.">
+<meta property="og:description" content="Papers by Shin Megami Boson on compressing language models, on the structures inside them, and on giving a frozen model a calculator: a quantization compiler, a 1.2 GB Qwen3.5-4B, a map of the neurons of 30 models, moving groups of neurons between models, and a 7 MB calculator prosthesis that leaves the rest of the model untouched.">
 <meta property="og:url" content="https://lookatmyquant.pages.dev/">
 <meta property="og:image" content="https://lookatmyquant.pages.dev/compiler/og.jpg">
 <meta property="og:image:width" content="1200">
@@ -58,7 +58,7 @@ footer { margin-top: 56px; font: 400 0.88rem/1.5 var(--sans); color: var(--muted
 <div class="wrap">
   <header class="title col">
     <h1>LookAtMyQuant</h1>
-    <p class="subtitle">Papers on compressing language models and on the structures inside them</p>
+    <p class="subtitle">Papers on compressing language models, on the structures inside them, and on giving a frozen model a calculator</p>
     <p class="authors">Shin Megami Boson</p>
     <nav class="links" aria-label="Code and models">
       <a href="https://github.com/ShinMegamiBoson/lookatmyquant">Code</a>
@@ -76,6 +76,10 @@ footer { margin-top: 56px; font: 400 0.88rem/1.5 var(--sans); color: var(--muted
       <li><a href="https://qwen-neuron-map.pages.dev/"><img src="thumbs/encyclopedia.jpg" width="640" height="400" alt=""><div><h3>Encyclopedia of LLM homologies</h3><p>30 language models, each drawn from its own MLP neurons and laid out on one shared map of 323 families of structure</p><p class="when">November 2026</p></div></a></li>
       <li><a href="https://qwen-neuron-map.pages.dev/surgery/"><img src="thumbs/surgery.jpg" width="640" height="400" alt=""><div><h3>Neuron surgery</h3><p>A model’s calculation neurons can be replaced by another model’s with 0.011% of its parameters trained</p><p class="when">November 2026</p></div></a></li>
       <li><a href="grafting/"><img src="thumbs/grafting.jpg" width="640" height="400" alt=""><div><h3>Grafting Neural Primitives Across Models</h3><p>Can a smaller Qwen model use a larger model’s arithmetic neurons? We replaced Qwen3.5-4B’s disabled calculation neurons with neurons from Qwen3.5-9B. The 4B then solved 82.4% of GSM8K word problems, reaching 92% of the intact 4B’s score and 87% of the 9B donor’s. Shuffling the same graft’s weights cut accuracy to 37.6%.</p><p class="when">November 2026</p></div></a></li>
+    </ul>
+    <h2>Neural prostheses</h2>
+    <ul class="papers">
+      <li><a href="prostheses/"><img src="thumbs/prostheses.jpg" width="640" height="400" alt=""><div><h3>Adding a Neural Prosthetic to a Language Model Without Harming It</h3><p>A 7.04 MB frozen-host calculator and symbolic algebra sidecar lifts Qwen3.5-4B arithmetic from 42.2% to 92.2% and symbolic CAS from 23.3% to 100.0% with zero harm across 4,457 non-math items (−0.09 pp, p = 0.69). On a 1.22 GB quantized host, it beats the unquantized 8.41 GB model on math and heals general benchmarks (+1.66 pp, p = 2.4 × 10⁻⁵).</p><p class="when">November 2026</p></div></a></li>
     </ul>
     <footer>Shin Megami Boson · 2026</footer>
   </main>
