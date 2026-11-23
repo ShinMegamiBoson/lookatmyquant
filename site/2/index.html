@@ -110,6 +110,37 @@ ol.refs li b { color: var(--ink); font-weight: 600; }
 footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
 #video video { display: block; width: 100%; height: auto; background: #191919; }
 </style>
+<style id="paper-sections-style">
+.paper-sections { width: 100%; min-width: 0; }
+.paper-sections > summary {
+  width: fit-content; margin: 0 auto; min-height: 44px; padding: 10px 4px;
+  color: var(--ink); cursor: pointer; font: 600 1rem/1.5 var(--sans);
+  text-align: left;
+}
+.paper-sections > summary::marker { color: var(--muted); }
+.paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
+  header.title:has(.paper-sections) {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+    column-gap: 0.6rem; row-gap: 8px; margin-bottom: 16px;
+  }
+  header.title:has(.paper-sections) > :is(h1, .subtitle) { flex-basis: 100%; }
+  header.title:has(.paper-sections) > :is(.authors, .meta) {
+    margin: 0; font: 400 .9rem/1.5 var(--sans); color: var(--muted);
+  }
+  header.title:has(.paper-sections) > .meta::before { content: "·"; margin-right: .6rem; }
+  .paper-sections { border-block: 1px solid var(--line); margin-top: 3px; }
+  .paper-sections .links { display: grid; gap: 0; margin: 0; text-align: left; }
+  .paper-sections .links a {
+    display: block; min-height: 44px; padding: 10px 8px;
+    color: var(--ink); background: transparent; border-radius: 0;
+    border-top: 1px solid var(--line); box-shadow: none; font: 500 1rem/1.45 var(--sans);
+    overflow-wrap: anywhere;
+  }
+  .paper-sections .links a:focus-visible { outline-offset: -2px; }
+}
+</style>
 </head>
 <body>
 <!-- The numbers in <span data-v> and the rows of both tables are written by site/build_lookatmyquant2.py from the result files. -->
@@ -119,7 +150,9 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p class="subtitle">Qwen3.5-4B in 1.2 GB: <span data-v="ours">330</span> of 540 math problems to Bonsai 2 Ternary's <span data-v="bonsai">328</span>, and closer to the original on text</p>
     <p class="authors">Shin Megami Boson</p>
     <p class="meta">November 2026</p>
-    <nav class="links" aria-label="Sections">
+    <details class="paper-sections">
+      <summary>On this page</summary>
+      <nav class="links" aria-label="Sections">
       <a href="#results">Results</a>
       <a href="#findings">Findings</a>
       <a href="#video">Video</a>
@@ -131,19 +164,15 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <a class="back" href="../compiler/">LookAtMyQuant 1</a>
       <a class="back" href="../">All papers</a>
     </nav>
+    </details>
   </header>
 
   <figure class="wide" id="fig1">
-    <div class="legend">
-      <span><i style="background:var(--ours)"></i>Ours</span>
-      <span><i style="background:var(--rival)"></i>Bonsai 2 Ternary 4B</span>
-      <span><i style="background:var(--other)"></i>Smaller Qwen3.5 models at more bits per weight, and the original</span>
-    </div>
     <div class="grid2">
       <div><p class="panel-title">Math problems solved, of 540</p><div class="chart" id="f1math"></div></div>
       <div><p class="panel-title">KL from the original on text (lower is better)</p><div class="chart" id="f1text"></div></div>
     </div>
-    <figcaption><b>Figure 1.</b> Left: exact-match math problems solved, of 540. Right: KL(original ‖ model) between next-token distributions, averaged over held-out text from 13 sources. Sizes are language-model weights.</figcaption>
+    <figcaption><b>Figure 1.</b> Left: exact-match math problems solved, of 540. Right: KL(original ‖ model) between next-token distributions, averaged over held-out text from 13 sources. Sizes are language-model weights. Table 1 includes the three smaller Qwen models.</figcaption>
   </figure>
 
   <figure class="col" id="video">
@@ -347,7 +376,6 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
   const kl = (v) => v.toFixed(2), gb = (v) => v.toFixed(2), pct = (a, b) => (100 * a / b).toFixed(1);
-  const COL = { ours: 'var(--ours)', rival: 'var(--rival)', smaller: 'var(--other)', original: 'var(--other)' };
   const T = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 13}" fill="${o.fill || 'var(--muted)'}" text-anchor="${o.anchor || 'start'}" font-family="var(--sans)"${o.weight ? ` font-weight="${o.weight}"` : ''}${o.caps ? ' letter-spacing="0.06em"' : ''}>${s}</text>`;
   const W = (el) => Math.max(280, el.clientWidth || 460);
   // a bar from x of this width and height, its right end rounded
@@ -355,14 +383,14 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   // ---- Figure 1: one bar per model
   function bars(id, value, max, label, tipOf) {
-    const el = document.getElementById(id), w = W(el), rows = D.models, rh = 46, right = 46, top = 2;
+    const el = document.getElementById(id), w = W(el), rows = D.models.filter((m) => m.group !== 'smaller'), rh = 46, right = 46, top = 2;
     const h = top + rows.length * rh, bw = w - right;
     let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(el.previousElementSibling.textContent)}">`;
     rows.forEach((m, i) => {
       const y = top + i * rh, v = value(m), ww = v > 0 ? Math.max(5, bw * v / max) : 0;
       s += `<g data-tip="${esc(tipOf(m))}">`;
       s += T(0, y + 14, esc(m.name), { fill: 'var(--ink)', weight: m.group === 'ours' ? 600 : 400 }) + T(bw, y + 14, gb(m.gb) + ' GB', { anchor: 'end', size: 12 });
-      s += `<rect x="0" y="${y + 21}" width="${bw}" height="14" rx="4" fill="var(--soft)"/>` + (ww ? bar(0, y + 21, ww, 14, COL[m.group]) : '');
+      s += `<rect x="0" y="${y + 21}" width="${bw}" height="14" rx="4" fill="var(--soft)"/>` + (ww ? bar(0, y + 21, ww, 14, (m.group === 'ours' ? 'var(--ours)' : 'var(--other)')) : '');
       s += T(bw + 8, y + 33, label(m), { fill: 'var(--ink)', weight: m.group === 'ours' ? 600 : 500 });
       s += `<rect x="0" y="${y}" width="${w}" height="${rh}" fill="transparent"/></g>`;
     });
@@ -370,7 +398,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   }
   function fig1() {
     bars('f1math', (m) => m.math, 540, (m) => m.math, (m) => `<b>${m.name}</b><br>${m.math} of 540, ${pct(m.math, 540)}%`);
-    bars('f1text', (m) => m.kl13, Math.max(...D.models.map((m) => m.kl13)), (m) => (m.kl13 ? kl(m.kl13) : '0'), (m) => `<b>${m.name}</b><br>KL on the 13 sources ${kl(m.kl13)}<br>KL on WikiText-2 ${kl(m.klw)}`);
+    bars('f1text', (m) => m.kl13, Math.max(...D.models.filter((m) => m.group !== 'smaller').map((m) => m.kl13)), (m) => (m.kl13 ? kl(m.kl13) : '0'), (m) => `<b>${m.name}</b><br>KL on the 13 sources ${kl(m.kl13)}<br>KL on WikiText-2 ${kl(m.klw)}`);
   }
 
   // ---- Figure 2: each source, ours beside Bonsai
@@ -435,6 +463,22 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   draw();
   let t, last = innerWidth;
   addEventListener('resize', () => { if (innerWidth === last) return; last = innerWidth; clearTimeout(t); t = setTimeout(draw, 120); });
+})();
+</script>
+<script id="paper-sections-behavior">
+(() => {
+  const menu = document.querySelector('details.paper-sections');
+  const summary = menu.querySelector('summary');
+  const compact = matchMedia('(max-width: 48rem), (max-height: 32rem) and (pointer: coarse)');
+  function setLayout() {
+    menu.open = !compact.matches;
+    summary.hidden = !compact.matches;
+  }
+  setLayout();
+  compact.addEventListener('change', setLayout);
+  menu.addEventListener('click', event => {
+    if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
 })();
 </script>
 </body>

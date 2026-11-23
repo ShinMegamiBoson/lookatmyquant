@@ -167,6 +167,37 @@ ol.refs li b { color: var(--ink); font-weight: 600; }
 footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
 #video video { display: block; width: 100%; height: auto; background: #191919; }
 </style>
+<style id="paper-sections-style">
+.paper-sections { width: 100%; min-width: 0; }
+.paper-sections > summary {
+  width: fit-content; margin: 0 auto; min-height: 44px; padding: 10px 4px;
+  color: var(--ink); cursor: pointer; font: 600 1rem/1.5 var(--sans);
+  text-align: left;
+}
+.paper-sections > summary::marker { color: var(--muted); }
+.paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
+  header.title:has(.paper-sections) {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+    column-gap: 0.6rem; row-gap: 8px; margin-bottom: 16px;
+  }
+  header.title:has(.paper-sections) > :is(h1, .subtitle) { flex-basis: 100%; }
+  header.title:has(.paper-sections) > :is(.authors, .meta) {
+    margin: 0; font: 400 .9rem/1.5 var(--sans); color: var(--muted);
+  }
+  header.title:has(.paper-sections) > .meta::before { content: "·"; margin-right: .6rem; }
+  .paper-sections { border-block: 1px solid var(--line); margin-top: 3px; }
+  .paper-sections .links { display: grid; gap: 0; margin: 0; text-align: left; }
+  .paper-sections .links a {
+    display: block; min-height: 44px; padding: 10px 8px;
+    color: var(--ink); background: transparent; border-radius: 0;
+    border-top: 1px solid var(--line); box-shadow: none; font: 500 1rem/1.45 var(--sans);
+    overflow-wrap: anywhere;
+  }
+  .paper-sections .links a:focus-visible { outline-offset: -2px; }
+}
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -178,7 +209,9 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p class="subtitle">A quantization compiler that delivers 12× lower KL than Q4_K_M at the same file size</p>
     <p class="authors">Shin Megami Boson</p>
     <p class="meta">October 2026</p>
-    <nav class="links" aria-label="Sections">
+    <details class="paper-sections">
+      <summary>On this page</summary>
+      <nav class="links" aria-label="Sections">
       <a href="#results">Results</a>
       <a href="#video">Video</a>
       <a href="#method">Method</a>
@@ -187,12 +220,13 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <a href="../2/">LookAtMyQuant 2</a>
       <a class="back" href="../">All papers</a>
     </nav>
+    </details>
   </header>
 
   <figure class="wide" id="fig1">
     <div class="legend" id="fig1-legend"></div>
     <div class="chart" id="teaser"></div>
-    <figcaption><b>Figure 1.</b> Size and KL divergence from the original model for each quantized Gemma 4 E2B file. The blue files are made by the compiler from llama.cpp's own quantization types and load in llama.cpp. At every size where a public file exists, they have at least <span data-v="minRatio">6</span> times lower KL divergence. At the size of llama.cpp Q4_K_M, the KL is <span data-v="q4Ratio">12</span> times lower. KL is averaged over held-out text in 13 languages and domains; log scale.</figcaption>
+    <figcaption><b>Figure 1.</b> Size and KL divergence from the original Gemma 4 E2B for the compiler’s GGUFs and published files made without retraining. The blue files are made by the compiler from llama.cpp's own quantization types and load in llama.cpp. At every size where a public file exists, they have at least <span data-v="minRatio">6</span> times lower KL divergence. At the size of llama.cpp Q4_K_M, the KL is <span data-v="q4Ratio">12</span> times lower. KL is averaged over 13 held-out text sources and plotted on a log scale. Table 2 also gives the compiler’s custom codes and Google’s retrained file.</figcaption>
   </figure>
 
   <section class="col">
@@ -453,9 +487,8 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   </section>
 
   <figure class="wide" id="fig12">
-    <div class="legend" id="fig8-legend"></div>
     <div class="chart" id="additivity"></div>
-    <figcaption><b>Figure 12.</b> Predicted KL (the sum over pieces) against measured KL for every compiled plan we evaluated, log scales. The diagonal is perfect prediction; the band is ±20%.</figcaption>
+    <figcaption><b>Figure 12.</b> Predicted KL (the sum over pieces) against measured KL for every compiled plan we evaluated, log scales. Each point is one plan. The diagonal is perfect prediction and the shaded band spans ±20%. Select a point for its model and exact scores.</figcaption>
   </figure>
 
   <section class="col">
@@ -604,7 +637,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   // ---- legends
   const dot = (c, label, cls = '') => `<span><i class="${cls}" style="background:${c}"></i>${label}</span>`;
   const MAIN_LEGEND = dot('var(--gguf)', 'LookAtMyQuant, GGUF (llama.cpp types)') + dot('var(--own)', "LookAtMyQuant, own codes") + dot('var(--pub)', 'Public files') + `<span><i class="ring"></i>Google QAT (retrained)</span>`;
-  document.getElementById('fig1-legend').innerHTML = MAIN_LEGEND;
+  document.getElementById('fig1-legend').innerHTML = dot('var(--gguf)', 'Compiled GGUF') + dot('var(--pub)', 'Published files');
   document.getElementById('fig2-legend').innerHTML = MAIN_LEGEND;
 
   // ---- label placement helper
@@ -628,7 +661,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   function teaser() {
     const el = document.getElementById('teaser'), w = W(el), h = Math.round(Math.min(460, Math.max(330, w * 0.5)));
     const ml = 52, mr = 16, mt = 14, mb = 36, fs = w < 520 ? 10.5 : 12;
-    const rows = E.filter((r) => r.mix_kl != null && r.group !== 'original');
+    const rows = E.filter((r) => r.mix_kl != null && (r.group === 'ours_gguf' || (r.group === 'public' && r.maker !== 'Google QAT')));
     const x0 = 1.4, x1 = 3.75, y0 = 0.004, y1 = 1.0;
     const x = (v) => ml + (w - ml - mr) * (v - x0) / (x1 - x0), y = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(y0)) / (lg(y1) - lg(y0)));
     let s = '';
@@ -636,24 +669,18 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     [1.5, 2, 2.5, 3, 3.5].forEach((t) => { s += T(x(t), h - 12, `${t.toFixed(1)} GB`, { anchor: 'middle', mono: true, size: fs - 1 }); });
     s += `<line x1="${ml}" x2="${w - mr}" y1="${h - mb}" y2="${h - mb}" stroke="var(--faint)"/>`;
     s += T(ml, mt - 2, 'KL to the original (lower is closer)', { size: fs - 1 });
-    const line = (pts, c, dash) => `<path d="M${pts.map((p) => `${x(p.gb)},${y(p.mix_kl)}`).join('L')}" fill="none" stroke="${c}" stroke-width="2.25" ${dash ? `stroke-dasharray="${dash}"` : ''} stroke-linejoin="round"/>`;
-    s += line(own, 'var(--own)', '6 4') + line(gguf, 'var(--gguf)');
+    s += `<polyline points="${gguf.map((r) => `${x(r.gb)},${y(r.mix_kl)}`).join(' ')}" fill="none" stroke="var(--gguf)" stroke-width="2.25"/>`;
     const tipOf = (r) => esc(`<b>${r.name}</b><br>${gb(r.gb)} GB · KL ${kl(r.mix_kl)}${r.gsm8k != null ? ` · GSM8K ${pct(r.gsm8k)}` : ''}`);
     const marks = [];
     rows.forEach((r) => {
       const cx = x(r.gb), cy = y(r.mix_kl);
-      const c = r.group === 'ours_gguf' ? 'var(--gguf)' : r.group === 'ours' ? 'var(--own)' : 'var(--pub)';
-      const qat = r.maker === 'Google QAT';
-      s += `<circle cx="${cx}" cy="${cy}" r="${r.group === 'public' ? 5.5 : 5}" fill="${qat ? 'var(--bg)' : c}" stroke="${qat ? c : 'var(--bg)'}" stroke-width="2" data-tip="${tipOf(r)}"/>`;
+      const c = r.group === 'ours_gguf' ? 'var(--gguf)' : 'var(--pub)';
+      s += `<circle cx="${cx}" cy="${cy}" r="5" fill="${c}" stroke="var(--bg)" stroke-width="2" data-tip="${tipOf(r)}"/>`;
       marks.push({ x: cx - 6, y: cy - 6, w: 12, h: 12 });
     });
-    const labs = placeLabels(pub.filter((r) => r.mix_kl != null).sort((a, b) => a.mix_kl - b.mix_kl).map((r) => ({ x: x(r.gb), y: y(r.mix_kl), text: r.name, avoid: marks })),
+    const labs = placeLabels(rows.filter((r) => r.group === 'public').sort((a, b) => a.mix_kl - b.mix_kl).map((r) => ({ x: x(r.gb), y: y(r.mix_kl), text: r.name, avoid: marks })),
       { x0: ml, x1: w - mr, y0: mt, y1: h - mb }, fs - 1);
     labs.forEach((l) => { s += T(l.bx, l.by, esc(l.text), { size: fs - 1, halo: true }); });
-    const gl = gguf[gguf.length - 1], ol = own[own.length - 1];
-    s += T(x(gguf[0].gb) - 6, y(gguf[0].mix_kl) - 10, 'GGUF', { size: fs, fill: 'var(--gguf)', weight: 600, anchor: 'end', halo: true });
-    s += T(x(own[0].gb) + 8, y(own[0].mix_kl) - 8, 'own codes', { size: fs, fill: 'var(--own)', weight: 600, halo: true });
-    s += T(x(gl.gb) + 9, y(gl.mix_kl) + 4, `${gb(gl.gb)} GB`, { size: fs - 1, fill: 'var(--gguf)', halo: true });
     el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL divergence against file size for Gemma 4 E2B: compiled files sit far below every public file of the same size">${s}</svg>`;
   }
 
@@ -757,8 +784,6 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   // ---- Figure 12: additivity
   function additivity() {
     const el = document.getElementById('additivity'), w = W(el), h = Math.round(Math.min(440, Math.max(320, w * 0.55))), ml = 52, mr = 14, mt = 10, mb = 36;
-    const S = { 'SmolLM2-360M': ['circle', 'var(--bg)', 'var(--ink)'], 'Qwen3.5-4B': ['square', 'var(--bg)', 'var(--ink)'],
-      'Gemma 4 E2B, own codes': ['diamond', 'var(--own)', 'var(--own)'], 'Gemma 4 E2B, GGUF': ['diamond', 'var(--gguf)', 'var(--gguf)'] };
     const lo = 0.0008, hi = 0.6, sx = (v) => ml + (w - ml - mr) * (lg(v) - lg(lo)) / (lg(hi) - lg(lo)), sy = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(lo)) / (lg(hi) - lg(lo)));
     let s = '';
     [0.001, 0.01, 0.1].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${sy(t)}" y2="${sy(t)}" stroke="var(--line)"/><line x1="${sx(t)}" x2="${sx(t)}" y1="${mt}" y2="${h - mb}" stroke="var(--line)"/>` +
@@ -767,11 +792,9 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     s += `<line x1="${sx(lo)}" y1="${sy(lo)}" x2="${sx(hi)}" y2="${sy(hi)}" stroke="var(--muted)" stroke-dasharray="4 4"/>`;
     s += T(ml + 4, mt + 12, 'measured ↑', { size: 11 }) + T(w - mr, h - 2, 'predicted →', { anchor: 'end', size: 11 });
     Object.entries(D.additivity).forEach(([m, pts]) => {
-      const [k, f, st] = S[m];
-      pts.forEach(([name, p, q]) => { s += `<g data-tip="${esc(`<b>${m}</b><br>${name}<br>predicted ${kl(p)} · measured ${kl(q)}`)}">${shape(k, sx(p), sy(q), f, st)}</g>`; });
+      pts.forEach(([name, p, q]) => { s += `<g data-tip="${esc(`<b>${m}</b><br>${name}<br>predicted ${kl(p)} · measured ${kl(q)}`)}"><circle cx="${sx(p)}" cy="${sy(q)}" r="5" fill="var(--gguf)" fill-opacity=".8" stroke="var(--bg)" stroke-width="1.5"/></g>`; });
     });
     el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Predicted against measured KL; most plans fall within 20 percent of the diagonal">${s}</svg>`;
-    document.getElementById('fig8-legend').innerHTML = Object.entries(S).map(([m, [k, f, st]]) => `<span>${shapeIcon(k, f, st)}${esc(m)}</span>`).join('');
   }
 
   // ---- Figure 13: layers
@@ -1128,6 +1151,22 @@ function tnTable() {
   const draw = () => { redrawCurve(); teaser(); gsm(); bytes(); probe(); ratios(); additivity(); layers(); };
   draw();
   let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(draw, 120); }).observe(document.body);
+})();
+</script>
+<script id="paper-sections-behavior">
+(() => {
+  const menu = document.querySelector('details.paper-sections');
+  const summary = menu.querySelector('summary');
+  const compact = matchMedia('(max-width: 48rem), (max-height: 32rem) and (pointer: coarse)');
+  function setLayout() {
+    menu.open = !compact.matches;
+    summary.hidden = !compact.matches;
+  }
+  setLayout();
+  compact.addEventListener('change', setLayout);
+  menu.addEventListener('click', event => {
+    if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
 })();
 </script>
 </body>

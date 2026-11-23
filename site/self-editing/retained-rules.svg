@@ -190,50 +190,6 @@ L 130.791529 179.559
 L 156.979765 179.559
 L 156.979765 179.559
 L 183.168 179.559
-L 183.168 179.559
-L 209.356235 179.559
-L 209.356235 179.559
-L 235.544471 179.559
-L 235.544471 179.559
-L 261.732706 179.559
-L 261.732706 179.559
-L 287.920941 179.559
-L 287.920941 179.559
-L 314.109176 179.559
-L 314.109176 179.559
-" clip-path="url(#p6458eb2653)" style="fill: none; stroke-dasharray: 1.4,2.31; stroke-dashoffset: 0; stroke: var(--c0,#1a1e24); stroke-width: 1.4"/>
-    <defs>
-     <path id="m104e052b45" d="M 0 -1.75
-L -1.75 1.75
-L 1.75 1.75
-z
-" style="stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-    </defs>
-    <g clip-path="url(#p6458eb2653)">
-     <use xlink:href="#m104e052b45" x="52.226824" y="211.131223" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="78.415059" y="194.836723" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="104.603294" y="194.836723" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="130.791529" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="156.979765" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="183.168" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="209.356235" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="235.544471" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="261.732706" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="287.920941" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     <use xlink:href="#m104e052b45" x="314.109176" y="179.559" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-    </g>
-   </g>
-   <g id="line2d_19">
-    <path d="M 52.226824 211.131223
-L 78.415059 211.131223
-L 78.415059 194.836723
-L 104.603294 194.836723
-L 104.603294 194.836723
-L 130.791529 194.836723
-L 130.791529 179.559
-L 156.979765 179.559
-L 156.979765 179.559
-L 183.168 179.559
 L 183.168 164.281277
 L 209.356235 164.281277
 L 209.356235 164.281277
@@ -279,11 +235,8 @@ z
    <g id="text_14">
     <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c4,#747f8f)" x="319.109176" y="162.054815" transform="rotate(-0 319.109176 162.054815)">40.6%</text>
    </g>
-   <g id="text_15">
-    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c0,#1a1e24)" x="319.109176" y="182.416422" transform="rotate(-0 319.109176 182.416422)">25.0%</text>
-   </g>
    <g id="legend_1">
-    <g id="line2d_20">
+    <g id="line2d_19">
      <path d="M 53.808 72.045519
 L 64.833 72.045519
 L 64.833 72.045519
@@ -294,10 +247,10 @@ L 75.858 72.045519
       <use xlink:href="#m060bf91a87" x="64.833" y="72.045519" style="fill: var(--c3,#2065ba); stroke: var(--c3,#2065ba)"/>
      </g>
     </g>
-    <g id="text_16">
+    <g id="text_15">
      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c0,#1a1e24)" x="84.258" y="75.720519" transform="rotate(-0 84.258 75.720519)">After self-training, with replay</text>
     </g>
-    <g id="line2d_21">
+    <g id="line2d_20">
      <path d="M 53.808 84.96134
 L 64.833 84.96134
 L 64.833 84.96134
@@ -308,29 +261,15 @@ L 75.858 84.96134
       <use xlink:href="#m077bfa0d2a" x="64.833" y="84.96134" style="fill: var(--c4,#747f8f); stroke: var(--c4,#747f8f); stroke-linejoin: miter"/>
      </g>
     </g>
-    <g id="text_17">
+    <g id="text_16">
      <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c0,#1a1e24)" x="84.258" y="88.63634" transform="rotate(-0 84.258 88.63634)">Before self-training, with replay</text>
-    </g>
-    <g id="line2d_22">
-     <path d="M 53.808 97.87716
-L 64.833 97.87716
-L 64.833 97.87716
-L 75.858 97.87716
-L 75.858 97.87716
-" style="fill: none; stroke-dasharray: 1.4,2.31; stroke-dashoffset: 0; stroke: var(--c0,#1a1e24); stroke-width: 1.4"/>
-     <g>
-      <use xlink:href="#m104e052b45" x="64.833" y="97.87716" style="fill: var(--c0,#1a1e24); stroke: var(--c0,#1a1e24); stroke-linejoin: miter"/>
-     </g>
-    </g>
-    <g id="text_18">
-     <text style="font-size: 10.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c0,#1a1e24)" x="84.258" y="101.55216" transform="rotate(-0 84.258 101.55216)">After self-training, without replay</text>
     </g>
    </g>
   </g>
-  <g id="text_19">
+  <g id="text_17">
    <text style="font-weight: 700; font-size: 13px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c0,#1a1e24)" x="11.448" y="15.336" transform="rotate(-0 11.448 15.336)">One model kept five rules across ten requests</text>
   </g>
-  <g id="text_20">
+  <g id="text_18">
    <text style="font-size: 11.5px; font-family: 'DejaVu Sans', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: var(--c1,#555f70)" x="11.448" y="37.062" transform="rotate(-0 11.448 37.062)">Prompt pairs passed across all eight real rules</text>
   </g>
  </g>

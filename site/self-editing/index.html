@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Recursive Self-Improvement at 4B via Self-Play Weight Editing</title>
-<meta name="description" content="Can a model get better at improving itself? Qwen3.5-4B selected examples from its own weight-editing attempts and used them to update the editor itself, without a teacher model or labeled training answers. On 60 unseen rules, the updated editor passed 447 of 960 prompt pairs (46.6%), up from 350 (36.5%).">
+<meta name="description" content="Can a model get better at improving itself? Qwen3.5-4B trained on its own editing attempts. On 60 unseen rules, its next edits passed 46.6% of prompt pairs, up from 36.5%.">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Recursive Self-Improvement at 4B via Self-Play Weight Editing">
-<meta property="og:description" content="Can a model get better at improving itself? Qwen3.5-4B selected examples from its own weight-editing attempts and used them to update the editor itself, without a teacher model or labeled training answers. On 60 unseen rules, the updated editor passed 447 of 960 prompt pairs (46.6%), up from 350 (36.5%).">
+<meta property="og:description" content="Can a model get better at improving itself? Qwen3.5-4B trained on its own editing attempts. On 60 unseen rules, its next edits passed 46.6% of prompt pairs, up from 36.5%.">
 <meta property="og:url" content="https://lookatmyquant.pages.dev/self-editing/">
 <meta property="og:image" content="https://lookatmyquant.pages.dev/self-editing/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Qwen3.5-4B before and after updating its own editing weights. It passed 350 and 447 of 960 test pairs on unseen rules.">
+<meta property="og:image:alt" content="Qwen3.5-4B passed 36.5%, 43.4% and 46.6% of test pairs on 60 unseen rules with 0, 16 and 32 practice tasks for one self-update.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://lookatmyquant.pages.dev/self-editing/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -85,15 +85,48 @@ ol.refs li { margin-bottom: 6px; overflow-wrap: anywhere; }
 ol.refs li b { color: var(--ink); font-weight: 600; }
 footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line); font: 400 0.88rem/1.5 var(--sans); color: var(--muted); }
 </style>
+<style id="paper-sections-style">
+.paper-sections { width: 100%; min-width: 0; }
+.paper-sections > summary {
+  width: fit-content; margin: 0 auto; min-height: 44px; padding: 10px 4px;
+  color: var(--ink); cursor: pointer; font: 600 1rem/1.5 var(--sans);
+  text-align: left;
+}
+.paper-sections > summary::marker { color: var(--muted); }
+.paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+@media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
+  header.title:has(.paper-sections) {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+    column-gap: 0.6rem; row-gap: 8px; margin-bottom: 16px;
+  }
+  header.title:has(.paper-sections) > :is(h1, .subtitle) { flex-basis: 100%; }
+  header.title:has(.paper-sections) > :is(.authors, .meta) {
+    margin: 0; font: 400 .9rem/1.5 var(--sans); color: var(--muted);
+  }
+  header.title:has(.paper-sections) > .meta::before { content: "·"; margin-right: .6rem; }
+  .paper-sections { border-block: 1px solid var(--line); margin-top: 3px; }
+  .paper-sections .links { display: grid; gap: 0; margin: 0; text-align: left; }
+  .paper-sections .links a {
+    display: block; min-height: 44px; padding: 10px 8px;
+    color: var(--ink); background: transparent; border-radius: 0;
+    border-top: 1px solid var(--line); box-shadow: none; font: 500 1rem/1.45 var(--sans);
+    overflow-wrap: anywhere;
+  }
+  .paper-sections .links a:focus-visible { outline-offset: -2px; }
+}
+</style>
 </head>
 <body>
 <div class="wrap">
   <header class="title col">
     <h1>Recursive Self-Improvement at 4B via Self-Play Weight Editing</h1>
-    <p class="subtitle">Can a model get better at improving itself? Qwen3.5-4B selected examples from its own weight-editing attempts and used them to update the editor itself, without a teacher model or labeled training answers. On 60 unseen rules, the updated editor passed 447 of 960 prompt pairs (46.6%), up from 350 (36.5%).</p>
+    <p class="subtitle">Can a model get better at improving itself? Qwen3.5-4B trained on its own editing attempts. On 60 unseen rules, its next edits passed 46.6% of prompt pairs, up from 36.5%.</p>
     <p class="authors">Shin Megami Boson</p>
     <p class="meta">November 2026</p>
-    <nav class="links" aria-label="Sections">
+    <details class="paper-sections">
+      <summary>On this page</summary>
+      <nav class="links" aria-label="Sections">
       <a href="#lineage">How Qwen made itself a better editor</a>
       <a href="#cliff">How a 4B model repaired its own weights</a>
       <a href="#method">How Qwen graded its own edits</a>
@@ -104,11 +137,12 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
       <a href="#cost">What $194 in GPU time paid for</a>
       <a class="back" href="../">All papers</a>
     </nav>
+    </details>
   </header>
 
   <figure class="col research-plot" id="fig1">
-    <img src="editor-pass-rates.svg" width="530" height="325" alt="On 60 unseen rules, Qwen’s edits passed 350 of 960 prompt pairs before self-training and 447 after. On the final 12 rules the counts were 87 and 117 of 192.">
-    <figcaption><b>Figure 1.</b> Qwen3.5-4B passed 97 more prompt pairs after it trained and selected an update to its own editing weights. Both editors received the same unseen rules, prompts and tools. A pair counts only when the edited model follows the rule on one prompt and preserves its answer on a similar prompt outside the rule. The final 12 rules are part of the 60 and were written after all methods were fixed.</figcaption>
+    <img src="editor-pass-rates.svg" width="530" height="325" alt="Qwen3.5-4B passed 36.5%, 43.4% and 46.6% of test pairs with 0, 16 and 32 practice tasks for one self-update.">
+    <figcaption><b>Figure 1.</b> The starting editor passed 350/960 prompt pairs. One self-update from 16 practice tasks raised that to 417/960. One update from 32 tasks reached 447/960. The 16-task and 32-task editors each started from the same weights. A separate two-round run on 32 tasks passed 372/960 (38.8%). On the 12 rules written last, one update from 32 tasks raised the score from 87/192 to 117/192.</figcaption>
   </figure>
 
   <section class="col">
@@ -236,8 +270,8 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
     <h2 id="continual">6. After ten requests, one model retained all five rules it learned, passing 87.5–100% of each rule’s test pairs</h2>
     <p>Rules written into a model are triggered by different user inputs, so they can share one checkpoint more easily than whole editors can (Section 5). An earlier version of Gen 1 (32 tasks) received ten unseen rule requests in a row: eight real rules, and impossible ones at steps 4 and 8. Each accepted edit went into the same Qwen3.5-4B checkpoint, tested without any rule in its prompt, and before each edit the editor replayed synthetic prompts from its earlier accepted edits, with no labels (<a href="#fig3">Figure 3</a>). It wrote five of the eight real rules (four extraction formats and the finance warning) and declined the other three (two API migrations and a new operator) and both impossible ones. Each rule it wrote added about 12 points to the pass rate over all eight, which reached 61.7%. The first rule still passed 100% of its pairs after four later edits, and every factual answer was kept.</p>
     <figure class="research-plot" id="fig3">
-      <img src="retained-rules.svg" width="530" height="355" alt="At the tenth request, the self-trained editor with replay passed 61.7% of prompt pairs across eight rules. The starting editor with replay passed 40.6%, and the self-trained editor without replay passed 25.0%.">
-      <figcaption><b>Figure 3.</b> In a separate experiment with earlier versions of the editors, the self-trained editor replayed examples from its previous edits before writing each new rule. It accepted five of eight real rules and declined both impossible requests (steps 4 and 8). At the end it passed 87.5–100% of the pairs for each accepted rule. The lines average over all eight real rules, including the three it declined.</figcaption>
+      <img src="retained-rules.svg" width="530" height="355" alt="At the tenth request, the self-trained editor with replay passed 61.7% of prompt pairs across eight rules. The starting editor with the same replay passed 40.6%.">
+      <figcaption><b>Figure 3.</b> In a separate experiment with earlier versions of the editors, the self-trained editor replayed examples from its previous edits before writing each new rule. It accepted five of eight real rules and declined both impossible requests (steps 4 and 8). At the end it passed 87.5–100% of the pairs for each accepted rule. Both lines use the same replay method and average over all eight real rules. The self-trained editor without replay finished at 25.0%.</figcaption>
     </figure>
     <p>Replaying earlier examples helped preserve the gains. Sequential LoRA training without the editor swung between 0.0% and 37.5%, ended at 25.0% and kept none of the first rule (<i>p</i> = 4.7 × 10<sup>−6</sup>). The same Gen 1 editor without replay stopped at 25.0% (<i>p</i> ≤ 2.5 × 10<sup>−11</sup>), and an earlier Gen 0 with replay at 40.6% (<i>p</i> ≤ 0.0056). An earlier Gen 2 with replay wrote two rules, made an edit for one impossible rule, and reached 25.8%. The eight-rule system prompt passes 78.1% but changes 9.38% of sibling answers, 12 times the edited checkpoint’s 0.78%.</p>
 
@@ -279,5 +313,21 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
     <footer>Recursive Self-Improvement at 4B via Self-Play Weight Editing · November 2026 · <a href="../">All papers</a></footer>
   </section>
 </div>
+<script id="paper-sections-behavior">
+(() => {
+  const menu = document.querySelector('details.paper-sections');
+  const summary = menu.querySelector('summary');
+  const compact = matchMedia('(max-width: 48rem), (max-height: 32rem) and (pointer: coarse)');
+  function setLayout() {
+    menu.open = !compact.matches;
+    summary.hidden = !compact.matches;
+  }
+  setLayout();
+  compact.addEventListener('change', setLayout);
+  menu.addEventListener('click', event => {
+    if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
+})();
+</script>
 </body>
 </html>
