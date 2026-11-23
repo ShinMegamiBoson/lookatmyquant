@@ -17,9 +17,8 @@ Endpoints: `POST /v1/chat/completions` (streaming and not), `GET /v1/models`, `G
 
 One request is generated at a time. Concurrent generation requests receive HTTP 503.
 
-`--ui` also serves a browser chat page at `GET /`. Browser requests are otherwise refused; with `--ui`,
-a request whose `Origin` is exactly this server's own validated `Host` (and that the browser marks
-same-origin) is accepted, so the page can call the API while other sites stay blocked.
+With `--ui`, the chat page at `GET /` can send same-origin requests over loopback HTTP or
+through a Host-preserving HTTPS proxy in front of an authenticated network listener.
 """
 
 from __future__ import annotations
@@ -30,6 +29,7 @@ import ipaddress
 import json
 import math
 import os
+import re
 import select
 import socket
 import sys
@@ -40,8 +40,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
 from pathlib import Path
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 MAX_REQUEST_BYTES = 1 << 20
@@ -55,6 +55,7 @@ UI_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Cache-Control": "no-cache",
 }
+_HTTP_AUTHORITY = re.compile(r"(?:[A-Za-z0-9._-]+|\[[A-Fa-f0-9:.]+\])(?::[0-9]+)?")
 
 
 def _is_loopback(host: str) -> bool:
@@ -575,31 +576,38 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 deadline.cancel()
                 self.close_connection = True
 
-        def _same_origin(self) -> bool:
-            # Only the bundled page's own requests: exactly one Origin naming this server's single Host.
-            # A rebinding name cannot pass, since loopback mode still requires a loopback Host below.
-            origins = self.headers.get_all("Origin", [])
-            hosts = self.headers.get_all("Host", [])
-            fetch_sites = self.headers.get_all("Sec-Fetch-Site", [])
-            return (ui and len(origins) == 1 and len(hosts) == 1 and len(fetch_sites) <= 1
-                    and origins[0].lower() == f"http://{hosts[0]}".lower()
-                    and (not fetch_sites or fetch_sites[0] == "same-origin"))
-
         def _authorized(self, require_key: bool = True) -> bool:
-            if self.headers.get_all("Origin") is not None and not self._same_origin():
+            hosts = self.headers.get_all("Host", [])
+            origins = self.headers.get_all("Origin", [])
+            if origins and not ui:
                 self._error(403, "browser origins are disabled")
                 return False
-            if loopback:
+
+            if loopback or origins or not require_key:
                 try:
-                    hosts = self.headers.get_all("Host", [])
-                    authority = urlsplit(f"//{hosts[0]}") if len(hosts) == 1 else None
-                    valid_host = (authority is not None and authority.netloc == hosts[0]
-                                  and authority.username is None and _is_loopback(authority.hostname or ""))
+                    if len(hosts) != 1 or not _HTTP_AUTHORITY.fullmatch(hosts[0]):
+                        raise ValueError
+                    authority = urlsplit("//" + hosts[0].lower())
+                    hostname, port = authority.hostname, authority.port
                 except ValueError:
-                    valid_host = False
-                if not valid_host:
+                    self._error(403, "a valid Host is required")
+                    return False
+                local_host = _is_loopback(hostname)
+                if loopback and not local_host:
                     self._error(403, "local requests require a loopback Host")
                     return False
+                if origins:
+                    # Compare the browser's serialized origin to the original Host at the TLS proxy.
+                    # Default ports disappear during origin serialization. Forwarded headers are unnecessary.
+                    scheme, default_port = ("http", 80) if local_host else ("https", 443)
+                    host = f"[{hostname}]" if ":" in hostname else hostname
+                    if port is not None and port != default_port:
+                        host += f":{port}"
+                    sites = self.headers.get_all("Sec-Fetch-Site", [])
+                    if (len(origins) != 1 or origins[0].lower() != f"{scheme}://{host}"
+                            or (sites and sites != ["same-origin"])):
+                        self._error(403, "chat requests require the page's own origin")
+                        return False
             if expected_auth is not None and require_key:
                 auth = self.headers.get_all("Authorization", [])
                 if len(auth) != 1 or not hmac.compare_digest(auth[0].encode(), expected_auth):
@@ -906,8 +914,10 @@ def serve(args: argparse.Namespace) -> int:
             address = f"[{args.host}]" if ":" in args.host else args.host
             log(f"serving {model_id!r} on http://{address}:{srv.server_port}/v1 (context {args.context}, "
                 f"reasoning_effort {args.reasoning_effort}, temp {args.temp})")
-            if args.ui:
+            if args.ui and loopback:
                 log(f"chat page on http://{address}:{srv.server_port}/")
+            elif args.ui:
+                log("browser chat enabled at / on your HTTPS proxy")
             try:
                 srv.serve_forever()
             except KeyboardInterrupt:

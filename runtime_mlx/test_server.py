@@ -305,6 +305,8 @@ def test_ui_page_and_same_origin_requests():
         st, _, data = _call(port, "POST", "/v1/chat/completions", job, own)
         assert st == 200 and json.loads(data)["choices"][0]["message"]["content"] == "Hello world"
         assert _call(port, "GET", "/v1/models", headers={"Origin": f"http://127.0.0.1:{port}"})[0] == 200
+        ipv6 = {"Host": f"[::1]:{port}", "Origin": f"http://[::1]:{port}"}
+        assert _call(port, "GET", "/v1/models", headers=ipv6)[0] == 200
 
         refused = [
             {"Origin": "https://example.invalid"},
@@ -332,6 +334,19 @@ def test_ui_page_and_same_origin_requests():
         assert _call(port, "POST", "/v1/chat/completions", job, own)[0] == 401
         assert _call(port, "POST", "/v1/chat/completions", job, {**own, "Authorization": "Bearer test-key"})[0] == 200
         assert _call(port, "GET", "/health", headers={"Origin": "https://example.invalid", "Authorization": "Bearer test-key"})[0] == 403
+
+        # A TLS proxy preserves the browser's Host while forwarding HTTP to the backend.
+        public = {"Host": "chat.example.test:8443", "Origin": "https://chat.example.test:8443",
+                  "Sec-Fetch-Site": "same-origin"}
+        auth = {"Authorization": "Bearer test-key"}
+        assert _call(port, "GET", "/", headers={"Host": public["Host"]})[0] == 200
+        assert _call(port, "POST", "/v1/chat/completions", job, public)[0] == 401
+        assert _call(port, "POST", "/v1/chat/completions", job, {**public, **auth})[0] == 200
+        default_tls = {"Host": "chat.example.test:443", "Origin": "https://chat.example.test"}
+        assert _call(port, "GET", "/v1/models", headers={**default_tls, **auth})[0] == 200
+        for origin in ("http://chat.example.test:8443", "https://chat.example.test", "https://other.example.test:8443"):
+            assert _call(port, "POST", "/v1/chat/completions", job, {**public, **auth, "Origin": origin})[0] == 403
+        assert _call(port, "GET", "/health", headers={"Host": public["Host"], **auth})[0] == 200
     finally:
         srv.shutdown()
         srv.server_close()
