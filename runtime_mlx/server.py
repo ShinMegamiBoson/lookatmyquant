@@ -717,6 +717,10 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
             except OSError:
                 return
             self._deadline.cancel()
+            # A browser tab may still hold the conversation for a different model served here earlier.
+            if utility is None and self.headers.get("Origin") and req.get("model", model_id) != model_id:
+                self._error(409, "the served model has changed", "model_changed")
+                return
             if not generation.acquire(blocking=False):
                 self._error(503, "model is busy", "server_overloaded")
                 return

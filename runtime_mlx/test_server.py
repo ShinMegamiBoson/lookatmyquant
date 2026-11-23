@@ -304,6 +304,11 @@ def test_ui_page_and_same_origin_requests():
 
         st, _, data = _call(port, "POST", "/v1/chat/completions", job, own)
         assert st == 200 and json.loads(data)["choices"][0]["message"]["content"] == "Hello world"
+        assert _call(port, "POST", "/v1/chat/completions", {**job, "model": "test"}, own)[0] == 200
+        old_chat = {**job, "model": "previous-model"}
+        st, _, data = _call(port, "POST", "/v1/chat/completions", old_chat, own)
+        assert st == 409 and json.loads(data)["error"]["type"] == "model_changed"
+        assert _call(port, "POST", "/v1/chat/completions", old_chat)[0] == 200
         assert _call(port, "GET", "/v1/models", headers={"Origin": f"http://127.0.0.1:{port}"})[0] == 200
         ipv6 = {"Host": f"[::1]:{port}", "Origin": f"http://[::1]:{port}"}
         assert _call(port, "GET", "/v1/models", headers=ipv6)[0] == 200
