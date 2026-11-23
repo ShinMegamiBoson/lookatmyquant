@@ -73,7 +73,7 @@ class PaperNavigationTests(unittest.TestCase):
                     context.close()
             page = browser.new_page(viewport={"width": 1280, "height": 800})
             page.goto(
-                (SITE / "self-editing/index.html").as_uri(),
+                next(papers_with_section_links()).as_uri(),
                 wait_until="domcontentloaded",
             )
             self.assertFalse(
