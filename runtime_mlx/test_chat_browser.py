@@ -354,6 +354,19 @@ class ChatBrowserTest(unittest.TestCase):
         self.page.wait_for_function("(previous) => document.querySelector('#log').scrollTop < previous", arg=scroll_top)
         expect(self.stop).to_be_visible()
 
+    def test_each_finished_reply_changes_the_live_status(self):
+        self.page.goto(self.url)
+        self.ready()
+        status = self.page.get_by_role("status")
+        self.ask("first question")
+        expect(status).to_have_text("Reply ready.")
+        self.ask("old question")
+        expect(self.stop).to_be_visible()
+        expect(status).to_be_empty()
+        self.release_old.set()
+        expect(self.stop).to_be_hidden()
+        expect(status).to_have_text("Reply ready.")
+
     def test_reload_after_discovery_failure_restores_a_sendable_draft(self):
         self.models_unavailable = True
         self.page.goto(self.url)

@@ -1196,6 +1196,8 @@ form.addEventListener("submit", (event) => {
     return;
   }
 
+  // Screen readers need a new status change even when consecutive replies finish with the same words.
+  $("announcer").textContent = "";
   const request = { model: identity.model, messages: [...conversationHistory(), { role: "user", content: text }],
     stream: true, stream_options: { include_usage: true } };
   if (effort.value) request.reasoning_effort = effort.value;
