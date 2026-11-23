@@ -117,7 +117,7 @@ for _p in sorted((ROOT / "results" / "compiler" / "plans").glob("x_*.json")):
                 *(["--rot", "in-shared"] if "_lm1s_" in _p.stem else []),  # one input rotation per stage, none on the output: half the rotations at decode
                 "--out", f"results/batch/cc_{_p.stem}.json"])
 
-# LookAtMyQuant 2 (https://lookatmyquant.pages.dev/2/): Qwen3.5-4B at 1.2 GB. Every file a job makes goes to lm2/ on the volume.
+# LookAtMyQuant 2 (https://lookatmyquant.com/2/): Qwen3.5-4B at 1.2 GB. Every file a job makes goes to lm2/ on the volume.
 # The row plan in results/compiler/rows/ is the one row_allocation.py made from lm2RowImportance's file and the plan.
 _lm2 = "/root/.cache/huggingface/lm2/"
 _bonsai = "bonsai:prism-ml/Ternary-Bonsai-2-4B-mlx-2bit"
