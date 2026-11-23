@@ -13,7 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime_mlx.server import (
-    MAX_REQUEST_BYTES, SPECIAL, BoundedHTTPServer, Engine, OutputParser, RequestError, make_handler, normalize_messages,
+    MAX_REQUEST_BYTES, SPECIAL, BoundedHTTPServer, Engine, OutputParser, RequestError,
+    anthropic_to_openai, apply_repetition_guard, make_handler, normalize_messages, responses_to_openai,
 )  # noqa: E402
 
 IDS = {k: 1000 + i for i, k in enumerate(SPECIAL)}
@@ -378,6 +379,208 @@ def test_engine_keeps_a_model_thread_across_clients():
     assert not engine.model_thread.is_alive()
 
 
+def test_anthropic_messages_endpoint() -> None:
+    srv = BoundedHTTPServer(("127.0.0.1", 0), make_handler(FakeEngine(), "inkling-test", api_key="secret", loopback=False))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_port
+    hdr = {"x-api-key": "secret"}
+    try:
+        # Translation check: system blocks, tool_use, mixed tool_result + text user turn
+        oai = anthropic_to_openai({
+            "system": [{"type": "text", "text": "Be terse."}],
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": [
+                    {"type": "thinking", "thinking": "plan"},
+                    {"type": "tool_use", "id": "tu_1", "name": "read", "input": {"path": "a.py"}},
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "tu_1", "content": "print(1)"},
+                    {"type": "text", "text": "now explain"},
+                ]},
+            ],
+            "tools": [{"name": "read", "description": "read file", "input_schema": {"type": "object"}}],
+            "thinking": {"type": "disabled"},
+            "max_tokens": 64,
+        })
+        assert oai["messages"][0] == {"role": "system", "content": "Be terse."}
+        assert oai["messages"][2]["reasoning_content"] == "plan"
+        assert oai["messages"][3] == {"role": "tool", "tool_call_id": "tu_1", "content": "print(1)"}
+        assert oai["messages"][4] == {"role": "user", "content": "now explain"}
+        assert oai["reasoning_effort"] == "none"
+        assert oai["tools"][0]["function"]["name"] == "read"
+
+        # Auth check: rejected without key, accepted with x-api-key
+        assert _call(port, "POST", "/v1/messages", {"messages": [{"role": "user", "content": "hi"}]})[0] == 401
+        st, _, data = _call(port, "POST", "/v1/messages", {"messages": [{"role": "user", "content": "hi"}], "max_tokens": 32}, hdr)
+        assert st == 200
+        body = json.loads(data)
+        assert body["type"] == "message" and body["stop_reason"] == "end_turn"
+        assert body["content"] == [{"type": "thinking", "thinking": "thinking"}, {"type": "text", "text": "Hello world"}]
+        assert body["usage"] == {"input_tokens": 10, "output_tokens": 3, "cache_read_input_tokens": 4}
+
+        # Streaming with tool_use
+        st, ctype, data = _call(port, "POST", "/v1/messages", {
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"name": "read", "input_schema": {"type": "object"}}],
+            "stream": True,
+        }, hdr)
+        assert st == 200 and ctype == "text/event-stream"
+        ev_names = [ln[7:] for ln in data.decode().splitlines() if ln.startswith("event: ")]
+        assert ev_names[0] == "message_start" and ev_names[-1] == "message_stop"
+        assert "content_block_start" in ev_names and "message_delta" in ev_names
+        assert '"tool_use"' in data.decode() and '"input_json_delta"' in data.decode()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_openai_responses_endpoint() -> None:
+    srv = BoundedHTTPServer(("127.0.0.1", 0), make_handler(FakeEngine(), "inkling-test"))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_port
+    try:
+        oai = responses_to_openai({
+            "instructions": "Use tools carefully.",
+            "input": [
+                {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "inspect"}]},
+                {"type": "reasoning", "summary": [{"text": "checking"}]},
+                {"type": "function_call", "call_id": "fc_1", "name": "read", "arguments": '{"path":"x"}'},
+                {"type": "function_call_output", "call_id": "fc_1", "output": "ok"},
+            ],
+            "tools": [{"type": "function", "name": "read", "parameters": {"type": "object"}}],
+            "reasoning": {"effort": "low"},
+            "max_output_tokens": 128,
+        })
+        assert oai["messages"][0] == {"role": "system", "content": "Use tools carefully."}
+        assert oai["messages"][2]["tool_calls"][0]["function"]["name"] == "read"
+        assert oai["messages"][2]["reasoning_content"] == "checking"
+        assert oai["messages"][3] == {"role": "tool", "tool_call_id": "fc_1", "content": "ok"}
+        assert oai["reasoning_effort"] == "low" and oai["max_tokens"] == 128
+
+        st, _, data = _call(port, "POST", "/v1/responses", {"input": "hi"})
+        assert st == 200
+        body = json.loads(data)
+        assert body["object"] == "response" and body["status"] == "completed" and body["output_text"] == "Hello world"
+        assert [it["type"] for it in body["output"]] == ["reasoning", "message"]
+        assert body["usage"]["input_tokens_details"]["cached_tokens"] == 4
+
+        st, ctype, data = _call(port, "POST", "/v1/responses", {
+            "input": "hi",
+            "tools": [{"type": "function", "name": "read", "parameters": {"type": "object"}}],
+            "stream": True,
+        })
+        assert st == 200 and ctype == "text/event-stream"
+        txt = data.decode()
+        assert "event: response.created" in txt and "event: response.completed" in txt
+        assert "event: response.function_call_arguments.delta" in txt
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_repetition_guard() -> None:
+    def make_loop(n, *, result="ok", vary_cmd=False):
+        msgs = [{"role": "user", "content": "fix bug"}]
+        for i in range(n):
+            cmd = f"step_{i}_unique_{chr(97 + i)}" if vary_cmd else f"echo end{i}"
+            msgs.append({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"id": f"c{i}", "type": "function", "function": {"name": "bash", "arguments": {"cmd": cmd}}}],
+            })
+            msgs.append({"role": "tool", "tool_call_id": f"c{i}", "content": result})
+        return msgs
+
+    # 5 calls -> no trigger
+    m5 = make_loop(5)
+    out5, info5 = apply_repetition_guard(m5)
+    assert info5 is None and out5 is m5
+
+    # 6 near-identical calls (digits ignored) + short output -> triggers without mutating input
+    m6 = make_loop(6)
+    out6, info6 = apply_repetition_guard(m6, endpoint="messages")
+    assert info6 == {"tool": "bash", "streak": 6, "endpoint": "messages"}
+    assert len(m6) == 13 and len(out6) == 14
+    assert out6[-1]["role"] == "user" and "bash" in out6[-1]["content"] and "6 times" in out6[-1]["content"]
+
+    # Long tool result (> 200 chars) -> no trigger
+    m_long = make_loop(6, result="x" * 201)
+    assert apply_repetition_guard(m_long)[1] is None
+
+    # Distinct non-digit args -> no trigger
+    m_var = make_loop(6, vary_cmd=True)
+    assert apply_repetition_guard(m_var)[1] is None
+
+
+def test_disk_prompt_cache_delta_round_trip() -> None:
+    import tempfile
+    import mlx.core as mx
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config
+    from runtime_mlx.prompt_cache_disk import DiskPromptCache
+
+    class TinyModel:
+        def __init__(self, tmp: Path):
+            self.packed_dir = tmp / "model"
+            self.packed_dir.mkdir(exist_ok=True)
+            (self.packed_dir / "manifest.json").write_text('{"v":1}')
+            self.cfg = Inkling2Config(
+                hidden_size=16, num_hidden_layers=2, vocab_size=64, unpadded_vocab_size=64,
+                num_attention_heads=2, num_key_value_heads=2, head_dim=8, d_rel=4, rel_extent=8,
+                local_layer_ids=(0,), sliding_window_size=4, n_layers_per_attn_res_block=2,
+                n_routed_experts=2, num_experts_per_tok=1, intermediate_size=8,
+                loop_start=1, loop_end=1, loop_passes=1,
+            )
+
+        def make_cache(self):
+            return Inkling2Cache(self.cfg)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        model = TinyModel(root)
+        slot_dir = root / "slots"
+        dc = DiskPromptCache(slot_dir, max_entries=1, min_tokens=4, max_disk_gb=1.0)
+        dc._owner = (model, None)
+
+        # Save base snapshot at 6 tokens
+        c1 = model.make_cache()
+        c1.seq_len = 6
+        c1.kv_is_sliding = [True, False]
+        c1.keys = [mx.arange(2 * 4 * 8, dtype=mx.float32).reshape(1, 2, 4, 8),
+                   mx.arange(2 * 6 * 8, dtype=mx.float32).reshape(1, 2, 6, 8)]
+        c1.values = [c1.keys[0] + 1.0, c1.keys[1] + 2.0]
+        c1.conv_states[0][0] = mx.ones((1, 3, 16), dtype=mx.float32)
+        dc._store([1, 2, 3, 4, 5, 6], c1, None)
+
+        # Save delta extension at 9 tokens
+        c2 = model.make_cache()
+        c2.seq_len = 9
+        c2.kv_is_sliding = [True, False]
+        k_tail = mx.arange(2 * 3 * 8, dtype=mx.float32).reshape(1, 2, 3, 8) + 100.0
+        v_tail = k_tail + 5.0
+        c2.keys = [c1.keys[0] + 10.0, mx.concatenate([c1.keys[1], k_tail], axis=2)]
+        c2.values = [c1.values[0] + 10.0, mx.concatenate([c1.values[1], v_tail], axis=2)]
+        c2.conv_states[0][0] = mx.ones((1, 3, 16), dtype=mx.float32) * 3.0
+        dc._store([1, 2, 3, 4, 5, 6, 7, 8, 9], c2, None)
+
+        metas = sorted(slot_dir.glob("*.meta.json"))
+        assert len(metas) == 2
+        m_list = [json.loads(p.read_text()) for p in metas]
+        assert any(m["parent_id"] is not None and m["delta_starts"] == [0, 6] for m in m_list)
+
+        # Simulate server restart with a brand new DiskPromptCache
+        dc2 = DiskPromptCache(slot_dir, max_entries=2, min_tokens=4, max_disk_gb=1.0)
+        dc2._owner = (model, None)
+        hit = dc2._match([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], drafting=False)
+        assert hit is not None and hit["tokens"] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+        rc = hit["cache"]
+        assert rc.seq_len == 9
+        assert float(mx.abs(rc.keys[1] - c2.keys[1]).max()) == 0.0
+        assert float(mx.abs(rc.values[1] - c2.values[1]).max()) == 0.0
+        assert float(mx.abs(rc.keys[0] - c2.keys[0]).max()) == 0.0
+        assert float(mx.abs(rc.conv_states[0][0] - c2.conv_states[0][0]).max()) == 0.0
+
+
 def main() -> None:
     test_output_parser()
     test_tool_calls_require_a_complete_declared_json_frame()
@@ -387,6 +590,10 @@ def main() -> None:
     test_network_auth_and_generation_admission()
     test_ui_page_and_same_origin_requests()
     test_engine_keeps_a_model_thread_across_clients()
+    test_anthropic_messages_endpoint()
+    test_openai_responses_endpoint()
+    test_repetition_guard()
+    test_disk_prompt_cache_delta_round_trip()
     print("ALL LAMQ SERVE TESTS PASSED!", flush=True)
 
 

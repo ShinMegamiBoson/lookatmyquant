@@ -1,9 +1,13 @@
-"""Inkling CUDA inference behind the shared OpenAI-compatible HTTP transport."""
+"""Inkling CUDA inference behind the shared OpenAI/Anthropic/Responses HTTP transport."""
 from contextlib import ExitStack, closing
+import os
 import threading
 
 from . import eos_ids, load_drafter, open_model, stream_tokens
-from runtime_mlx.server import ClientGone, EFFORTS, OutputParser, RequestError, SPECIAL, normalize_messages, request_tools
+from runtime_mlx.server import (
+    ClientGone, EFFORTS, OutputParser, RequestError, SPECIAL,
+    apply_repetition_guard, normalize_messages, request_tools,
+)
 
 
 class Engine:
@@ -29,6 +33,18 @@ class Engine:
             self.eos = eos_ids(self.model, self.tokenizer) | {self.ids["eos"]}
             self.drafter = load_drafter(self.model, args.drafter, context=args.context) if args.drafter else None
             self.draft_block_size = getattr(args, "draft_block_size", None) or 2
+            cache_n = int(getattr(args, "prompt_cache", 0) or 0)
+            cache_dir = getattr(args, "prompt_cache_dir", None)
+            if (cache_n > 0 or cache_dir) and getattr(self.model, "engine", None) == "triton":
+                from runtime_mlx.prompt_cache_disk import CudaPromptCache
+
+                self.prompt_cache = CudaPromptCache(
+                    max_entries=max(1, cache_n or 2),
+                    cache_dir=cache_dir,
+                    max_disk_gb=float(getattr(args, "prompt_cache_gb", 20.0)),
+                )
+            else:
+                self.prompt_cache = None
         except BaseException:
             self.stack.close()
             raise
@@ -40,8 +56,15 @@ class Engine:
     def tokenize(self, content, add_special=False):
         return self.tokenizer.encode(content, add_special_tokens=add_special)
 
+    def _repeat_guard_enabled(self) -> bool:
+        if getattr(self.args, "no_repeat_guard", False):
+            return False
+        return os.environ.get("LAMQ_REPEAT_GUARD", "1").strip() not in ("0", "false", "no", "off")
+
     def _render(self, req, *, generation=False):
         messages = normalize_messages(req.get("messages"))
+        if generation and self._repeat_guard_enabled():
+            messages, _ = apply_repetition_guard(messages, endpoint=str(req.get("_endpoint", "chat")))
         tools, tool_names = request_tools(req)
         add_generation_prompt = req.get("add_generation_prompt", True)
         if type(add_generation_prompt) is not bool:
@@ -105,19 +128,27 @@ class Engine:
             "ids": ids, "max_tokens": min(limit, remaining), "temperature": temperature, "seed": seed,
             "blocked_token": self.ids["thinking"] if hard_no_thinking else None,
             "tool_names": tool_names,
+            "use_cache": req.get("cache_prompt", True) is not False,
         }
 
     def run(self, job, emit, gone):
         parser = OutputParser(self.tokenizer, self.ids, job["tool_names"])
         ids = job["ids"]
         count, finish = 0, "length"
+        stats = {}
+        stream_kw = dict(
+            max_tokens=job["max_tokens"], eos_ids=self.eos,
+            blocked_token=job["blocked_token"], drafter=self.drafter,
+            draft_block_size=self.draft_block_size, temperature=job["temperature"],
+            seed=job["seed"],
+        )
+        if self.prompt_cache is not None and job.get("use_cache", True):
+            stream_kw["prompt_cache"] = self.prompt_cache
+            stream_kw["stats_out"] = stats
         with self.lock:
             if gone():
                 raise ClientGone()
-            with closing(stream_tokens(self.model, ids, max_tokens=job["max_tokens"], eos_ids=self.eos,
-                                       blocked_token=job["blocked_token"], drafter=self.drafter,
-                                       draft_block_size=self.draft_block_size, temperature=job["temperature"],
-                                       seed=job["seed"])) as tokens:
+            with closing(stream_tokens(self.model, ids, **stream_kw)) as tokens:
                 for count, token in enumerate(tokens, 1):
                     if gone():
                         raise ClientGone()
@@ -130,8 +161,9 @@ class Engine:
                 emit(*event)
             if parser.done:
                 finish = parser.finish
+        cached = int(stats.get("prompt_cached_tokens", 0) or 0)
         return {"prompt_tokens": len(ids), "completion_tokens": count, "total_tokens": len(ids) + count,
-                "prompt_tokens_details": {"cached_tokens": 0}}, finish
+                "prompt_tokens_details": {"cached_tokens": cached}}, finish
 
     def warmup(self):
         for temperature in (0., 0.7):

@@ -197,6 +197,355 @@ def normalize_messages(msgs: Any) -> list[dict]:
     return out
 
 
+_DIGITS_RE = re.compile(r"\d+")
+_WS_RE = re.compile(r"\s+")
+REPEAT_GUARD_MIN_STREAK = 6
+REPEAT_GUARD_MAX_RESULT_CHARS = 200
+
+
+def _canon_tool_args(args: Any) -> str:
+    """Canonical argument signature ignoring digits and whitespace (Kintsugi rule 1)."""
+    if isinstance(args, str):
+        try:
+            args = json.loads(args) if args.strip() else {}
+        except (ValueError, RecursionError):
+            pass
+    raw = json.dumps(args, sort_keys=True, ensure_ascii=False) if isinstance(args, (dict, list)) else str(args)
+    return _WS_RE.sub(" ", _DIGITS_RE.sub("", raw)).strip()
+
+
+def apply_repetition_guard(
+    messages: list[dict],
+    *,
+    endpoint: str = "chat",
+    min_streak: int = REPEAT_GUARD_MIN_STREAK,
+    max_result_chars: int = REPEAT_GUARD_MAX_RESULT_CHARS,
+) -> tuple[list[dict], dict | None]:
+    """Detect stuck agent tool loops and append a single transient nudge for this request only.
+
+    Triggers when the last `min_streak` assistant turns each made one call to the same tool with
+    near-identical arguments (ignoring digits) and received short tool results (<= `max_result_chars`).
+    """
+    if len(messages) < 2 * min_streak:
+        return messages, None
+    streak = 0
+    tool_name: str | None = None
+    arg_sig: str | None = None
+    i = len(messages) - 1
+    while i >= 1:
+        m_tool = messages[i]
+        m_asst = messages[i - 1]
+        if m_tool.get("role") != "tool" or m_asst.get("role") != "assistant":
+            break
+        calls = m_asst.get("tool_calls") or []
+        if len(calls) != 1:
+            break
+        res_text = str(m_tool.get("content") or "").strip()
+        if len(res_text) > max_result_chars:
+            break
+        fn = calls[0].get("function") or {}
+        name = str(fn.get("name") or "")
+        if not name:
+            break
+        sig = _canon_tool_args(fn.get("arguments", {}))
+        if tool_name is None:
+            tool_name, arg_sig = name, sig
+        elif name != tool_name or sig != arg_sig:
+            break
+        streak += 1
+        i -= 2
+    if streak < min_streak or tool_name is None:
+        return messages, None
+    note = (
+        f"You have made nearly the same {tool_name} call {streak} times in a row. "
+        "Try a different step or give your answer."
+    )
+    info = {"tool": tool_name, "streak": streak, "endpoint": endpoint}
+    log(f"WARN repetition guard ({endpoint}): {streak} calls to {tool_name!r} in a row")
+    return [*messages, {"role": "user", "content": note}], info
+
+
+def _anthropic_text_blocks(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return "" if content is None else str(content)
+    parts: list[str] = []
+    for blk in content:
+        if isinstance(blk, str):
+            parts.append(blk)
+        elif isinstance(blk, dict) and blk.get("type") == "text":
+            parts.append(str(blk.get("text", "")))
+        elif isinstance(blk, dict) and blk.get("type") == "image":
+            parts.append("[image omitted: this server is text-only]")
+    return "".join(parts)
+
+
+def anthropic_to_openai(req: dict) -> dict:
+    """Translate an Anthropic `/v1/messages` request into an OpenAI-shaped request dict."""
+    if not isinstance(req, dict):
+        raise RequestError(400, "request body must be a JSON object")
+    raw_msgs = req.get("messages")
+    if not isinstance(raw_msgs, list) or not raw_msgs:
+        raise RequestError(400, "messages must be a non-empty list")
+    out_msgs: list[dict[str, Any]] = []
+    if req.get("system") is not None:
+        sys_text = _anthropic_text_blocks(req["system"])
+        if sys_text:
+            out_msgs.append({"role": "system", "content": sys_text})
+    for m in raw_msgs:
+        if not isinstance(m, dict):
+            raise RequestError(400, "each message must be an object")
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant"):
+            raise RequestError(400, f"unsupported Anthropic role: {role!r}")
+        if isinstance(content, str) or content is None:
+            out_msgs.append({"role": role, "content": content or ""})
+            continue
+        if not isinstance(content, list):
+            raise RequestError(400, "message content must be a string or block array")
+        if role == "assistant":
+            texts, thinks, calls = [], [], []
+            for blk in content:
+                if not isinstance(blk, dict):
+                    raise RequestError(400, "content blocks must be objects")
+                btype = blk.get("type")
+                if btype == "text":
+                    texts.append(str(blk.get("text", "")))
+                elif btype == "thinking":
+                    thinks.append(str(blk.get("thinking", "")))
+                elif btype == "tool_use":
+                    name = blk.get("name")
+                    if not isinstance(name, str) or not name:
+                        raise RequestError(400, "tool_use block requires a name")
+                    inp = blk.get("input")
+                    if not isinstance(inp, dict):
+                        inp = {} if inp is None else {"input": inp}
+                    calls.append({
+                        "id": blk.get("id") or ("call_" + uuid.uuid4().hex[:24]),
+                        "type": "function",
+                        "function": {"name": name, "arguments": json.dumps(inp, ensure_ascii=False)},
+                    })
+            am: dict[str, Any] = {"role": "assistant", "content": "".join(texts)}
+            if thinks:
+                am["reasoning_content"] = "\n\n".join(t for t in thinks if t)
+            if calls:
+                am["tool_calls"] = calls
+            out_msgs.append(am)
+        else:
+            # User turn: Anthropic sends `tool_result` blocks inside user messages; split into tool + user turns.
+            user_parts: list[str] = []
+            for blk in content:
+                if not isinstance(blk, dict):
+                    raise RequestError(400, "content blocks must be objects")
+                btype = blk.get("type")
+                if btype == "tool_result":
+                    if user_parts:
+                        out_msgs.append({"role": "user", "content": "".join(user_parts)})
+                        user_parts = []
+                    out_msgs.append({
+                        "role": "tool",
+                        "tool_call_id": str(blk.get("tool_use_id") or ""),
+                        "content": _anthropic_text_blocks(blk.get("content", "")),
+                    })
+                elif btype == "text":
+                    user_parts.append(str(blk.get("text", "")))
+                elif btype == "image":
+                    user_parts.append("[image omitted: this server is text-only]")
+            if user_parts or not out_msgs or out_msgs[-1]["role"] != "tool":
+                out_msgs.append({"role": "user", "content": "".join(user_parts)})
+
+    oai: dict[str, Any] = {"messages": out_msgs, "_endpoint": "messages"}
+    if "max_tokens" in req:
+        oai["max_tokens"] = req["max_tokens"]
+    if "temperature" in req:
+        oai["temperature"] = req["temperature"]
+    if "top_p" in req:
+        oai["top_p"] = req["top_p"]
+    if "top_k" in req:
+        oai["top_k"] = req["top_k"]
+    if "stream" in req:
+        oai["stream"] = req["stream"]
+    if "cache_prompt" in req:
+        oai["cache_prompt"] = req["cache_prompt"]
+
+    # Map Anthropic thinking / output_config.effort -> reasoning_effort
+    effort = req.get("reasoning_effort")
+    if effort is None and isinstance(req.get("output_config"), dict):
+        effort = req["output_config"].get("effort")
+    thinking = req.get("thinking")
+    if effort is None and isinstance(thinking, dict):
+        ttype = thinking.get("type")
+        if ttype == "disabled":
+            effort = "none"
+        elif ttype == "enabled":
+            budget = thinking.get("budget_tokens")
+            if isinstance(budget, int):
+                if budget <= 0:
+                    effort = "none"
+                elif budget <= 1024:
+                    effort = "low"
+                elif budget <= 4096:
+                    effort = "medium"
+                else:
+                    effort = "high"
+    if effort is not None:
+        oai["reasoning_effort"] = effort
+
+    if req.get("tools") is not None:
+        if not isinstance(req["tools"], list):
+            raise RequestError(400, "tools must be an array")
+        tools = []
+        for t in req["tools"]:
+            if not isinstance(t, dict) or not isinstance(t.get("name"), str) or not t["name"]:
+                raise RequestError(400, "each Anthropic tool requires a name")
+            fn: dict[str, Any] = {"name": t["name"]}
+            if t.get("description") is not None:
+                fn["description"] = t["description"]
+            if t.get("input_schema") is not None:
+                fn["parameters"] = t["input_schema"]
+            tools.append({"type": "function", "function": fn})
+        oai["tools"] = tools
+
+    tc = req.get("tool_choice")
+    if tc is not None:
+        if isinstance(tc, str):
+            oai["tool_choice"] = tc
+        elif isinstance(tc, dict):
+            ttype = tc.get("type")
+            if ttype in ("auto", "none"):
+                oai["tool_choice"] = ttype
+            else:
+                raise RequestError(400, "supported tool_choice values are 'auto' and 'none'")
+        else:
+            raise RequestError(400, "supported tool_choice values are 'auto' and 'none'")
+    return oai
+
+
+def responses_to_openai(req: dict) -> dict:
+    """Translate an OpenAI `/v1/responses` request (used by Codex CLI) into `/v1/chat/completions` shape."""
+    if not isinstance(req, dict):
+        raise RequestError(400, "request body must be a JSON object")
+    out_msgs: list[dict[str, Any]] = []
+    instructions = req.get("instructions")
+    if isinstance(instructions, str) and instructions:
+        out_msgs.append({"role": "system", "content": instructions})
+    inp = req.get("input")
+    if isinstance(inp, str):
+        out_msgs.append({"role": "user", "content": inp})
+    elif isinstance(inp, list):
+        pending_reasoning: list[str] = []
+        for item in inp:
+            if isinstance(item, str):
+                out_msgs.append({"role": "user", "content": item})
+                continue
+            if not isinstance(item, dict):
+                raise RequestError(400, "each input item must be an object or string")
+            itype = item.get("type")
+            if itype == "reasoning":
+                parts = []
+                for s in item.get("summary") or ():
+                    if isinstance(s, dict) and isinstance(s.get("text"), str):
+                        parts.append(s["text"])
+                    elif isinstance(s, str):
+                        parts.append(s)
+                if isinstance(item.get("content"), str):
+                    parts.append(item["content"])
+                if parts:
+                    pending_reasoning.append("\n".join(parts))
+            elif itype == "function_call":
+                name = item.get("name")
+                if not isinstance(name, str) or not name:
+                    raise RequestError(400, "function_call item requires a name")
+                call = {
+                    "id": str(item.get("call_id") or item.get("id") or ("call_" + uuid.uuid4().hex[:24])),
+                    "type": "function",
+                    "function": {"name": name, "arguments": item.get("arguments", "{}")},
+                }
+                if out_msgs and out_msgs[-1]["role"] == "assistant" and not out_msgs[-1].get("tool_calls"):
+                    out_msgs[-1]["tool_calls"] = [call]
+                    if pending_reasoning:
+                        prev = out_msgs[-1].get("reasoning_content", "")
+                        out_msgs[-1]["reasoning_content"] = "\n\n".join(x for x in [prev, *pending_reasoning] if x)
+                        pending_reasoning = []
+                else:
+                    am: dict[str, Any] = {"role": "assistant", "content": "", "tool_calls": [call]}
+                    if pending_reasoning:
+                        am["reasoning_content"] = "\n\n".join(pending_reasoning)
+                        pending_reasoning = []
+                    out_msgs.append(am)
+            elif itype == "function_call_output":
+                out_val = item.get("output", "")
+                if not isinstance(out_val, str):
+                    out_val = json.dumps(out_val, ensure_ascii=False)
+                out_msgs.append({
+                    "role": "tool",
+                    "tool_call_id": str(item.get("call_id") or ""),
+                    "content": out_val,
+                })
+            else:
+                # Standard message item (`type: "message"` or bare `{"role": ..., "content": ...}`)
+                role = item.get("role", "user")
+                content = item.get("content", "")
+                if isinstance(content, list):
+                    norm_parts = []
+                    for p in content:
+                        if isinstance(p, str):
+                            norm_parts.append({"type": "text", "text": p})
+                        elif isinstance(p, dict) and p.get("type") in (None, "text", "input_text", "output_text"):
+                            norm_parts.append({"type": "text", "text": str(p.get("text", ""))})
+                        elif isinstance(p, dict) and p.get("type") in ("image_url", "image", "input_image"):
+                            norm_parts.append({"type": "image"})
+                    content = norm_parts
+                msg: dict[str, Any] = {"role": role, "content": content}
+                if role == "assistant" and pending_reasoning:
+                    msg["reasoning_content"] = "\n\n".join(pending_reasoning)
+                    pending_reasoning = []
+                out_msgs.append(msg)
+    else:
+        raise RequestError(400, "input must be a string or list of items")
+    if not out_msgs:
+        raise RequestError(400, "input produced no messages")
+
+    oai: dict[str, Any] = {"messages": out_msgs, "_endpoint": "responses"}
+    if req.get("max_output_tokens") is not None:
+        oai["max_tokens"] = req["max_output_tokens"]
+    elif req.get("max_tokens") is not None:
+        oai["max_tokens"] = req["max_tokens"]
+    for k in ("temperature", "top_p", "top_k", "stream", "cache_prompt", "seed"):
+        if k in req:
+            oai[k] = req[k]
+    if isinstance(req.get("reasoning"), dict) and req["reasoning"].get("effort") is not None:
+        oai["reasoning_effort"] = req["reasoning"]["effort"]
+    elif req.get("reasoning_effort") is not None:
+        oai["reasoning_effort"] = req["reasoning_effort"]
+
+    if req.get("tools") is not None:
+        if not isinstance(req["tools"], list):
+            raise RequestError(400, "tools must be an array")
+        tools = []
+        for t in req["tools"]:
+            if not isinstance(t, dict):
+                raise RequestError(400, "each tool must be an object")
+            if t.get("type") == "function" and isinstance(t.get("function"), dict):
+                tools.append(t)
+            elif t.get("type") == "function" and isinstance(t.get("name"), str) and t["name"]:
+                fn: dict[str, Any] = {"name": t["name"]}
+                if t.get("description") is not None:
+                    fn["description"] = t["description"]
+                if t.get("parameters") is not None:
+                    fn["parameters"] = t["parameters"]
+                tools.append({"type": "function", "function": fn})
+            else:
+                raise RequestError(400, "each tool must declare a named function")
+        oai["tools"] = tools
+
+    if req.get("tool_choice") is not None:
+        oai["tool_choice"] = req["tool_choice"]
+    return oai
+
+
 # --------------------------------------------------------------------------- output parsing
 
 
@@ -390,12 +739,31 @@ class Engine:
             if not isinstance(i, int) or i < 0:
                 raise SystemExit(f"tokenizer has no {s}; is this an Inkling-2 model?")
             self.ids[k] = i
-        self.prompt_cache = PromptCache(max_entries=args.prompt_cache) if args.prompt_cache else None
+        cache_dir = getattr(args, "prompt_cache_dir", None)
+        if cache_dir:
+            from .prompt_cache_disk import DiskPromptCache
+
+            self.prompt_cache = DiskPromptCache(
+                cache_dir,
+                max_entries=max(1, int(args.prompt_cache or 2)),
+                max_disk_gb=float(getattr(args, "prompt_cache_gb", 20.0)),
+            )
+        elif args.prompt_cache:
+            self.prompt_cache = PromptCache(max_entries=args.prompt_cache)
+        else:
+            self.prompt_cache = None
         log(f"loaded {args.model} ({'with drafter' if self.drafter is not None else 'serial'}) in "
             f"{time.perf_counter() - t:.1f}s, {mx.get_active_memory() / 1e9:.2f} GB")
 
-    def _apply_template(self, req: dict, *, tokenize: bool):
+    def _repeat_guard_enabled(self) -> bool:
+        if getattr(self.args, "no_repeat_guard", False):
+            return False
+        return os.environ.get("LAMQ_REPEAT_GUARD", "1").strip() not in ("0", "false", "no", "off")
+
+    def _apply_template(self, req: dict, *, tokenize: bool, guard: bool = False):
         messages = normalize_messages(req.get("messages"))
+        if guard and self._repeat_guard_enabled():
+            messages, _ = apply_repetition_guard(messages, endpoint=str(req.get("_endpoint", "chat")))
         tools, tool_names = request_tools(req)
         effort = req.get("reasoning_effort")
         if isinstance(effort, dict):
@@ -418,14 +786,14 @@ class Engine:
             raise RequestError(400, "chat template could not render messages and tools") from e
 
     def render(self, req: dict) -> str:
-        return self._apply_template(req, tokenize=False)[0]
+        return self._apply_template(req, tokenize=False, guard=False)[0]
 
     def tokenize(self, content: str, add_special: bool = False) -> list[int]:
         return self.tok.encode(content, add_special_tokens=add_special)
 
     def prepare(self, req: dict) -> dict:
         """Validate and tokenize a request before sending any response bytes."""
-        enc, effort, tool_names = self._apply_template(dict(req, add_generation_prompt=True), tokenize=True)
+        enc, effort, tool_names = self._apply_template(dict(req, add_generation_prompt=True), tokenize=True, guard=True)
         if isinstance(enc, dict) or hasattr(enc, "input_ids"):
             enc = enc["input_ids"]
         ids = [int(x) for x in enc]
@@ -552,6 +920,7 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
     page = UI_PAGE.read_bytes() if ui else b""
     generation = threading.BoundedSemaphore(1)
     expected_auth = f"Bearer {api_key}".encode() if api_key else None
+    expected_xkey = api_key.encode() if api_key else None
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -610,7 +979,10 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                         return False
             if expected_auth is not None and require_key:
                 auth = self.headers.get_all("Authorization", [])
-                if len(auth) != 1 or not hmac.compare_digest(auth[0].encode(), expected_auth):
+                xkey = self.headers.get_all("x-api-key", [])
+                ok_bearer = len(auth) == 1 and hmac.compare_digest(auth[0].encode(), expected_auth)
+                ok_xkey = expected_xkey is not None and len(xkey) == 1 and hmac.compare_digest(xkey[0].encode(), expected_xkey)
+                if not (ok_bearer or ok_xkey):
                     self._error(401, "valid bearer authentication required", "authentication_error")
                     return False
             return True
@@ -679,12 +1051,20 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 return
             path = self.path.split("?")[0].rstrip("/")
             utility = {"/apply-template": "render", "/tokenize": "tokenize"}.get(path)
+            api_kind = {
+                "/v1/chat/completions": "chat",
+                "/chat/completions": "chat",
+                "/v1/messages": "messages",
+                "/messages": "messages",
+                "/v1/responses": "responses",
+                "/responses": "responses",
+            }.get(path)
             if utility is not None:
                 operation = getattr(engine, utility, None)
                 if operation is None:
                     self._error(404, "endpoint not found")
                     return
-            elif path not in ("/v1/chat/completions", "/chat/completions"):
+            elif api_kind is None:
                 self._error(404, "endpoint not found")
                 return
             lengths = self.headers.get_all("Content-Length", [])
@@ -726,7 +1106,7 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 return
             try:
                 if utility is None:
-                    self._generate(req)
+                    self._generate(req, api_kind)
                 else:
                     self._tokenizer_response(utility, operation, req)
             finally:
@@ -749,13 +1129,19 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
             else:
                 self._json(200, result)
 
-        def _generate(self, req: dict) -> None:
+        def _generate(self, req: dict, api_kind: str = "chat") -> None:
             try:
                 if "stream" in req and type(req["stream"]) is not bool:
                     raise RequestError(400, "stream must be a boolean")
-                if req.get("stream_options") is not None and not isinstance(req["stream_options"], dict):
-                    raise RequestError(400, "stream_options must be an object")
-                job = engine.prepare(req)
+                if api_kind == "chat":
+                    if req.get("stream_options") is not None and not isinstance(req["stream_options"], dict):
+                        raise RequestError(400, "stream_options must be an object")
+                    oai_req = req
+                elif api_kind == "messages":
+                    oai_req = anthropic_to_openai(req)
+                else:
+                    oai_req = responses_to_openai(req)
+                job = engine.prepare(oai_req)
             except RequestError as e:
                 self._error(e.status, e.message, e.etype)
                 return
@@ -763,7 +1149,13 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 traceback.print_exc()
                 self._error(500, "server error", "server_error")
                 return
-            (self._stream if req.get("stream") else self._complete)(req, job)
+            streaming = bool(req.get("stream"))
+            if api_kind == "chat":
+                (self._stream if streaming else self._complete)(req, job)
+            elif api_kind == "messages":
+                (self._stream_anthropic if streaming else self._complete_anthropic)(req, job)
+            else:
+                (self._stream_responses if streaming else self._complete_responses)(req, job)
 
         def _complete(self, req: dict, job: dict) -> None:
             text = {"reasoning": [], "content": []}
@@ -789,11 +1181,113 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                              "model": model_id, "choices": [{"index": 0, "message": msg, "finish_reason": finish}],
                              "usage": usage})
 
-        def _stream(self, req: dict, job: dict) -> None:
-            cid, created = "chatcmpl-" + uuid.uuid4().hex, int(time.time())
-            include_usage = bool((req.get("stream_options") or {}).get("include_usage"))
+        def _complete_anthropic(self, req: dict, job: dict) -> None:
+            text = {"reasoning": [], "content": []}
+            calls: list = []
+
+            def emit(kind, payload):
+                (calls if kind == "tool" else text[kind]).append(payload)
+
+            try:
+                usage, finish = engine.run(job, emit, self._gone)
+            except ClientGone:
+                return
+            except Exception:
+                traceback.print_exc()
+                self._error(500, "server error", "server_error")
+                return
+            blocks: list[dict[str, Any]] = []
+            if text["reasoning"]:
+                blocks.append({"type": "thinking", "thinking": "".join(text["reasoning"])})
+            body = "".join(text["content"])
+            if body or (not blocks and not calls):
+                blocks.append({"type": "text", "text": body})
+            for tc in calls:
+                fn = tc["function"]
+                try:
+                    inp = json.loads(fn["arguments"])
+                except ValueError:
+                    inp = {}
+                blocks.append({"type": "tool_use", "id": tc["id"], "name": fn["name"], "input": inp})
+            stop_reason = {"tool_calls": "tool_use", "length": "max_tokens"}.get(finish, "end_turn")
+            cached = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0)
+            self._json(200, {
+                "id": "msg_" + uuid.uuid4().hex[:24],
+                "type": "message",
+                "role": "assistant",
+                "model": model_id,
+                "content": blocks,
+                "stop_reason": stop_reason,
+                "stop_sequence": None,
+                "usage": {
+                    "input_tokens": int(usage.get("prompt_tokens", 0)),
+                    "output_tokens": int(usage.get("completion_tokens", 0)),
+                    "cache_read_input_tokens": cached,
+                },
+            })
+
+        def _complete_responses(self, req: dict, job: dict) -> None:
+            text = {"reasoning": [], "content": []}
+            calls: list = []
+
+            def emit(kind, payload):
+                (calls if kind == "tool" else text[kind]).append(payload)
+
+            try:
+                usage, finish = engine.run(job, emit, self._gone)
+            except ClientGone:
+                return
+            except Exception:
+                traceback.print_exc()
+                self._error(500, "server error", "server_error")
+                return
+            rid = "resp_" + uuid.uuid4().hex[:24]
+            output: list[dict[str, Any]] = []
+            if text["reasoning"]:
+                output.append({
+                    "id": "rs_" + uuid.uuid4().hex[:24],
+                    "type": "reasoning",
+                    "status": "completed",
+                    "summary": [{"type": "summary_text", "text": "".join(text["reasoning"])}],
+                })
+            body = "".join(text["content"])
+            if body or not calls:
+                output.append({
+                    "id": "msg_" + uuid.uuid4().hex[:24],
+                    "type": "message",
+                    "status": "completed",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": body, "annotations": []}],
+                })
+            for tc in calls:
+                fn = tc["function"]
+                output.append({
+                    "id": "fc_" + uuid.uuid4().hex[:24],
+                    "type": "function_call",
+                    "status": "completed",
+                    "call_id": tc["id"],
+                    "name": fn["name"],
+                    "arguments": fn["arguments"],
+                })
+            cached = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0)
+            self._json(200, {
+                "id": rid,
+                "object": "response",
+                "created_at": int(time.time()),
+                "status": "incomplete" if finish == "length" else "completed",
+                "model": model_id,
+                "output": output,
+                "output_text": body,
+                "usage": {
+                    "input_tokens": int(usage.get("prompt_tokens", 0)),
+                    "output_tokens": int(usage.get("completion_tokens", 0)),
+                    "total_tokens": int(usage.get("total_tokens", 0)),
+                    "input_tokens_details": {"cached_tokens": cached},
+                },
+            })
+
+        def _start_sse(self):
             wlock, started, broken = threading.Lock(), threading.Event(), threading.Event()
-            n_tools = [0]
 
             def write(raw: bytes) -> None:
                 with wlock:
@@ -803,6 +1297,26 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                     except OSError:
                         broken.set()
                         raise ClientGone()
+
+            def keepalive() -> None:  # SSE comments while a long prompt prefills, so clients don't time out
+                while not started.wait(10.0):
+                    try:
+                        write(b": prefilling\n\n")
+                    except ClientGone:
+                        return
+
+            self.send_response(200)
+            for k, v in (("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache"),
+                         ("Transfer-Encoding", "chunked"), ("Connection", "close")):
+                self.send_header(k, v)
+            self.end_headers()
+            return write, started, broken, threading.Thread(target=keepalive, daemon=True)
+
+        def _stream(self, req: dict, job: dict) -> None:
+            cid, created = "chatcmpl-" + uuid.uuid4().hex, int(time.time())
+            include_usage = bool((req.get("stream_options") or {}).get("include_usage"))
+            n_tools = [0]
+            write, started, broken, ka = self._start_sse()
 
             def chunk(delta, finish=None, usage=None) -> None:
                 obj: dict[str, Any] = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": model_id,
@@ -819,19 +1333,6 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 else:
                     chunk({"reasoning_content" if kind == "reasoning" else "content": payload})
 
-            def keepalive() -> None:  # SSE comments while a long prompt prefills, so clients don't time out
-                while not started.wait(10.0):
-                    try:
-                        write(b": prefilling\n\n")
-                    except ClientGone:
-                        return
-
-            self.send_response(200)
-            for k, v in (("Content-Type", "text/event-stream"), ("Cache-Control", "no-cache"),
-                         ("Transfer-Encoding", "chunked"), ("Connection", "close")):
-                self.send_header(k, v)
-            self.end_headers()
-            ka = threading.Thread(target=keepalive, daemon=True)
             try:
                 chunk({"role": "assistant", "content": ""})
                 ka.start()
@@ -860,6 +1361,221 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
                 if ka.ident is not None:
                     ka.join()
 
+        def _stream_anthropic(self, req: dict, job: dict) -> None:
+            mid = "msg_" + uuid.uuid4().hex[:24]
+            write, started, broken, ka = self._start_sse()
+            cur_kind: list[str | None] = [None]
+            cur_idx = [-1]
+
+            def send_ev(name: str, data: dict) -> None:
+                raw = f"event: {name}\ndata: ".encode() + json.dumps(data, ensure_ascii=False).encode() + b"\n\n"
+                write(raw)
+
+            def close_block() -> None:
+                if cur_kind[0] is not None:
+                    send_ev("content_block_stop", {"type": "content_block_stop", "index": cur_idx[0]})
+                    cur_kind[0] = None
+
+            def emit(kind, payload) -> None:
+                started.set()
+                if kind == "tool":
+                    close_block()
+                    cur_idx[0] += 1
+                    fn = payload["function"]
+                    send_ev("content_block_start", {
+                        "type": "content_block_start",
+                        "index": cur_idx[0],
+                        "content_block": {"type": "tool_use", "id": payload["id"], "name": fn["name"], "input": {}},
+                    })
+                    send_ev("content_block_delta", {
+                        "type": "content_block_delta",
+                        "index": cur_idx[0],
+                        "delta": {"type": "input_json_delta", "partial_json": fn["arguments"]},
+                    })
+                    send_ev("content_block_stop", {"type": "content_block_stop", "index": cur_idx[0]})
+                    return
+                btype = "thinking" if kind == "reasoning" else "text"
+                if cur_kind[0] != btype:
+                    close_block()
+                    cur_idx[0] += 1
+                    cur_kind[0] = btype
+                    blk = {"type": "thinking", "thinking": ""} if btype == "thinking" else {"type": "text", "text": ""}
+                    send_ev("content_block_start", {"type": "content_block_start", "index": cur_idx[0], "content_block": blk})
+                delta = {"type": "thinking_delta", "thinking": payload} if btype == "thinking" else {"type": "text_delta", "text": payload}
+                send_ev("content_block_delta", {"type": "content_block_delta", "index": cur_idx[0], "delta": delta})
+
+            try:
+                send_ev("message_start", {
+                    "type": "message_start",
+                    "message": {
+                        "id": mid,
+                        "type": "message",
+                        "role": "assistant",
+                        "model": model_id,
+                        "content": [],
+                        "stop_reason": None,
+                        "stop_sequence": None,
+                        "usage": {"input_tokens": len(job.get("ids") or ()), "output_tokens": 0},
+                    },
+                })
+                ka.start()
+                usage, finish = engine.run(job, emit, lambda: broken.is_set() or self._gone())
+                started.set()
+                ka.join()
+                close_block()
+                stop_reason = {"tool_calls": "tool_use", "length": "max_tokens"}.get(finish, "end_turn")
+                cached = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0)
+                send_ev("message_delta", {
+                    "type": "message_delta",
+                    "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+                    "usage": {
+                        "input_tokens": int(usage.get("prompt_tokens", 0)),
+                        "output_tokens": int(usage.get("completion_tokens", 0)),
+                        "cache_read_input_tokens": cached,
+                    },
+                })
+                send_ev("message_stop", {"type": "message_stop"})
+                write(b"")
+            except ClientGone:
+                log("client disconnected; generation stopped")
+                self.close_connection = True
+            except Exception:
+                traceback.print_exc()
+                try:
+                    send_ev("error", {"type": "error", "error": {"type": "api_error", "message": "server error"}})
+                    write(b"")
+                except ClientGone:
+                    pass
+            finally:
+                started.set()
+                if ka.ident is not None:
+                    ka.join()
+
+        def _stream_responses(self, req: dict, job: dict) -> None:
+            rid, created = "resp_" + uuid.uuid4().hex[:24], int(time.time())
+            write, started, broken, ka = self._start_sse()
+            output_items: list[dict[str, Any]] = []
+            text_buf: list[str] = []
+            reason_buf: list[str] = []
+            open_item: list[dict[str, Any] | None] = [None]
+
+            def send_ev(ev_type: str, data: dict) -> None:
+                payload = {"type": ev_type, **data}
+                raw = f"event: {ev_type}\ndata: ".encode() + json.dumps(payload, ensure_ascii=False).encode() + b"\n\n"
+                write(raw)
+
+            def close_open() -> None:
+                it = open_item[0]
+                if it is None:
+                    return
+                idx = it["index"]
+                if it["kind"] == "reasoning":
+                    full = "".join(reason_buf)
+                    item = {"id": it["id"], "type": "reasoning", "status": "completed",
+                            "summary": [{"type": "summary_text", "text": full}]}
+                    send_ev("response.reasoning_summary_text.done", {"item_id": it["id"], "output_index": idx,
+                                                                     "summary_index": 0, "text": full})
+                    send_ev("response.output_item.done", {"output_index": idx, "item": item})
+                    output_items.append(item)
+                elif it["kind"] == "content":
+                    full = "".join(text_buf)
+                    part = {"type": "output_text", "text": full, "annotations": []}
+                    item = {"id": it["id"], "type": "message", "status": "completed", "role": "assistant", "content": [part]}
+                    send_ev("response.output_text.done", {"item_id": it["id"], "output_index": idx, "content_index": 0, "text": full})
+                    send_ev("response.content_part.done", {"item_id": it["id"], "output_index": idx, "content_index": 0, "part": part})
+                    send_ev("response.output_item.done", {"output_index": idx, "item": item})
+                    output_items.append(item)
+                open_item[0] = None
+
+            def emit(kind, payload) -> None:
+                started.set()
+                if kind == "tool":
+                    close_open()
+                    idx = len(output_items)
+                    fn = payload["function"]
+                    fc_id = "fc_" + uuid.uuid4().hex[:24]
+                    item_start = {"id": fc_id, "type": "function_call", "status": "in_progress",
+                                  "call_id": payload["id"], "name": fn["name"], "arguments": ""}
+                    send_ev("response.output_item.added", {"output_index": idx, "item": item_start})
+                    send_ev("response.function_call_arguments.delta",
+                            {"item_id": fc_id, "output_index": idx, "delta": fn["arguments"]})
+                    send_ev("response.function_call_arguments.done",
+                            {"item_id": fc_id, "output_index": idx, "arguments": fn["arguments"]})
+                    item_done = {**item_start, "status": "completed", "arguments": fn["arguments"]}
+                    send_ev("response.output_item.done", {"output_index": idx, "item": item_done})
+                    output_items.append(item_done)
+                    return
+                if open_item[0] is None or open_item[0]["kind"] != kind:
+                    close_open()
+                    idx = len(output_items)
+                    if kind == "reasoning":
+                        item_id = "rs_" + uuid.uuid4().hex[:24]
+                        open_item[0] = {"kind": "reasoning", "id": item_id, "index": idx}
+                        send_ev("response.output_item.added", {
+                            "output_index": idx,
+                            "item": {"id": item_id, "type": "reasoning", "status": "in_progress", "summary": []},
+                        })
+                    else:
+                        item_id = "msg_" + uuid.uuid4().hex[:24]
+                        open_item[0] = {"kind": "content", "id": item_id, "index": idx}
+                        send_ev("response.output_item.added", {
+                            "output_index": idx,
+                            "item": {"id": item_id, "type": "message", "status": "in_progress", "role": "assistant", "content": []},
+                        })
+                        send_ev("response.content_part.added", {
+                            "item_id": item_id, "output_index": idx, "content_index": 0,
+                            "part": {"type": "output_text", "text": "", "annotations": []},
+                        })
+                it = open_item[0]
+                if kind == "reasoning":
+                    reason_buf.append(payload)
+                    send_ev("response.reasoning_summary_text.delta",
+                            {"item_id": it["id"], "output_index": it["index"], "summary_index": 0, "delta": payload})
+                else:
+                    text_buf.append(payload)
+                    send_ev("response.output_text.delta",
+                            {"item_id": it["id"], "output_index": it["index"], "content_index": 0, "delta": payload})
+
+            base_resp = {"id": rid, "object": "response", "created_at": created, "status": "in_progress",
+                         "model": model_id, "output": []}
+            try:
+                send_ev("response.created", {"response": base_resp})
+                send_ev("response.in_progress", {"response": base_resp})
+                ka.start()
+                usage, finish = engine.run(job, emit, lambda: broken.is_set() or self._gone())
+                started.set()
+                ka.join()
+                close_open()
+                cached = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0)
+                final_resp = {
+                    **base_resp,
+                    "status": "incomplete" if finish == "length" else "completed",
+                    "output": output_items,
+                    "output_text": "".join(text_buf),
+                    "usage": {
+                        "input_tokens": int(usage.get("prompt_tokens", 0)),
+                        "output_tokens": int(usage.get("completion_tokens", 0)),
+                        "total_tokens": int(usage.get("total_tokens", 0)),
+                        "input_tokens_details": {"cached_tokens": cached},
+                    },
+                }
+                send_ev("response.completed", {"response": final_resp})
+                write(b"")
+            except ClientGone:
+                log("client disconnected; generation stopped")
+                self.close_connection = True
+            except Exception:
+                traceback.print_exc()
+                try:
+                    send_ev("error", {"message": "server error", "code": 500})
+                    write(b"")
+                except ClientGone:
+                    pass
+            finally:
+                started.set()
+                if ka.ident is not None:
+                    ka.join()
+
     return Handler
 
 
@@ -878,6 +1594,9 @@ def add_serve_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--temp", type=float, default=0.0, help="temperature when a request sets none (0 = greedy)")
     p.add_argument("--top-p", type=float, default=1.0, help="top-p when a request sets none")
     p.add_argument("--prompt-cache", type=int, default=0, help="local single-user prompt-prefix snapshots kept (default 0)")
+    p.add_argument("--prompt-cache-dir", default=None, help="persist prompt-prefix snapshots on disk across restarts (loopback only)")
+    p.add_argument("--prompt-cache-gb", type=float, default=20.0, help="disk budget in GiB for --prompt-cache-dir (default 20)")
+    p.add_argument("--no-repeat-guard", action="store_true", help="disable the stateless agent tool-loop repetition guard")
     p.add_argument("--prefill-chunk", type=int, default=-1, help="tokens per prefill chunk (-1 automatic, 0 one pass)")
     p.add_argument("--no-verify", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--no-warmup", action="store_true")
@@ -891,7 +1610,7 @@ def serve(args: argparse.Namespace) -> int:
     if not loopback and not api_key:
         raise SystemExit("network listening requires LAMQ_API_KEY")
     if not (0 <= args.prompt_cache <= 8 and args.context >= 2 and args.max_tokens > 0 and args.prefill_chunk >= -1
-            and 0 <= args.temp <= 2 and 0 <= args.top_p <= 1):
+            and 0 <= args.temp <= 2 and 0 <= args.top_p <= 1 and getattr(args, "prompt_cache_gb", 20.0) >= 0):
         raise SystemExit("invalid server limits or sampling defaults")
     if args.device == "mlx":
         if getattr(args, "no_thinking", False):
@@ -900,8 +1619,8 @@ def serve(args: argparse.Namespace) -> int:
     elif args.device == "cuda" or (args.device.startswith("cuda:") and args.device[5:].isdecimal()):
         from runtime_cuda.server import Engine as CudaEngine
 
-        if args.prefill_chunk != -1 or args.prompt_cache:
-            raise SystemExit("--prefill-chunk and --prompt-cache are MLX options")
+        if args.prefill_chunk != -1:
+            raise SystemExit("--prefill-chunk is an MLX option")
         if args.top_p != 1.0:
             raise SystemExit("CUDA serving currently requires --top-p 1")
         engine_class = CudaEngine
@@ -909,6 +1628,7 @@ def serve(args: argparse.Namespace) -> int:
         raise SystemExit("--device must be mlx, cuda, or cuda:N")
     if not loopback or api_key:
         args.prompt_cache = 0
+        args.prompt_cache_dir = None
     model_id = args.model_id or str(args.model).rstrip("/").split("/")[-1]
     with closing(engine_class(args)) as engine:
         handler = make_handler(engine, model_id, api_key=api_key, loopback=loopback, ui=args.ui)

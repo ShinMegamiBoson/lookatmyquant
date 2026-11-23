@@ -4,6 +4,11 @@ Static (`ShortConvolution`): out_t = (sum_lag ctx[t + lag] * w[lag] + x_t) / sqr
 weights the current token. Dynamic (`DynamicShortConvolution`, full-attention K/V): taps are `static[h, d, k] +
 dyn[t, h, k]` with tap 0 on the current token, and the output is divided by sqrt(9). Each program owns BLOCK_C
 channels and walks the tokens in order, keeping the last three inputs in registers.
+
+`kv_conv_write_` fuses causal conv + K L2-clip / V RMSNorm + cache write, supporting:
+  - FP16 linear or ring-buffered sliding-window caches (`ring=True`, `pos % kv_cap`)
+  - Block-32 `q8_0` (int8 + fp16 scales) and `q4_0` (packed uint8 nibbles + fp16 scales) global caches
+  - Tiered VRAM + pinned host-RAM global caches (`kv_host`, `vram_cells`)
 """
 from __future__ import annotations
 
@@ -71,12 +76,18 @@ def dyn_conv4_(prev, x, dyn_in, st_hdk, proj_w, BLOCK_C: int = 256) -> torch.Ten
 
 @triton.jit
 def _kv_conv_write_kernel(
-    KR, VR, PK, PV, WK, WV, DK, DV, KV, POS,
-    T, C, thr, eps, stride_kv_s, stride_kv_h, stride_kv_t,
+    KR, VR, PK, PV, WK, WV, DK, DV,
+    KV, SC, KV_HOST, SC_HOST, POS,
+    T, C, thr, eps,
+    stride_kv_s, stride_kv_h, stride_kv_t,
+    stride_sc_s, stride_sc_h, stride_sc_t,
+    stride_hkv_s, stride_hkv_h, stride_hkv_t,
+    stride_hsc_s, stride_hsc_h, stride_hsc_t,
+    KV_CAP, VRAM_CELLS,
     DYNAMIC: tl.constexpr, HD: tl.constexpr,
+    RING: tl.constexpr, KV_MODE: tl.constexpr, HAS_HOST: tl.constexpr,
 ):
-    """runtime_mlx's kv_sconv4_norm_fused: per (head, K-or-V) program, conv each token, then L2-clip (K) or
-    RMSNorm (V) over the head, and write float16 into the cache slot at the token's position."""
+    """Per (head, K-or-V) program: conv each token, L2-clip (K) or RMSNorm (V), quantize if needed, write to cache."""
     head = tl.program_id(0)
     is_v = tl.program_id(1)
     thr = thr.to(tl.float32)
@@ -101,6 +112,9 @@ def _kv_conv_write_kernel(
         w2 = tl.load(W + 2 * C + c)
         w3 = tl.load(W + 3 * C + c)
     nh = C // HD
+    n_groups: tl.constexpr = HD // 32
+    g_idx = tl.arange(0, n_groups)
+    d_half = tl.arange(0, HD // 2)
     for t in range(T):
         x = tl.load(X + t * C + c).to(tl.float32)
         if DYNAMIC:
@@ -112,8 +126,47 @@ def _kv_conv_write_kernel(
             y = y * tl.rsqrt(tl.sum(y * y, axis=0) / HD + eps)
         else:
             y = y * tl.minimum(thr / (tl.sqrt(tl.sum(y * y, axis=0)) + 1e-6), 1.0)
-        pos = tl.load(POS + t).to(tl.int64)
-        tl.store(KV + is_v * stride_kv_s + head * stride_kv_h + pos * stride_kv_t + d, y.to(tl.float16))
+        raw_pos = tl.load(POS + t).to(tl.int64)
+        slot_pos = (raw_pos % KV_CAP) if RING else raw_pos
+        in_host = HAS_HOST and (slot_pos >= VRAM_CELLS)
+        if KV_MODE == 0:  # FP16
+            yh = y.to(tl.float16)
+            if in_host:
+                hp = slot_pos - VRAM_CELLS
+                tl.store(KV_HOST + is_v * stride_hkv_s + head * stride_hkv_h + hp * stride_hkv_t + d, yh)
+            else:
+                tl.store(KV + is_v * stride_kv_s + head * stride_kv_h + slot_pos * stride_kv_t + d, yh)
+        elif KV_MODE == 1:  # q8_0: block-32 symmetric int8 + fp16 scales
+            y_blk = tl.reshape(y, (n_groups, 32))
+            amax = tl.max(tl.abs(y_blk), axis=1)
+            sc_h = tl.maximum(amax * (1.0 / 127.0), 1e-6).to(tl.float16)
+            inv_sc = 1.0 / sc_h.to(tl.float32)
+            q = tl.extra.cuda.libdevice.rint(y_blk * inv_sc[:, None])
+            q_i8 = tl.clamp(q, -127.0, 127.0).to(tl.int8)
+            q_flat = tl.reshape(q_i8, (HD,))
+            if in_host:
+                hp = slot_pos - VRAM_CELLS
+                tl.store(KV_HOST + is_v * stride_hkv_s + head * stride_hkv_h + hp * stride_hkv_t + d, q_flat)
+                tl.store(SC_HOST + is_v * stride_hsc_s + head * stride_hsc_h + hp * stride_hsc_t + g_idx, sc_h)
+            else:
+                tl.store(KV + is_v * stride_kv_s + head * stride_kv_h + slot_pos * stride_kv_t + d, q_flat)
+                tl.store(SC + is_v * stride_sc_s + head * stride_sc_h + slot_pos * stride_sc_t + g_idx, sc_h)
+        else:  # KV_MODE == 2: q4_0 block-32 symmetric nibbles [-7..7] + 8 packed 2 per uint8 + fp16 scales
+            y_blk = tl.reshape(y, (n_groups, 32))
+            amax = tl.max(tl.abs(y_blk), axis=1)
+            sc_h = tl.maximum(amax * (1.0 / 7.0), 1e-6).to(tl.float16)
+            inv_sc = 1.0 / sc_h.to(tl.float32)
+            q = tl.extra.cuda.libdevice.rint(y_blk * inv_sc[:, None])
+            q_u8 = (tl.clamp(q, -7.0, 7.0) + 8.0).to(tl.uint8)
+            q_lo, q_hi = tl.split(tl.reshape(q_u8, (HD // 2, 2)))
+            packed = q_lo | (q_hi << 4)
+            if in_host:
+                hp = slot_pos - VRAM_CELLS
+                tl.store(KV_HOST + is_v * stride_hkv_s + head * stride_hkv_h + hp * stride_hkv_t + d_half, packed)
+                tl.store(SC_HOST + is_v * stride_hsc_s + head * stride_hsc_h + hp * stride_hsc_t + g_idx, sc_h)
+            else:
+                tl.store(KV + is_v * stride_kv_s + head * stride_kv_h + slot_pos * stride_kv_t + d_half, packed)
+                tl.store(SC + is_v * stride_sc_s + head * stride_sc_h + slot_pos * stride_sc_t + g_idx, sc_h)
         p0 = p1
         p1 = p2
         p2 = x
@@ -122,12 +175,28 @@ def _kv_conv_write_kernel(
     tl.store(PREV + 2 * C + c, p2)
 
 
-def kv_conv_write_(k_raw, v_raw, prev_k, prev_v, kv, pos, thr: float, eps: float, n_kv: int,
-                   w_k=None, w_v=None, dyn=None):
-    """Conv + clip/norm + cache write for K and V. Static: `w_k`, `w_v` `[4, C]`. Dynamic: `dyn` =
-    (k_in, v_in, (st_k [h, d, 4], proj_k), (st_v, proj_v))."""
+KV_MODE_IDS = {"fp16": 0, "q8_0": 1, "q4_0": 2}
+
+
+def kv_conv_write_(
+    k_raw, v_raw, prev_k, prev_v, kv, pos, thr: float, eps: float, n_kv: int,
+    w_k=None, w_v=None, dyn=None,
+    *,
+    ring: bool = False,
+    kv_mode: str = "fp16",
+    scales=None,
+    kv_host=None,
+    scales_host=None,
+    vram_cells: int | None = None,
+):
+    """Conv + clip/norm + cache write for K and V.
+
+    Supports FP16, `q8_0`, and `q4_0` caches, sliding-window ring buffers (`ring=True`),
+    and tiered VRAM + pinned host-RAM storage (`kv_host` + `vram_cells`).
+    """
     T, C = k_raw.shape
     HD = C // n_kv
+    mode_id = KV_MODE_IDS[kv_mode]
     if dyn is not None:
         k_in, v_in, (st_k, pr_k), (st_v, pr_v) = dyn
         dk = (k_in.float() @ pr_k.T).contiguous()
@@ -136,8 +205,22 @@ def kv_conv_write_(k_raw, v_raw, prev_k, prev_v, kv, pos, thr: float, eps: float
     else:
         dk = dv = k_raw
         wk, wv = w_k, w_v
+    sc = scales if scales is not None else kv
+    has_host = kv_host is not None and vram_cells is not None
+    hkv = kv_host if has_host else kv
+    hsc = scales_host if (has_host and scales_host is not None) else sc
+    kv_cap = int(kv.shape[2])
+    v_cells = int(vram_cells) if has_host else kv_cap
     with torch.cuda.device(k_raw.device):
         _kv_conv_write_kernel[(n_kv, 2)](
-            k_raw.contiguous(), v_raw.contiguous(), prev_k, prev_v, wk, wv, dk, dv, kv, pos,
-            T, C, thr, eps, kv.stride(0), kv.stride(1), kv.stride(2), DYNAMIC=dyn is not None, HD=HD,
+            k_raw.contiguous(), v_raw.contiguous(), prev_k, prev_v, wk, wv, dk, dv,
+            kv, sc, hkv, hsc, pos,
+            T, C, thr, eps,
+            kv.stride(0), kv.stride(1), kv.stride(2),
+            sc.stride(0), sc.stride(1), sc.stride(2),
+            hkv.stride(0), hkv.stride(1), hkv.stride(2),
+            hsc.stride(0), hsc.stride(1), hsc.stride(2),
+            kv_cap, v_cells,
+            DYNAMIC=dyn is not None, HD=HD,
+            RING=ring, KV_MODE=mode_id, HAS_HOST=has_host,
         )

@@ -381,7 +381,7 @@ _CF_SRC = """
     out[base + i] = (OUT_T)(acc * rsqrt((float)N));
 """
 _wht = {m: mx.fast.metal_kernel(name=f"lamq_wht_cols{m}", input_names=["x0"] + (["x1"] if m else []) + ["s"], output_names=["z"],
-                                source=_WHT_SRC.replace("GATE", "v = v / (1.0f + metal::precise::exp(-v)) * x1[base + i];" if m else "")) for m in (0, 1)}
+                                source=_WHT_SRC.replace("GATE", "v = v / (1.0f + metal::precise::exp(-v)) * (float)x1[base + i];" if m else "")) for m in (0, 1)}
 _cfactor = mx.fast.metal_kernel(name="lamq_cfactor", input_names=["z", "Q"], output_names=["out"], source=_CF_SRC)
 
 
@@ -398,15 +398,21 @@ class Rotate1:
         Q = np.kron(lamq._sylvester(rot.A // A), np.array(rot.Pm_fwd).reshape(rot.p, rot.p))   # what is left of H beside S_A
         assert Q.shape[0] == self.C
         self.Q, self.s = mx.array(Q.astype(np.float32).reshape(-1)), rot.s
-        mx.eval(self.Q)
+        qt = (Q.T / math.sqrt(n)).astype(np.float32)
+        self.Qt_f32 = mx.array(qt)
+        self.Qt_f16 = mx.array(qt.astype(np.float16))
+        mx.eval(self.Q, self.Qt_f32, self.Qt_f16)
 
     def __call__(self, x, x1=None, dtype=mx.float32):
-        """x: (n,) or (vectors, n), float32. The result has x's shape, in `dtype`."""
+        """x: (n,) or (vectors, n), float16 or float32. The result has x's shape, in `dtype`."""
         mode = int(x1 is not None)
         T = x.size // self.n
         ins = [x.reshape(-1)] + ([x1.reshape(-1)] if mode else []) + [self.s]
         z = _wht[mode](inputs=ins, template=[("R", self.R), ("C", self.C)], grid=(32 * self.C, T, 1), threadgroup=(32, 1, 1),
                        output_shapes=[(T * self.n,)], output_dtypes=[mx.float32])[0]
+        if T > 1 and dtype == mx.float16:
+            A = 32 * self.R
+            return (z.reshape(T * A, self.C).astype(mx.float16) @ self.Qt_f16).reshape(x.shape)
         return _cfactor(inputs=[z, self.Q], template=[("N", self.n), ("C", self.C), ("OUT_T", dtype)], grid=(-(-self.n // 64) * 64, T, 1),
                         threadgroup=(64, 1, 1), output_shapes=[x.shape], output_dtypes=[dtype])[0]
 
@@ -433,6 +439,13 @@ class Stage:
     def single(self, x, x1=None):
         """One vector (n,): every matrix's output, side by side. With x1, the input is silu(x) · x1."""
         return self.product(self.rot1(x, x1))
+
+    def prefill_f16(self, x, x1=None):
+        """Multi-token projection returning float16 (T, M), avoiding giant float32 intermediates on prefill."""
+        T = x.size // self.n
+        xf = x.reshape(T, self.n)
+        x1f = None if x1 is None else x1.reshape(T, self.n)
+        return self.rot1(xf, x1f, dtype=mx.float16) @ self.product.dense(mx.float16).T
 
     def part(self, y, attr):
         lo, hi = self.slices[attr]
@@ -647,9 +660,96 @@ def _gdn_post(eps):  # a template takes integers and types only: the norm's epsi
     return _gdn_posts[eps]
 
 
+_GDN_PRE_SEQ = """
+    // Fused prefill conv1d(k=4) + SiLU + Q/K L2-norm + conv-state update for T tokens in one launch.
+    // One threadgroup = one (head, token); channels [0..HK*DK) -> q, [HK*DK..2*HK*DK) -> k, [2*HK*DK..CD) -> v.
+    const uint c = thread_position_in_grid.x;
+    const uint t = thread_position_in_grid.y;
+    const uint T = dims[0];
+    const uint head = c / DK;
+    const device half* qkv_t = qkv + (ulong)t * CD;
+    float s0 = (t >= 3u) ? (float)qkv[(ulong)(t - 3u) * CD + c] : cs[(ulong)t * CD + c];
+    float s1 = (t >= 2u) ? (float)qkv[(ulong)(t - 2u) * CD + c] : cs[(ulong)(t + 1u) * CD + c];
+    float s2 = (t >= 1u) ? (float)qkv[(ulong)(t - 1u) * CD + c] : cs[(ulong)(t + 2u) * CD + c];
+    float s3 = (float)qkv_t[c];
+    float v = s0 * w[4 * c] + s1 * w[4 * c + 1] + s2 * w[4 * c + 2] + s3 * w[4 * c + 3];
+    v = v / (1.0f + metal::precise::exp(-v));
+    if (t == T - 1u) {
+        cs_out[c] = s1;
+        cs_out[CD + c] = s2;
+        cs_out[2 * CD + c] = s3;
+    }
+    if (head < 2u * HK) {
+        threadgroup float red[DK / 32];
+        float ss = simd_sum(v * v);
+        if (thread_index_in_simdgroup == 0) red[simdgroup_index_in_threadgroup] = ss;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        ss = 0.0f;
+        for (uint i = 0; i < DK / 32; i++) ss += red[i];
+        const float scale = metal::precise::rsqrt(ss + 1e-6f) * (head < HK ? metal::precise::rsqrt((float)DK) : 1.0f);
+        v *= scale;
+        if (head < HK) {
+            q_out[(ulong)t * (HK * DK) + c] = (half)v;
+        } else {
+            k_out[(ulong)t * (HK * DK) + (c - HK * DK)] = (half)v;
+        }
+    } else {
+        v_out[(ulong)t * (HV * DV) + (c - 2u * HK * DK)] = (half)v;
+    }
+"""
+_GDN_GATES_SEQ = """
+    // Fused scalar GDN gates (g, beta) from ab [T, 2*HV] for all T tokens in one launch.
+    const uint hv = thread_position_in_grid.x;
+    const uint t = thread_position_in_grid.y;
+    const ulong base = (ulong)t * (2u * HV);
+    const float sp = (float)ab[base + hv] + dt_bias[hv];
+    const float softp = sp > 20.0f ? sp : metal::precise::log(1.0f + metal::precise::exp(sp));
+    g_out[(ulong)t * HV + hv] = metal::precise::exp(-metal::precise::exp(A_log[hv]) * softp);
+    beta_out[(ulong)t * HV + hv] = 1.0f / (1.0f + metal::precise::exp(-(float)ab[base + HV + hv]));
+"""
+_GDN_POST_SEQ = """
+    // Fused RMSNormGated across T tokens in one launch (reads half y and half z, writes half out).
+    const uint i = thread_position_in_grid.x;
+    const uint t = thread_position_in_grid.y;
+    const ulong off = (ulong)t * (HV * DV) + i;
+    const float v = (float)y[off];
+    threadgroup float red[DV / 32];
+    float ss = simd_sum(v * v);
+    if (thread_index_in_simdgroup == 0) red[simdgroup_index_in_threadgroup] = ss;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    ss = 0.0f;
+    for (uint j = 0; j < DV / 32; j++) ss += red[j];
+    const float zz = (float)z[off];
+    out[off] = (half)(v * metal::precise::rsqrt(ss / (float)DV + EPS) * w[i % DV] * (zz / (1.0f + metal::precise::exp(-zz))));
+"""
+_gdn_pre_seq = mx.fast.metal_kernel(
+    name="lamq_gdn_pre_seq",
+    input_names=["qkv", "cs", "w", "dims"],
+    output_names=["q_out", "k_out", "v_out", "cs_out"],
+    source=_GDN_PRE_SEQ,
+)
+_gdn_gates_seq = mx.fast.metal_kernel(
+    name="lamq_gdn_gates_seq",
+    input_names=["ab", "A_log", "dt_bias"],
+    output_names=["g_out", "beta_out"],
+    source=_GDN_GATES_SEQ,
+)
+_gdn_posts_seq = {}
+
+
+def _gdn_post_seq(eps):
+    if eps not in _gdn_posts_seq:
+        _gdn_posts_seq[eps] = mx.fast.metal_kernel(
+            name=f"lamq_gdn_post_seq_{len(_gdn_posts_seq)}",
+            input_names=["y", "z", "w"],
+            output_names=["out"],
+            source=_GDN_POST_SEQ.replace("EPS", f"{eps!r}f"),
+        )
+    return _gdn_posts_seq[eps]
+
+
 class FastGatedDelta(nn.Module):
-    """mlx_lm's GatedDeltaNet for one token in six launches besides the two products: its about 16 small operations
-    between the projections become three kernels. Prompts, masks and batches go to the module it wraps."""
+    """mlx_lm's GatedDeltaNet in fused Metal launches for both single-token decode and multi-token prefill."""
 
     def __init__(self, inner, stage_in, stage_out):
         super().__init__()
@@ -658,37 +758,85 @@ class FastGatedDelta(nn.Module):
         m = inner
         self.ok = m.head_k_dim == m.head_v_dim and m.head_k_dim % 32 == 0 and m.conv_kernel_size == 4
         self.w_ab = mx.concatenate([m.in_proj_a.weight, m.in_proj_b.weight]).astype(mx.float32)
+        self.w_ab_f16_t = mx.contiguous(self.w_ab.astype(mx.float16).T)
         self.conv_w = m.conv1d.weight.reshape(m.conv_dim, 4).astype(mx.float32)
         self.t = [("CD", m.conv_dim), ("DK", m.head_k_dim), ("DV", m.head_v_dim), ("HK", m.num_k_heads), ("HV", m.num_v_heads)]
         self.eps = float(m.layer_norm_epsilon)
-        mx.eval(self.w_ab, self.conv_w)
+        self._A_log_f32 = m.A_log.astype(mx.float32)
+        self._dt_bias_f32 = m.dt_bias.astype(mx.float32)
+        self._norm_w_f32 = m.norm.weight.astype(mx.float32)
+        mx.eval(self.w_ab, self.w_ab_f16_t, self.conv_w, self._A_log_f32, self._dt_bias_f32, self._norm_w_f32)
         self.freeze()
 
     def __call__(self, inputs, mask=None, cache=None):
         m = self.inner
-        if not self.ok or inputs.shape[0] != 1 or inputs.shape[1] != 1 or mask is not None or cache is None or cache.lengths is not None:
+        if not self.ok or inputs.shape[0] != 1 or mask is not None or cache is None or cache.lengths is not None:
             return m(inputs, mask, cache)
+        T = int(inputs.shape[1])
         s_in, s_out = self._stages
-        x = inputs.reshape(-1).astype(mx.float32)
-        y = s_in.single(x)
-        ab = self.w_ab @ x
-        cs = cache[0] if cache[0] is not None else mx.zeros((3 * m.conv_dim,), mx.float32)
-        state = cache[1] if cache[1] is not None else mx.zeros((1, m.num_v_heads, m.head_v_dim, m.head_k_dim), mx.float32)
-        qkv, cs = _gdn_pre(inputs=[s_in.part(y, "in_proj_qkv"), cs.reshape(-1).astype(mx.float32), self.conv_w], template=self.t,
-                           grid=(m.conv_dim, 1, 1), threadgroup=(m.head_k_dim, 1, 1),
-                           output_shapes=[(m.conv_dim,), (1, 3, m.conv_dim)], output_dtypes=[mx.float32, mx.float32])
-        out, state = _gdn_step(inputs=[qkv, ab, m.A_log.astype(mx.float32), m.dt_bias.astype(mx.float32), state.astype(mx.float32)], template=self.t,
-                               grid=(32, m.head_v_dim, m.num_v_heads), threadgroup=(32, 4, 1),
-                               output_shapes=[(m.value_dim,), state.shape], output_dtypes=[mx.float32, mx.float32])
-        out = _gdn_post(self.eps)(inputs=[out, s_in.part(y, "in_proj_z"), m.norm.weight.astype(mx.float32)], template=self.t,
-                        grid=(m.value_dim, 1, 1), threadgroup=(m.head_v_dim, 1, 1), output_shapes=[(m.value_dim,)], output_dtypes=[mx.float32])[0]
-        cache[0], cache[1] = cs, state
-        cache.advance(1)
-        return s_out.single(out).reshape(1, 1, -1)
+        if T == 1:
+            x = inputs.reshape(-1).astype(mx.float32)
+            y = s_in.single(x)
+            ab = self.w_ab @ x
+            cs = cache[0] if cache[0] is not None else mx.zeros((3 * m.conv_dim,), mx.float32)
+            state = cache[1] if cache[1] is not None else mx.zeros((1, m.num_v_heads, m.head_v_dim, m.head_k_dim), mx.float32)
+            qkv, cs = _gdn_pre(inputs=[s_in.part(y, "in_proj_qkv"), cs.reshape(-1).astype(mx.float32), self.conv_w], template=self.t,
+                               grid=(m.conv_dim, 1, 1), threadgroup=(m.head_k_dim, 1, 1),
+                               output_shapes=[(m.conv_dim,), (1, 3, m.conv_dim)], output_dtypes=[mx.float32, mx.float32])
+            out, state = _gdn_step(inputs=[qkv, ab, self._A_log_f32, self._dt_bias_f32, state.astype(mx.float32)], template=self.t,
+                                   grid=(32, m.head_v_dim, m.num_v_heads), threadgroup=(32, 4, 1),
+                                   output_shapes=[(m.value_dim,), state.shape], output_dtypes=[mx.float32, mx.float32])
+            out = _gdn_post(self.eps)(inputs=[out, s_in.part(y, "in_proj_z"), self._norm_w_f32], template=self.t,
+                            grid=(m.value_dim, 1, 1), threadgroup=(m.head_v_dim, 1, 1), output_shapes=[(m.value_dim,)], output_dtypes=[mx.float32])[0]
+            cache[0], cache[1] = cs, state
+            cache.advance(1)
+            return s_out.single(out).reshape(1, 1, -1)
+        if s_in.block is not None and T in (8, 16):
+            return m(inputs, mask, cache)
+        # Fused multi-token prefill: Stage(f16) -> _gdn_pre_seq -> _gdn_gates_seq -> packed GDN kernel -> _gdn_post_seq -> Stage(f16)
+        from mlx_lm.models.gated_delta import gated_delta_kernel
+
+        y = s_in.prefill_f16(inputs)
+        lo_qkv, hi_qkv = s_in.slices["in_proj_qkv"]
+        lo_z, hi_z = s_in.slices["in_proj_z"]
+        qkv_in = mx.contiguous(y[:, lo_qkv:hi_qkv])
+        z_in = mx.contiguous(y[:, lo_z:hi_z])
+        ab = inputs.reshape(T, -1).astype(mx.float16) @ self.w_ab_f16_t
+        cs = cache[0].reshape(-1).astype(mx.float32) if cache[0] is not None else mx.zeros((3 * m.conv_dim,), mx.float32)
+        state = cache[1].astype(mx.float32) if cache[1] is not None else mx.zeros((1, m.num_v_heads, m.head_v_dim, m.head_k_dim), mx.float32)
+        q, k, v, cs_out = _gdn_pre_seq(
+            inputs=[qkv_in, cs, self.conv_w, mx.array([T], dtype=mx.uint32)],
+            template=self.t,
+            grid=(m.conv_dim, T, 1),
+            threadgroup=(m.head_k_dim, 1, 1),
+            output_shapes=[(1, T, m.num_k_heads, m.head_k_dim), (1, T, m.num_k_heads, m.head_k_dim),
+                           (1, T, m.num_v_heads, m.head_v_dim), (1, 3, m.conv_dim)],
+            output_dtypes=[mx.float16, mx.float16, mx.float16, mx.float32],
+        )
+        g, beta = _gdn_gates_seq(
+            inputs=[ab, self._A_log_f32, self._dt_bias_f32],
+            template=[("HV", m.num_v_heads)],
+            grid=(m.num_v_heads, T, 1),
+            threadgroup=(min(32, m.num_v_heads), 1, 1),
+            output_shapes=[(1, T, m.num_v_heads), (1, T, m.num_v_heads)],
+            output_dtypes=[mx.float32, mx.float32],
+        )
+        out, state = gated_delta_kernel(q, k, v, g, beta, state)
+        out = _gdn_post_seq(self.eps)(
+            inputs=[out.reshape(-1), z_in.reshape(-1), self._norm_w_f32],
+            template=self.t,
+            grid=(m.value_dim, T, 1),
+            threadgroup=(m.head_v_dim, 1, 1),
+            output_shapes=[(T, m.value_dim)],
+            output_dtypes=[mx.float16],
+        )[0]
+        cache[0], cache[1] = cs_out, state
+        cache.advance(T)
+        return s_out.prefill_f16(out).astype(mx.float32).reshape(1, T, -1)
 
 
 class FastMLP(nn.Module):
-    """The feed-forward block for one token: the gated activation is computed inside the rotation of its result."""
+    """The feed-forward block: the gated activation SiLU(gate)*up is fused inside the down-stage rotation for all T."""
 
     def __init__(self, inner, stage_in, stage_down):
         super().__init__()
@@ -697,11 +845,17 @@ class FastMLP(nn.Module):
         self.freeze()
 
     def __call__(self, x):
-        if x.size != self._stages[0].n:
-            return self.inner(x)
         s_in, s_down = self._stages
-        y = s_in.single(x.reshape(-1).astype(mx.float32))
-        return s_down.single(s_in.part(y, "gate_proj"), s_in.part(y, "up_proj")).reshape(x.shape)
+        T = x.size // s_in.n
+        if T == 1:
+            y = s_in.single(x.reshape(-1).astype(mx.float32))
+            return s_down.single(s_in.part(y, "gate_proj"), s_in.part(y, "up_proj")).reshape(x.shape)
+        if s_in.block is not None and T in (8, 16):
+            return self.inner(x)
+        y = s_in.prefill_f16(x)
+        glo, ghi = s_in.slices["gate_proj"]
+        ulo, uhi = s_in.slices["up_proj"]
+        return s_down.prefill_f16(mx.contiguous(y[:, glo:ghi]), mx.contiguous(y[:, ulo:uhi])).astype(mx.float32).reshape(x.shape)
 
 
 _ADD_NORM = """

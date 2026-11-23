@@ -120,3 +120,100 @@ def test_decode_attention_inline_rel(L, window):
     want = decode_attention(q, kv, relq @ proj, sink, pos, window, ext)
     got = decode_attention(q, kv, relq, sink, pos, window, ext, proj=proj)
     assert (got - want).abs().max().item() < 1e-4
+
+
+@pytest.mark.parametrize("window", [0, 1024])
+def test_prefill_flash_matches_eager_and_ring_wrap(window):
+    import torch.nn.functional as F
+    from runtime_cuda.inkling.attention import prefill_attention_kv
+    from runtime_cuda.inkling.conv import kv_conv_write_
+
+    torch.manual_seed(42 + window)
+    H, Hkv, D, ext = 24, 8, 128, 1024
+    # Test past ring wrap-around (L = 2500 > sw_cap = 2048)
+    L, T = 2500, 128
+    sw_cap = 2048 if window > 0 else 4096
+    ring = window > 0
+    kv_full = torch.zeros(2, Hkv, 4096, D, dtype=torch.float16, device="cuda")
+    kv_ring = torch.zeros(2, Hkv, sw_cap, D, dtype=torch.float16, device="cuda")
+    k_raw = torch.randn(L, Hkv * D, device="cuda") * 0.5
+    v_raw = torch.randn(L, Hkv * D, device="cuda") * 0.5
+    wk = torch.randn(4, Hkv * D, device="cuda") * 0.2
+    wv = torch.randn(4, Hkv * D, device="cuda") * 0.2
+    pos_all = torch.arange(L, dtype=torch.int32, device="cuda")
+    pk1, pv1 = torch.zeros(3, Hkv * D, device="cuda"), torch.zeros(3, Hkv * D, device="cuda")
+    pk2, pv2 = torch.zeros(3, Hkv * D, device="cuda"), torch.zeros(3, Hkv * D, device="cuda")
+    kv_conv_write_(k_raw, v_raw, pk1, pv1, kv_full, pos_all, 22.6, 1e-6, Hkv, w_k=wk, w_v=wv, ring=False)
+    kv_conv_write_(k_raw, v_raw, pk2, pv2, kv_ring, pos_all, 22.6, 1e-6, Hkv, w_k=wk, w_v=wv, ring=ring)
+
+    q = torch.randn(T, H, D, device="cuda")
+    rel = torch.randn(T, H, ext, device="cuda") * 0.2
+    sink = torch.randn(T, H, device="cuda")
+    q_pos = torch.arange(L - T, L, dtype=torch.int32, device="cuda")
+
+    got = prefill_attention_kv(q, kv_ring, rel, sink, q_pos, L, window, ext, ring=ring)
+
+    # Eager float32 reference
+    k_pos = torch.arange(L, device="cuda")
+    dist = q_pos.long()[:, None] - k_pos[None, :]
+    ok = dist >= 0
+    if window > 0:
+        ok = ok & (dist < window)
+    in_rel = ok & (dist < ext)
+    bias = torch.gather(rel.permute(1, 0, 2), 2, dist.clamp(0, ext - 1)[None].expand(H, T, L))
+    bias = torch.where(in_rel[None], bias, 0.0)
+    bias = torch.where(ok[None], bias, float("-inf"))
+    bias = torch.cat([bias, sink.T[:, :, None]], dim=-1)
+    Kp = torch.cat([kv_full[0, :, :L].float(), torch.zeros(Hkv, 1, D, device="cuda")], dim=1).repeat_interleave(H // Hkv, 0)
+    Vp = torch.cat([kv_full[1, :, :L].float(), torch.zeros(Hkv, 1, D, device="cuda")], dim=1).repeat_interleave(H // Hkv, 0)
+    want = F.scaled_dot_product_attention(q.transpose(0, 1)[None], Kp[None], Vp[None], attn_mask=bias[None])[0].transpose(0, 1)
+    assert (got - want).abs().max().item() < 2e-4
+
+    # Also verify decode_attention on wrapped ring matches last query row
+    dec = decode_attention(q[-1], kv_ring, rel[-1], sink[-1], q_pos[-1:], window, ext, ring=ring)
+    assert (dec - want[-1]).abs().max().item() < 2e-4
+
+
+@pytest.mark.parametrize("kv_mode,tol", [("fp16", 2e-4), ("q8_0", 2e-2), ("q4_0", 0.25)])
+@pytest.mark.parametrize("tiered", [False, True])
+def test_quantized_and_tiered_global_kv(kv_mode, tol, tiered):
+    from runtime_cuda.inkling.attention import prefill_attention_kv
+    from runtime_cuda.inkling.conv import kv_conv_write_
+
+    torch.manual_seed(7)
+    H, Hkv, D, ext = 24, 8, 128, 1024
+    L, T = 384, 64
+    vram_cells = 200 if tiered else L
+    kv_ref = torch.zeros(2, Hkv, L, D, dtype=torch.float16, device="cuda")
+    if kv_mode == "fp16":
+        dtype, d_store, need_sc = torch.float16, D, False
+    elif kv_mode == "q8_0":
+        dtype, d_store, need_sc = torch.int8, D, True
+    else:
+        dtype, d_store, need_sc = torch.uint8, D // 2, True
+
+    kv_vram = torch.zeros(2, Hkv, vram_cells, d_store, dtype=dtype, device="cuda")
+    sc_vram = torch.zeros(2, Hkv, vram_cells, D // 32, dtype=torch.float16, device="cuda") if need_sc else None
+    kv_host = torch.zeros(2, Hkv, L - vram_cells, d_store, dtype=dtype, pin_memory=True) if tiered else None
+    sc_host = torch.zeros(2, Hkv, L - vram_cells, D // 32, dtype=torch.float16, pin_memory=True) if (tiered and need_sc) else None
+
+    k_raw = torch.randn(L, Hkv * D, device="cuda") * 0.5
+    v_raw = torch.randn(L, Hkv * D, device="cuda") * 0.5
+    wk = torch.randn(4, Hkv * D, device="cuda") * 0.2
+    wv = torch.randn(4, Hkv * D, device="cuda") * 0.2
+    pos = torch.arange(L, dtype=torch.int32, device="cuda")
+    kv_conv_write_(k_raw, v_raw, torch.zeros(3, Hkv * D, device="cuda"), torch.zeros(3, Hkv * D, device="cuda"),
+                   kv_ref, pos, 22.6, 1e-6, Hkv, w_k=wk, w_v=wv)
+    kw = dict(kv_mode=kv_mode, scales=sc_vram, kv_host=kv_host, scales_host=sc_host, vram_cells=vram_cells if tiered else None)
+    kv_conv_write_(k_raw, v_raw, torch.zeros(3, Hkv * D, device="cuda"), torch.zeros(3, Hkv * D, device="cuda"),
+                   kv_vram, pos, 22.6, 1e-6, Hkv, w_k=wk, w_v=wv, **kw)
+
+    q = torch.randn(T, H, D, device="cuda")
+    rel = torch.randn(T, H, ext, device="cuda") * 0.2
+    sink = torch.randn(T, H, device="cuda")
+    q_pos = torch.arange(L - T, L, dtype=torch.int32, device="cuda")
+    want = prefill_attention_kv(q, kv_ref, rel, sink, q_pos, L, 0, ext)
+    got = prefill_attention_kv(q, kv_vram, rel, sink, q_pos, L, 0, ext, **kw)
+    dec_got = decode_attention(q[-1], kv_vram, rel[-1], sink[-1], q_pos[-1:], 0, ext, **kw)
+    assert (got - want).abs().max().item() < tol
+    assert (dec_got - got[-1]).abs().max().item() < 2e-4

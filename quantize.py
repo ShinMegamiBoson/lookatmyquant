@@ -983,10 +983,11 @@ def main():
     ap.add_argument("--gauges", default="", help="exact rewrites searched before each block: vo, ud, or vo,ud")
     ap.add_argument("--gauge-alphas", default="0,0.25,0.5", help="the exponents tried (0 = no rewrite)")
     ap.add_argument("--seeds", type=int, default=1, help="randomized Hadamard seeds tried per matrix (tr, lm)")
-    ap.add_argument("--data", choices=["wikitext", "mix"], default="wikitext", help="calibration text (and token frequencies)")
+    ap.add_argument("--data", choices=["wikitext", "mix", "templated"], default="wikitext", help="calibration text (and token frequencies)")
+    ap.add_argument("--dense-expert-h", action="store_true", help="MoE experts: share all-token H_all (+ one rotated Cholesky) for gate_up and use all-token chunked H for down")
     ap.add_argument("--embed-order", choices=["", "freq", "sfisher-mix", "sfisher"], default="",
                     help="override how token table rows are ranked into buckets (default: follow the plan's order)")
-    ap.add_argument("--eval-mix", type=int, default=0, help="held-out windows per text-mix source to evaluate (0: 8 with --data mix)")
+    ap.add_argument("--eval-mix", type=int, default=0, help="held-out windows per text-mix source to evaluate (0: 8 with --data mix or templated)")
     ap.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
     ap.add_argument("--stream-cancel", type=float, default=0.0, help="cross-term programs: fit the last matrix of each residual branch to also cancel this share of the error already in the stream")
     ap.add_argument("--output-shaping", action="store_true", help="Lloyd–Max words: also shape each matrix's rounding error toward outputs that matter less (needs --rot in-shared)")
@@ -1072,8 +1073,8 @@ def main():
     test = next(iter(tests.values()), None)
     res = {"program": args.program, "model": name, "args": vars(args)}
 
-    n_mix = 0 if args.skip_eval else args.eval_mix or (8 if args.data == "mix" else 0)
-    mix = A.TextMix(tok, tag) if (args.data == "mix" or n_mix) else None
+    n_mix = 0 if args.skip_eval else args.eval_mix or (8 if args.data in ("mix", "templated") else 0)
+    mix = A.TemplatedMix(tok, tag) if args.data == "templated" else (A.TextMix(tok, tag) if (args.data == "mix" or n_mix) else None)
     mix_eval = {s_: A.with_bos(w_, tok, ref) for s_, w_ in mix.windows("eval", n_mix, 512, seed=2).items()} if n_mix else {}
 
     def evaluate_all(m, r):
@@ -1124,7 +1125,7 @@ def main():
 
     T = args.calib_len
     mix_sample = None
-    if args.data == "mix":
+    if args.data in ("mix", "templated"):
         calib, mix_sample = mix.sample("calib", args.calib, T, seed=0)
         if args.calib_shares:  # the skills the model is scored on, written by the original itself
             shares = {k: float(v) for k, v in (kv.split("=") for kv in args.calib_shares.split(","))}
@@ -1286,7 +1287,13 @@ def main():
         spec = plan.get("embed") or plan.get("head") or plan.get("ple")
         order_text = spec.get("order", "")
         emb_mode = args.embed_order or ("sfisher-mix" if "sfisher-mix" in order_text else "sfisher" if "sfisher" in order_text else "freq")
-        freq = (mix or A.TextMix(tok, tag)).frequency(V) if "mix" in order_text else torch.bincount(token_ids(tok, "train", tag).reshape(-1), minlength=V)[:V].double()
+        if "templated" in order_text:
+            m_ord = mix if isinstance(mix, A.TemplatedMix) else A.TemplatedMix(tok, tag)
+        elif "mix" in order_text:
+            m_ord = mix if (mix is not None and not isinstance(mix, A.TemplatedMix)) else A.TextMix(tok, tag)
+        else:
+            m_ord = None
+        freq = m_ord.frequency(V) if m_ord is not None else torch.bincount(token_ids(tok, "train", tag).reshape(-1), minlength=V)[:V].double()
         sf = softmax_fisher(ref, chunks) if emb_mode != "freq" else None
 
         def _order_for(mode_name, table_spec):
@@ -1632,28 +1639,44 @@ def main():
         Xr = torch.cat(xr) if keep_ref else None
         H_all = (X.T @ X / len(X)).cpu().double()
         ps = expert_programs(i, stage["name"], E)
+        dense_h = bool(getattr(args, "dense_expert_h", False))
+        H_all_damped = A.damped_hessian(H_all) if dense_h else None
+        C_gu_cross = (cross_target(H_all_damped, (Xr.T @ X / len(X)).cpu().double() - H_all)
+                      if (dense_h and Xr is not None) else None)
         bits_ = n_ = 0.0
         for e in range(E):
-            tok_e = (K == e).any(-1).nonzero().squeeze(-1)
-            x = X[tok_e]
+            tok_e = None if dense_h else (K == e).any(-1).nonzero().squeeze(-1)
+            x = None if dense_h else X[tok_e]
             gu, dn, t = expert_matrices(mod, e, X.shape[-1])
-            for part, W_, inp, ref_inp in (("gate_up", gu, x, None if Xr is None else Xr[tok_e]), ("down", dn, None, None)):
+            for part, W_ in (("gate_up", gu), ("down", dn)):
                 p = ps[e][0 if part == "gate_up" else 1]
-                if part == "down":  # the expert's intermediate through its quantized gate_up (and the reference's)
-                    inp = expert_hidden(mod, e, x.to(mod.gate_up_proj.dtype), t).float() if len(x) else x.new_zeros(0, W_.shape[1])
-                    ref_inp = expert_hidden(rmod, e, Xr[tok_e].to(rmod.gate_up_proj.dtype), t).float() if Xr is not None and len(x) else None
                 W = W_.detach().cpu().double()
-                if len(inp) >= 8:
-                    H = (inp.T @ inp / len(inp)).cpu().double()
-                    H += 0.01 * torch.diag(H).mean() * torch.eye(len(H), dtype=H.dtype)
-                else:
-                    H = H_all if part == "gate_up" else torch.eye(W.shape[1], dtype=torch.float64)
                 target = W
-                if parse(p)[2] and ref_inp is not None and len(inp) >= 8:
-                    D = (ref_inp.T @ inp / len(inp)).cpu().double() - (inp.T @ inp / len(inp)).cpu().double()
-                    target = W @ cross_target(H, D)
+                if dense_h:
+                    if part == "gate_up":
+                        H = H_all_damped
+                        if parse(p)[2] and C_gu_cross is not None:
+                            target = W @ C_gu_cross
+                    else:
+                        H, D = A.dense_down_moments(mod, e, X, t, expert_hidden, rmod=rmod if (parse(p)[2] and Xr is not None) else None, Xr=Xr)
+                        if parse(p)[2] and D is not None:
+                            target = W @ cross_target(H, D)
+                else:
+                    if part == "gate_up":
+                        inp, ref_inp = x, (None if Xr is None else Xr[tok_e])
+                    else:
+                        inp = expert_hidden(mod, e, x.to(mod.gate_up_proj.dtype), t).float() if len(x) else x.new_zeros(0, W_.shape[1])
+                        ref_inp = expert_hidden(rmod, e, Xr[tok_e].to(rmod.gate_up_proj.dtype), t).float() if Xr is not None and len(x) else None
+                    if len(inp) >= 8:
+                        H = A.damped_hessian(inp.T @ inp / len(inp))
+                    else:
+                        H = H_all if part == "gate_up" else torch.eye(W.shape[1], dtype=torch.float64)
+                    if parse(p)[2] and ref_inp is not None and len(inp) >= 8:
+                        D = (ref_inp.T @ inp / len(inp)).cpu().double() - (inp.T @ inp / len(inp)).cpu().double()
+                        target = W @ cross_target(H, D)
+                shared_in = (1000 * i + 500) if (dense_h and part == "gate_up") else None
                 net = word(p, target, H if parse(p)[0] not in DATA_FREE else None, 1000 * i + 500 + 2 * e + (part == "down"),
-                           trellis_for(W.shape[0]))
+                           trellis_for(W.shape[0]), in_seed=shared_in)
                 Q = net.matrix(dtype=torch.float64)
                 dst = mod.gate_up_proj if part == "gate_up" else mod.down_proj
                 dst.data[e] = (Q.T if t else Q).to(dst.dtype).to(dst.device)

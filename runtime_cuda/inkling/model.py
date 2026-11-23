@@ -25,8 +25,8 @@ import torch._dynamo
 import torch.nn.functional as F
 from safetensors.torch import load_file
 
-from .attention import decode_attention, prefill_attention
-from .conv import conv4_, dyn_conv4_, kv_conv_write_
+from .attention import decode_attention, prefill_attention_kv
+from .conv import KV_MODE_IDS, conv4_, dyn_conv4_, kv_conv_write_
 from .fused import block_attn_res_fused, message_gates_fused
 from .packed_modules import FMT_ID, FastPackedLinear, FastPackedLMHead, _Mat, _signs, _t
 from .formats import FMT_PARAMS, NVFP4_FID, rht_in, rht_in_stack, rht_out, rht_out_stack
@@ -265,17 +265,109 @@ def moe_combine(dn, w):
 
 # ----------------------------------------------------------------------------- 48-visit static cache
 
-class Inkling2Cache:
-    """Pre-allocated KV (`float16 [2, n_kv, cap, d]` a visit) and causal-conv states (`float32 [3, C]`, 4 a visit).
+def _slot_is_sliding(cfg: Inkling2Config, slot: int) -> bool:
+    if slot < cfg.num_hidden_layers:
+        phys = slot
+    else:
+        n_loop = cfg.loop_end - cfg.loop_start
+        phys = cfg.loop_start + ((slot - cfg.num_hidden_layers) % n_loop)
+    return phys in cfg.local_layer_ids
 
-    `pos` is the number of tokens already in the cache, kept on the device so a captured decode step can advance it.
-    Sliding layers keep all positions too (attention reads only the last window), which keeps rollback trivial.
+
+def _default_global_kv_mode() -> str:
+    mode = os.environ.get("LAMQ_CUDA_GLOBAL_KV", "fp16").strip().lower()
+    if mode == "q4":
+        mode = "q4_0"
+    elif mode == "q8":
+        mode = "q8_0"
+    if mode not in KV_MODE_IDS:
+        raise ValueError(f"LAMQ_CUDA_GLOBAL_KV must be one of {sorted(KV_MODE_IDS)}, got {mode!r}")
+    return mode
+
+
+def _default_kv_vram_cells() -> int | None:
+    raw = os.environ.get("LAMQ_CUDA_KV_VRAM_CELLS", "").strip()
+    if not raw:
+        return None
+    val = int(raw)
+    if val < 0:
+        raise ValueError("LAMQ_CUDA_KV_VRAM_CELLS must be >= 0")
+    return val
+
+
+class Inkling2Cache:
+    """Per-class 48-visit KV + causal-conv cache, CUDA-graph-capturable and long-context ready.
+
+    - The 40 sliding-window visits allocate fixed FP16 ring buffers of `min(capacity, window + prefill_chunk)`
+      cells (~335 MB total at any context length up to 262k).
+    - The 8 global visits support `fp16` (32 KiB/tok), `q8_0` (17 KiB/tok), and `q4_0` (9 KiB/tok), plus
+      optional tiered VRAM + pinned host-RAM storage (`kv_vram_cells`).
+    - `pos` lives on the device so a captured CUDA decode graph replays at any sequence length without host sync.
     """
 
-    def __init__(self, cfg: Inkling2Config, capacity: int, device: torch.device):
-        self.cfg, self.capacity, self.device = cfg, capacity, device
+    def __init__(
+        self,
+        cfg: Inkling2Config,
+        capacity: int,
+        device: torch.device,
+        *,
+        global_kv_mode: str | None = None,
+        kv_vram_cells: int | None = None,
+        prefill_chunk: int = 1024,
+    ):
+        self.cfg, self.capacity, self.device = cfg, int(capacity), device
+        self.prefill_chunk = int(prefill_chunk)
+        self.global_kv_mode = _default_global_kv_mode() if global_kv_mode is None else global_kv_mode
+        if self.global_kv_mode not in KV_MODE_IDS:
+            raise ValueError(f"unsupported global_kv_mode: {self.global_kv_mode!r}")
+        if kv_vram_cells is None:
+            kv_vram_cells = _default_kv_vram_cells()
+        self.kv_vram_cells = kv_vram_cells
+
         n, kvh, d = cfg.total_visits, cfg.num_key_value_heads, cfg.head_dim
-        self.kv = torch.zeros(n, 2, kvh, capacity, d, dtype=torch.float16, device=device)
+        sw_cap = min(self.capacity, cfg.sliding_window_size + max(self.prefill_chunk, 1))
+        self.is_sliding = [_slot_is_sliding(cfg, s) for s in range(n)]
+        self.slot_mode: list[str] = []
+        self.slot_ring: list[bool] = []
+        self.kv: list[torch.Tensor] = []
+        self.scales: list[torch.Tensor | None] = []
+        self.kv_host: list[torch.Tensor | None] = []
+        self.scales_host: list[torch.Tensor | None] = []
+        self.vram_cells: list[int | None] = []
+
+        for s in range(n):
+            sw = self.is_sliding[s]
+            mode = "fp16" if sw else self.global_kv_mode
+            ring = sw and sw_cap < self.capacity
+            cap_s = sw_cap if sw else self.capacity
+            self.slot_mode.append(mode)
+            self.slot_ring.append(ring)
+
+            if mode == "fp16":
+                dtype, d_store, need_sc = torch.float16, d, False
+            elif mode == "q8_0":
+                dtype, d_store, need_sc = torch.int8, d, True
+            else:  # q4_0
+                dtype, d_store, need_sc = torch.uint8, d // 2, True
+
+            tiered = (not sw) and (kv_vram_cells is not None) and (0 < kv_vram_cells < cap_s)
+            v_cells = int(kv_vram_cells) if tiered else cap_s
+            self.kv.append(torch.zeros(2, kvh, v_cells, d_store, dtype=dtype, device=device))
+            self.scales.append(
+                torch.zeros(2, kvh, v_cells, d // 32, dtype=torch.float16, device=device) if need_sc else None
+            )
+            if tiered:
+                h_cells = cap_s - v_cells
+                self.kv_host.append(torch.zeros(2, kvh, h_cells, d_store, dtype=dtype, pin_memory=True))
+                self.scales_host.append(
+                    torch.zeros(2, kvh, h_cells, d // 32, dtype=torch.float16, pin_memory=True) if need_sc else None
+                )
+                self.vram_cells.append(v_cells)
+            else:
+                self.kv_host.append(None)
+                self.scales_host.append(None)
+                self.vram_cells.append(None)
+
         kv_dim, H = kvh * d, cfg.hidden_size
         self.conv_state = [
             [torch.zeros(3, kv_dim, device=device), torch.zeros(3, kv_dim, device=device),
@@ -285,12 +377,101 @@ class Inkling2Cache:
         self.pos = torch.zeros(1, dtype=torch.int32, device=device)
         self.seq_len = 0  # host mirror, updated by the caller after prefill/decode
 
+    def kv_vram_bytes(self) -> int:
+        total = 0
+        for t in self.kv:
+            total += t.numel() * t.element_size()
+        for t in self.scales:
+            if t is not None:
+                total += t.numel() * t.element_size()
+        return total
+
+    def kv_host_bytes(self) -> int:
+        total = 0
+        for t in self.kv_host:
+            if t is not None:
+                total += t.numel() * t.element_size()
+        for t in self.scales_host:
+            if t is not None:
+                total += t.numel() * t.element_size()
+        return total
+
     def reset(self):
         self.pos.zero_()
         self.seq_len = 0
         for slot in self.conv_state:
             for c in slot:
                 c.zero_()
+
+    def snapshot_cpu(self) -> dict:
+        """Copy active KV + conv state to CPU tensors for `CudaPromptCache`."""
+        L = int(self.seq_len)
+        tensors: dict[str, torch.Tensor] = {}
+        slot_lens: list[int] = []
+        for s in range(len(self.kv)):
+            cap_s = self.kv[s].shape[2]
+            if self.is_sliding[s]:
+                n_save = min(L, cap_s) if not self.slot_ring[s] else cap_s
+                tensors[f"kv.{s}"] = self.kv[s][:, :, :n_save, :].detach().cpu().contiguous()
+                slot_lens.append(n_save)
+            else:
+                vc = self.vram_cells[s]
+                if vc is not None and L > vc:
+                    part_v = self.kv[s][:, :, :vc, :].detach().cpu()
+                    part_h = self.kv_host[s][:, :, : L - vc, :].detach().cpu()
+                    tensors[f"kv.{s}"] = torch.cat([part_v, part_h], dim=2).contiguous()
+                    if self.scales[s] is not None:
+                        sv = self.scales[s][:, :, :vc, :].detach().cpu()
+                        sh = self.scales_host[s][:, :, : L - vc, :].detach().cpu()
+                        tensors[f"sc.{s}"] = torch.cat([sv, sh], dim=2).contiguous()
+                else:
+                    tensors[f"kv.{s}"] = self.kv[s][:, :, :L, :].detach().cpu().contiguous()
+                    if self.scales[s] is not None:
+                        tensors[f"sc.{s}"] = self.scales[s][:, :, :L, :].detach().cpu().contiguous()
+                slot_lens.append(L)
+            for ci, c_arr in enumerate(self.conv_state[s]):
+                tensors[f"conv.{s}.{ci}"] = c_arr.detach().cpu().contiguous()
+        return {
+            "tensors": tensors,
+            "meta": {
+                "seq_len": L,
+                "global_kv_mode": self.global_kv_mode,
+                "slot_lens": slot_lens,
+                "slot_ring": list(self.slot_ring),
+            },
+        }
+
+    def restore_from_snapshot(self, snap: dict) -> None:
+        """Restore active KV + conv state from a `snapshot_cpu()` dict."""
+        meta = snap["meta"]
+        if meta["global_kv_mode"] != self.global_kv_mode:
+            raise ValueError(f"snapshot kv mode {meta['global_kv_mode']!r} != cache {self.global_kv_mode!r}")
+        L = int(meta["seq_len"])
+        if L > self.capacity:
+            raise ValueError(f"snapshot length {L} exceeds cache capacity {self.capacity}")
+        tensors = snap["tensors"]
+        for s in range(len(self.kv)):
+            src = tensors[f"kv.{s}"]
+            n_src = src.shape[2]
+            if self.is_sliding[s]:
+                self.kv[s][:, :, :n_src, :].copy_(src, non_blocking=True)
+            else:
+                vc = self.vram_cells[s]
+                if vc is not None and n_src > vc:
+                    self.kv[s][:, :, :vc, :].copy_(src[:, :, :vc, :], non_blocking=True)
+                    self.kv_host[s][:, :, : n_src - vc, :].copy_(src[:, :, vc:n_src, :])
+                    if self.scales[s] is not None:
+                        sc_src = tensors[f"sc.{s}"]
+                        self.scales[s][:, :, :vc, :].copy_(sc_src[:, :, :vc, :], non_blocking=True)
+                        self.scales_host[s][:, :, : n_src - vc, :].copy_(sc_src[:, :, vc:n_src, :])
+                else:
+                    self.kv[s][:, :, :n_src, :].copy_(src, non_blocking=True)
+                    if self.scales[s] is not None:
+                        self.scales[s][:, :, :n_src, :].copy_(tensors[f"sc.{s}"], non_blocking=True)
+            for ci in range(4):
+                self.conv_state[s][ci].copy_(tensors[f"conv.{s}.{ci}"], non_blocking=True)
+        self.seq_len = L
+        self.pos.fill_(L)
 
     def conv(self, slot: int, idx: int, x: torch.Tensor, w_kc: torch.Tensor) -> torch.Tensor:
         return conv4_(self.conv_state[slot][idx], x, w_kc)
@@ -524,12 +705,22 @@ class PackedDecoderLayer:
 
         q_raw, k_raw, v_raw, rel_raw, gate_raw = self._in_stage(q_in, k_in, v_in)
         q = q_post(q_raw, self.q_scale, pos, cfg.qk_l2_clip_threshold, cfg.log_scaling_alpha, cfg.log_scaling_n_floor, full)
-        kv = cache.kv[slot]  # [2, nkv, cap, hd]
+        kv = cache.kv[slot]
+        kv_kw = dict(
+            ring=cache.slot_ring[slot],
+            kv_mode=cache.slot_mode[slot],
+            scales=cache.scales[slot],
+            kv_host=cache.kv_host[slot],
+            scales_host=cache.scales_host[slot],
+            vram_cells=cache.vram_cells[slot],
+        )
         pk, pv = cache.conv_state[slot][0], cache.conv_state[slot][1]
         if self.is_sliding:
-            kv_conv_write_(k_raw, v_raw, pk, pv, kv, pos, cfg.qk_l2_clip_threshold, eps, nkv, w_k=self.k_conv, w_v=self.v_conv)
+            kv_conv_write_(k_raw, v_raw, pk, pv, kv, pos, cfg.qk_l2_clip_threshold, eps, nkv,
+                           w_k=self.k_conv, w_v=self.v_conv, **kv_kw)
         else:
-            kv_conv_write_(k_raw, v_raw, pk, pv, kv, pos, cfg.qk_l2_clip_threshold, eps, nkv, dyn=(k_in, v_in, self.k_dyn, self.v_dyn))
+            kv_conv_write_(k_raw, v_raw, pk, pv, kv, pos, cfg.qk_l2_clip_threshold, eps, nkv,
+                           dyn=(k_in, v_in, self.k_dyn, self.v_dyn), **kv_kw)
 
         window = cfg.sliding_window_size if self.is_sliding else 0
         if decode:
@@ -537,13 +728,12 @@ class PackedDecoderLayer:
                                    cfg.rel_l2_clip_threshold, cfg.log_scaling_alpha, cfg.log_scaling_n_floor, full)
             tn = tuning_for(q.device)
             attn = decode_attention(q[0], kv, rel[0], sinks[0], pos, window, cfg.rel_extent, proj=self.rel_proj,
-                                    nsplit=tn.attn_nsplit, block_k=tn.attn_block_k)[None]
+                                    nsplit=tn.attn_nsplit, block_k=tn.attn_block_k, **kv_kw)[None]
         else:
             rel_logits, sinks = rel_post(rel_raw, self.rel_scale, self.rel_proj, q_in, self.sink_w, pos,
                                          cfg.rel_l2_clip_threshold, cfg.log_scaling_alpha, cfg.log_scaling_n_floor, full)
             L = int(pos[-1].item()) + 1  # prefill: host knows the length
-            k_pos = torch.arange(L, device=h.device)
-            attn = prefill_attention(q.transpose(0, 1), kv[0, :, :L], kv[1, :, :L], rel_logits, sinks, pos.long(), k_pos, window, cfg.rel_extent)
+            attn = prefill_attention_kv(q, kv, rel_logits, sinks, pos, L, window, cfg.rel_extent, **kv_kw)
         attn = gate_mul(attn, gate_raw)
         attn_out = cache.conv(slot, 2, self.o_lin(attn), self.post_attn_conv)
 
@@ -617,8 +807,18 @@ class Inkling2LoopPacked:
         out[order] = table  # row p holds token order[p]
         return out
 
-    def make_cache(self, capacity: int = 4096) -> Inkling2Cache:
-        return Inkling2Cache(self.cfg, capacity, self.device)
+    def make_cache(
+        self,
+        capacity: int = 4096,
+        *,
+        global_kv_mode: str | None = None,
+        kv_vram_cells: int | None = None,
+        prefill_chunk: int = 1024,
+    ) -> Inkling2Cache:
+        return Inkling2Cache(
+            self.cfg, capacity, self.device,
+            global_kv_mode=global_kv_mode, kv_vram_cells=kv_vram_cells, prefill_chunk=prefill_chunk,
+        )
 
     @torch.no_grad()
     def hidden(self, ids: torch.Tensor, cache: Inkling2Cache, pos: torch.Tensor, decode: bool = False, tap_visits=()):

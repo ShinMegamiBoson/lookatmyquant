@@ -410,6 +410,19 @@ class RowTrellisCode:
         return restrict_trellis(net, core, cols, self.domain, given=settled)
 
 
+_STAGE: dict = {}
+
+
+def _stage(H, n, seed, dev):
+    """Cache an input's rotation, rotated statistics and Cholesky factor across calls sharing the same H and seed."""
+    key = (id(H), H._version, tuple(H.shape), n, seed, str(dev))
+    if _STAGE.get("key") != key:
+        _STAGE.clear()
+        R_in = rht(n, seed).to(dev)
+        _STAGE.update(key=key, H=H, R_in=R_in, env=Environment(R_in @ H.double().to(dev) @ R_in.T))
+    return _STAGE["R_in"], _STAGE["env"]
+
+
 def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list[int], incoherent: bool = True,
                in_seed: int | None = None, out_rot: bool = True) -> list[Net]:
     """(Gauge: incoherence →) Split(scale, per row, by RMS) → (block LDLQ sweep →) the code's Restrict and Split, for
@@ -422,7 +435,12 @@ def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list
     Ws = [W.to(dev).double() for W in Ws]
     n = Ws[0].shape[1]
     rows, cols = ("u" if out_rot else "o", "v") if incoherent else ("o", "i")
-    R_in = rht(n, seeds[0] + 1 if in_seed is None else in_seed).to(dev) if incoherent else None
+    seed_in = seeds[0] + 1 if in_seed is None else in_seed
+    env = None
+    if incoherent and H is not None:
+        R_in, env = _stage(H, n, seed_in, dev)
+    else:
+        R_in = rht(n, seed_in).to(dev) if incoherent else None
     nets = []
     for W, s in zip(Ws, seeds):
         net = matrix_net(W)
@@ -436,7 +454,8 @@ def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list
     S = X.pow(2).mean(1).sqrt().clamp(min=1e-12)
     settled = None
     if H is not None:
-        H = (R_in @ H.double().to(dev) @ R_in.T) if incoherent else H.double().to(dev)
+        if env is None:
+            env = Environment((R_in @ H.double().to(dev) @ R_in.T) if incoherent else H.double().to(dev))
         settled = torch.empty_like(X)  # the sweep's projection, in units of the row scale
 
         def project(j, x, T):
@@ -449,7 +468,7 @@ def ldlq_words(Ws: list[torch.Tensor], H: torch.Tensor | None, code, seeds: list
             q = q * S[:, None]
             return q[:, 0] if code.width == 1 else q
 
-        X = sweep(X, Environment(H), project, width=code.width)
+        X = sweep(X, env, project, width=code.width)
         settled = settled.cpu()
     X, S = X.cpu(), S.cpu()
     out, r0 = [], 0

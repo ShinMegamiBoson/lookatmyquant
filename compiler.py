@@ -148,11 +148,14 @@ def measure(args):
     model = AutoModelForCausalLM.from_pretrained(path, dtype=dtype, **qcfg).to(rq.DEV).eval()
     for p in model.parameters():
         p.requires_grad_(False)
+    routing = A.FixedRouting(model) if getattr(args, "fix_routing", False) else None
+    assert not getattr(args, "fix_routing", False) or routing.routers, "--fix-routing found no router of the kind it knows"
     cfg = A.text_config(model.config)
     tag = "qwen35" if "qwen3_5" in model.config.model_type else args.model.split("/")[-1].lower()  # quantize.py's token caches
     T = args.calib_len
-    mix = A.TextMix(tok, tag) if args.data == "mix" else None
+    mix = A.TemplatedMix(tok, tag) if args.data == "templated" else (A.TextMix(tok, tag) if args.data == "mix" else None)
     sample_manifest = None
+    held_sources = None
     if args.data == "math":  # the original's long math answers (math_calibration.py): calibration from the front, held out from the back
         w = torch.load(args.math_windows)[:, :T]
         calib, held = w[: args.calib], w[-args.windows :]
@@ -160,6 +163,8 @@ def measure(args):
         calib, cm = mix.sample("calib", args.calib, T, seed=0)
         held, hm = mix.sample("calib", args.windows, T, seed=1)
         sample_manifest = {"calibration": cm, "measurement": hm}
+        if args.data == "templated" or getattr(args, "per_class", False):
+            held_sources = [h["source"] for h in hm]
     else:
         train = rq.token_ids(tok, "train", tag)
         starts = torch.randint(0, len(train) - T - 1, (args.calib,), generator=torch.Generator().manual_seed(0))
@@ -171,30 +176,84 @@ def measure(args):
     if args.digit_weight != 1:
         from token_kinds import kinds_of
         wpos[:, :-1] += (args.digit_weight - 1) * (kinds_of(held, tok) <= 1).float()
+    held_classes = sorted(set(held_sources)) if held_sources else []
+    held_class_weights = {
+        c: wpos * torch.tensor([1.0 if s == c else 0.0 for s in held_sources], dtype=wpos.dtype)[:, None]
+        for c in held_classes
+    } if held_classes else {}
     chunks = [calib[b : b + args.chunk].to(rq.DEV) for b in range(0, len(calib), args.chunk)]
     bs = args.kl_batch
+    _, layers = A.decoder_layers(model)
+    exec_counts: list[int] = []
+    stages = A.discover(model, chunks[0][:1, :64], counts_out=exec_counts)
+    is_looped = any(c > 1 for c in exec_counts)
     with torch.no_grad():
-        ref_lp = [F.log_softmax(model(held[b : b + bs].to(rq.DEV), use_cache=False).logits.float(), -1) for b in range(0, len(held), bs)]
+        ref_lp = []
+        for k, b in enumerate(range(0, len(held), bs)):
+            if routing:
+                routing.record(k)
+            ref_lp.append(F.log_softmax(model(held[b : b + bs].to(rq.DEV), use_cache=False).logits.float(), -1))
+    if routing:
+        routing.off()
+
+    class Scores(dict):
+        def __sub__(self, other):
+            res = {}
+            for k, v in self.items():
+                if isinstance(v, dict):
+                    res[k] = {ck: cv - other[k][ck] for ck, cv in v.items()}
+                else:
+                    res[k] = v - other[k]
+            return Scores(res)
+
+        def __float__(self):
+            return float(self["dkl"])
+
+        def __format__(self, spec):
+            return format(self["dkl"], spec)
 
     @torch.no_grad()
     def kl():
         tot = n = 0.0
-        for b, lr in zip(range(0, len(held), bs), ref_lp):
-            lp = F.log_softmax(model(held[b : b + bs].to(rq.DEV), use_cache=False).logits.float(), -1)
+        cls_tot, cls_n = {c: 0.0 for c in held_classes}, {c: 0.0 for c in held_classes}
+        for k, (b, lr) in enumerate(zip(range(0, len(held), bs), ref_lp)):
+            if routing:
+                routing.replay(k)
+            try:
+                lp = F.log_softmax(model(held[b : b + bs].to(rq.DEV), use_cache=False).logits.float(), -1)
+            finally:
+                if routing:
+                    routing.off()
+            per = (lr.exp() * (lr - lp)).sum(-1)
             w_ = wpos[b : b + bs].to(rq.DEV)
-            tot += ((lr.exp() * (lr - lp)).sum(-1) * w_).sum().item()
+            tot += (per * w_).sum().item()
             n += w_.sum().item()
-        return tot / n
+            for c, cw_all in held_class_weights.items():
+                cw = cw_all[b : b + bs].to(per.device)
+                cw_sum = cw.sum().item()
+                if cw_sum > 0:
+                    cls_tot[c] += (per * cw).sum().item()
+                    cls_n[c] += cw_sum
+        out_s = {"dkl": tot / n}
+        if held_classes:
+            out_s["dkl_by_class"] = {c: cls_tot[c] / max(cls_n[c], 1e-12) for c in held_classes}
+        return Scores(out_s)
 
     t0 = time.time()
     floor = kl()
-    _, layers = A.decoder_layers(model)
-    stages = A.discover(model, chunks[0][:1, :64])
     method = args.method
     rq.C.TRELLIS_FIT = args.trellis_fit or rq.C.TRELLIS_FIT
     out = {"model": args.model, "parts": args.part, "method": method, "data": args.data, "held-out windows": [len(held), T],
-           "calibration": [len(calib), T], "kl floor (nothing quantized)": floor, "seconds per kl": round(time.time() - t0, 3),
-           "device": rq.DEV, "trellis fit": rq.C.TRELLIS_FIT, "stages (layer 0)": A.stage_list_text(stages[0]), "records": []}
+           "calibration": [len(calib), T], "kl floor (nothing quantized)": float(floor), "seconds per kl": round(time.time() - t0, 3),
+           "device": rq.DEV, "routing": "the original's" if routing else "each pass's own", "trellis fit": rq.C.TRELLIS_FIT, "stages (layer 0)": A.stage_list_text(stages[0]), "records": []}
+    if is_looped:
+        out["exec counts"] = exec_counts
+    if held_classes:
+        out["classes"] = held_classes
+    if getattr(args, "dense_expert_h", False):
+        out["dense expert h"] = True
+    if getattr(args, "expert_buckets", 0):
+        out["expert buckets"] = args.expert_buckets
     if sample_manifest is not None:
         out["sample manifest"] = sample_manifest
     if method == "noise":
@@ -219,14 +278,15 @@ def measure(args):
 
     def try_options(rec, opts, set_w, restore, quantize, noise, m, n, Tm, row_rotation=True, block=None):
         """Measure one item at each option, or once at the noise level (--method noise); fp16 is free."""
-        recs.append(rec | {"option": "fp16", "bits": 16.0 * m * n, "dkl": 0.0})
+        fp_extra = {"dkl_by_class": {c: 0.0 for c in held_classes}} if held_classes else {}
+        recs.append(rec | {"option": "fp16", "bits": 16.0 * m * n, "dkl": 0.0} | fp_extra)
         for o in ([x for x in opts if x != "fp16"] if method == "quant" else ["noise"]):
             t0 = time.time()
             set_w(quantize(o) if method == "quant" else noise())
             d = kl() - floor
             restore()
             recs.append(rec | {"option": o, "bits": rate_bits(o, m, n, Tm, row_rotation, block) if method == "quant" else 0.0,
-                               "dkl": d, "seconds": round(time.time() - t0, 2)})
+                               **d, "seconds": round(time.time() - t0, 2)})
 
     lin_opts = menu(args.options, LINEAR_OPTIONS)
     if "linear" in parts or "experts" in parts:
@@ -250,7 +310,7 @@ def measure(args):
                                                           args_[1].reshape(-1, args_[1].shape[-1]).cpu()))
                         hooks.append(L.get_submodule(st["name"]).register_forward_pre_hook(g, with_kwargs=True))
             last = max(group)
-            if last + 1 < len(layers):
+            if last + 1 < len(layers) and not is_looped:
                 def stop(m, a, k):
                     raise rq.Stop()
                 hooks.append(layers[last + 1].register_forward_pre_hook(stop, with_kwargs=True))
@@ -272,6 +332,8 @@ def measure(args):
                 H, R = capture(g_)
                 done_group = g_
             L = layers[i]
+            floor_opt = getattr(args, "floor_option", "")
+            floor_due = bool(floor_opt) and floor_opt not in lin_opts
             for st in stages[i]:
                 if st["kind"] == "linear" and "linear" in parts:
                     Hs = H.get((i, st["names"][0])) if st["names"] else None
@@ -283,14 +345,19 @@ def measure(args):
                         Tm, tr = trellis_for(m, lin_opts)
                         seed = 1000 * i + 100 * A.block_seed(name) + j
                         rec = {"item": f"{i}.{name}", "kind": "linear", "layer": i, "role": name, "weights": W.numel(), "shape": [m, n], "T": Tm}
+                        if exec_counts[i] > 1:
+                            rec["exec_count"] = exec_counts[i]
 
                         def set_w(Wq, mod=mod):
                             mod.weight.data = Wq.to(mod.weight.dtype).to(rq.DEV)
-                        try_options(rec, lin_opts, set_w, lambda mod=mod, orig=orig: setattr(mod.weight, "data", orig),
+                        opts_m = lin_opts + ([floor_opt] if floor_due and method == "quant" else [])
+                        if floor_due and method == "quant":
+                            floor_due = False
+                        try_options(rec, opts_m, set_w, lambda mod=mod, orig=orig: setattr(mod.weight, "data", orig),
                                     lambda o, W=W, seed=seed, tr=tr: rq.word(o, W, Hs, seed, tr).matrix(dtype=torch.float64),
                                     lambda W=W, seed=seed: ldlq_noise(W, Hs, NOISE_D, seed, gen), m, n, Tm)
                     if st["names"]:
-                        log(f"  layer {i} {'+'.join(st['names'])}: " + ", ".join(f"{r['option']} {r['dkl']:.2e}" for r in recs[-len(lin_opts):] if r["item"] == f"{i}.{st['names'][0]}"))
+                        log(f"  layer {i} {'+'.join(st['names'])}: " + ", ".join(f"{r['option']} {r['dkl']:.2e}" for r in recs[-len(lin_opts) - 1:] if r["item"] == f"{i}.{st['names'][0]}"))
                 if st["kind"] == "experts" and "experts" in parts:
                     mod = L.get_submodule(st["name"])
                     X = torch.cat([x for x, _ in R[(i, st["name"])]])
@@ -298,7 +365,9 @@ def measure(args):
                     E = mod.gate_up_proj.shape[0]
                     count = torch.bincount(K.reshape(-1), minlength=E)[:E]
                     order = torch.sort(-count, stable=True).indices.tolist()
-                    buckets = expert_buckets(E)
+                    buckets = expert_buckets(E, getattr(args, "expert_buckets", 0))
+                    dense_h = bool(getattr(args, "dense_expert_h", False))
+                    H_all_gu = A.damped_hessian(X.T @ X / len(X)) if dense_h else None
                     lo = 0
                     for k_b, size in enumerate(buckets):
                         ids = order[lo : lo + size]
@@ -307,28 +376,31 @@ def measure(args):
                             mats, Hs_ = [], []
                             for e in ids:
                                 gu, dn, t = rq.expert_matrices(mod, e, X.shape[-1])
-                                tok_e = (K == e).any(-1).nonzero().squeeze(-1)
-                                x = X[tok_e].to(rq.DEV)
-                                inp = x if part == "gate_up" else rq.expert_hidden(mod, e, x.to(mod.gate_up_proj.dtype), t).float()
                                 Wm = (gu if part == "gate_up" else dn).detach().cpu().double()
-                                if len(inp) >= 8:
-                                    He = (inp.T @ inp / len(inp)).cpu().double()
-                                    He += 0.01 * torch.diag(He).mean() * torch.eye(len(He), dtype=He.dtype)
+                                if dense_h:
+                                    He = H_all_gu if part == "gate_up" else A.dense_down_moments(mod, e, X, t, rq.expert_hidden)[0]
                                 else:
-                                    He = torch.eye(Wm.shape[1], dtype=torch.float64)
+                                    tok_e = (K == e).any(-1).nonzero().squeeze(-1)
+                                    x = X[tok_e].to(rq.DEV)
+                                    inp = x if part == "gate_up" else rq.expert_hidden(mod, e, x.to(mod.gate_up_proj.dtype), t).float()
+                                    if len(inp) >= 8:
+                                        He = A.damped_hessian(inp.T @ inp / len(inp))
+                                    else:
+                                        He = torch.eye(Wm.shape[1], dtype=torch.float64)
                                 mats.append((e, Wm, t))
                                 Hs_.append(He)
                             dst = mod.gate_up_proj if part == "gate_up" else mod.down_proj
                             orig = dst.data.clone()
                             m, n = mats[0][1].shape
                             Tm, tr = trellis_for(m, lin_opts)
+                            shared_in = (1000 * i + 500) if (dense_h and part == "gate_up") else None
 
                             def set_w(Ws, dst=dst, mats=mats):
                                 for (e, _, t), Wq in zip(mats, Ws):
                                     dst.data[e] = (Wq.T if t else Wq).to(dst.dtype).to(dst.device)
 
-                            def quantize(o, mats=mats, Hs_=Hs_, tr=tr, part=part):
-                                return [rq.word(o, Wm, He, 1000 * i + 500 + 2 * e + (part == "down"), tr).matrix(dtype=torch.float64)
+                            def quantize(o, mats=mats, Hs_=Hs_, tr=tr, part=part, shared_in=shared_in):
+                                return [rq.word(o, Wm, He, 1000 * i + 500 + 2 * e + (part == "down"), tr, in_seed=shared_in).matrix(dtype=torch.float64)
                                         for (e, Wm, _), He in zip(mats, Hs_)]
 
                             def noise(mats=mats, Hs_=Hs_, part=part):
@@ -336,8 +408,10 @@ def measure(args):
                             rec = {"item": f"{i}.{st['name']}.b{k_b}.{part}", "kind": "experts", "layer": i, "role": f"experts.{part}",
                                    "module": st["name"], "bucket": k_b, "part": part, "experts": ids, "tokens": int(count[ids].sum()),
                                    "weights": m * n * len(ids), "shape": [m, n], "T": Tm}
+                            if exec_counts[i] > 1:
+                                rec["exec_count"] = exec_counts[i]
                             n_before = len(recs)
-                            try_options(rec, lin_opts, set_w, lambda dst=dst, orig=orig: setattr(dst, "data", orig), quantize, noise, m, n, Tm)
+                            try_options(rec, lin_opts, set_w, lambda dst=dst, orig=orig: dst.data.copy_(orig), quantize, noise, m, n, Tm)
                             for r in recs[n_before:]:
                                 r["bits"] *= len(ids)
                         log(f"  layer {i} experts bucket {k_b} ({len(ids)} experts, {int(count[ids].sum())} routed tokens): "
@@ -350,7 +424,7 @@ def measure(args):
         sizes = rq.embedding_buckets(V)
         freq = mix.frequency(V) if mix else torch.bincount(rq.token_ids(tok, "train", tag).reshape(-1), minlength=V)[:V].double()
         sf = rq.softmax_fisher(model, chunks) if args.embed_order != "freq" else None
-        base_src = "the text mix" if mix else "the WikiText-2 training split"
+        base_src = "the templated mix" if args.data == "templated" else ("the text mix" if mix else "the WikiText-2 training split")
         H_out = rq.head_inputs(model, chunks)
         out["embed buckets"] = sizes
         out["embed order"] = f"frequency in {base_src}" if args.embed_order == "freq" else f"{args.embed_order} in {base_src}"
@@ -396,10 +470,11 @@ def measure(args):
                 for b in KV_OPTIONS:
                     rec = {"item": f"kv.{l}.{kind}", "kind": "kv", "layer": l, "option": b, "kv bits per token": kvq.bits_per_token(b, l)}
                     if b >= 16:
-                        recs.append(rec | {"dkl": 0.0})
+                        fp_extra = {"dkl_by_class": {c: 0.0 for c in held_classes}} if held_classes else {}
+                        recs.append(rec | {"dkl": 0.0} | fp_extra)
                         continue
                     kvq.widths = {(l, kind): b}
-                    recs.append(rec | {"dkl": kl() - floor})
+                    recs.append(rec | dict(kl() - floor))
                 kvq.widths = {}
                 log(f"  cache layer {l} {kind}: " + ", ".join(f"{r['option']} {r['dkl']:.2e}" for r in recs[-len(KV_OPTIONS):]))
         kvq.remove()
@@ -408,12 +483,15 @@ def measure(args):
     log(f"done: {len(recs)} records, {out['seconds']}s")
 
 
-def expert_buckets(E):
-    """Experts per layer ranked by routed tokens, in buckets of 1/8, 1/8, 1/4 and 1/2 (fewer when there are few experts)."""
-    if E < 8:
+def expert_buckets(E, n_buckets=0):
+    """Experts per layer ranked by routed tokens. `n_buckets=0` keeps 1/8, 1/8, 1/4, 1/2; `n_buckets=1` is uniform `[E]`."""
+    if n_buckets == 1 or (n_buckets == 0 and E < 8):
         return [E]
-    sizes = [E // 8, E // 8, E // 4]
-    return sizes + [E - sum(sizes)]
+    if n_buckets == 0:
+        sizes = [E // 8, E // 8, E // 4]
+        return sizes + [E - sum(sizes)]
+    k = min(max(int(n_buckets), 1), E)
+    return [E // k + (1 if j < E % k else 0) for j in range(k)]
 
 
 # ----------------------------------------------------------------------------- allocate
@@ -428,6 +506,8 @@ def load_sens(pattern):
         meta.setdefault("model", d.get("model"))
         fit = d.get("trellis fit", "lloyd")
         assert meta.setdefault("trellis fit", fit) == fit, f"{f} was measured with the {fit} trellis table, earlier files with {meta['trellis fit']}"
+        how = d.get("routing", "each pass's own")
+        assert meta.setdefault("routing", how) == how, f"{f} was measured with {how} routing, earlier files with {meta['routing']}"
         for k in ("embed buckets", "embed order", "tied"):
             if k in d:
                 meta[k] = d[k]
@@ -437,13 +517,59 @@ def load_sens(pattern):
 
 
 DEFAULT_RATIOS = {"tr2": 4.04, "tr4": 0.263, "lm4": 0.48, "lm5": 0.125, "lm6": 0.032, "lm8": 0.002}  # KL ÷ KL at tr3, SmolLM2 and Qwen3.5 medians
+FLOOR_NEAR = 2
+
+
+def subtract_floor(items, option):
+    """Subtract a near-exact option's (e.g. lm8) baseline floor per item/layer/kind (and per class when dkl_by_class is present)."""
+    import statistics
+    own = lambda opts: opts[option]["dkl"] if option in opts and not opts[option].get("predicted") else None
+    own_cls = lambda opts: (opts[option].get("dkl_by_class") or {}) if option in opts and not opts[option].get("predicted") else None
+    in_layer = lambda r: r["kind"] in ("linear", "experts") and r.get("layer") is not None
+    by_layer, by_kind = {}, {}
+    by_layer_cls, by_kind_cls = {}, {}
+    for opts in items.values():
+        r, f = next(iter(opts.values())), own(opts)
+        if f is not None and r["kind"] != "kv":
+            (by_layer.setdefault(r["layer"], []) if in_layer(r) else by_kind.setdefault(r["kind"], [])).append(f)
+            for c, vc in (own_cls(opts) or {}).items():
+                (by_layer_cls.setdefault((r["layer"], c), []) if in_layer(r) else by_kind_cls.setdefault((r["kind"], c), [])).append(float(vc))
+    one = {k: statistics.median(v) for k, v in by_layer.items()}
+    by_layer = {k: statistics.median(one[j] for j in range(k - FLOOR_NEAR, k + FLOOR_NEAR + 1) if j in one) for k in sorted(one)}
+    by_kind = {k: statistics.median(v) for k, v in sorted(by_kind.items())}
+    one_cls = {k: statistics.median(v) for k, v in by_layer_cls.items()}
+    by_layer_cls_s = {
+        (l, c): statistics.median(one_cls[(j, c)] for j in range(l - FLOOR_NEAR, l + FLOOR_NEAR + 1) if (j, c) in one_cls)
+        for (l, c) in sorted(one_cls)
+    }
+    by_kind_cls_m = {k: statistics.median(v) for k, v in sorted(by_kind_cls.items())}
+    for opts in items.values():
+        r = next(iter(opts.values()))
+        if r["kind"] == "kv":
+            continue
+        f = own(opts)
+        f_cls = own_cls(opts)
+        if f is None:
+            f = by_layer.get(r["layer"]) if in_layer(r) else by_kind.get(r["kind"])
+            if f is not None:
+                f_cls = {}
+                for c in (r.get("dkl_by_class") or {}):
+                    val = by_layer_cls_s.get((r["layer"], c)) if in_layer(r) else by_kind_cls_m.get((r["kind"], c))
+                    if val is not None:
+                        f_cls[c] = val
+        if f is None:
+            continue
+        for o, rec in opts.items():
+            if o != "fp16" and "dkl raw" not in rec:
+                rec["dkl raw"], rec["dkl"], rec["floor"] = rec["dkl"], max(rec["dkl"] - f, 0.0), f
+                if "dkl_by_class" in rec and f_cls:
+                    rec["dkl_by_class_raw"] = dict(rec["dkl_by_class"])
+                    rec["dkl_by_class"] = {c: max(float(v) - float(f_cls.get(c, f)), 0.0) for c, v in rec["dkl_by_class"].items()}
+    return {"option": option, "by layer": by_layer, "by kind": by_kind}
 
 
 def fill_predictions(items):
-    """Options an item was not measured at, predicted. Its anchor is tr3 if measured, else the noise level (--method noise).
-    KL = KL at the anchor × the median, over items of the same role measured at both (pooled over all roles of the kind
-    when its own role has none), of KL(option) ÷ KL(anchor); for a tr3 anchor with no reference at all, SmolLM2's and
-    Qwen3.5's medians. Bits come from the shape (rate_bits), exactly."""
+    """Options an item was not measured at, predicted from anchor ratios (including per-class dkl_by_class when present)."""
     import statistics
     group = lambda r: r.get("role", r["kind"])
     measured = lambda opts, o: o in opts and not opts[o].get("predicted")
@@ -463,15 +589,23 @@ def fill_predictions(items):
         r = next(iter(opts.values()))
         if r["kind"] == "kv":
             continue
-        anchor = "tr3" if measured(opts, "tr3") else "noise" if measured(opts, "noise") else None
+        anchor = next((a for a in ("tr3", "tr2", "noise") if measured(opts, a)), None)
         if anchor is None:
             continue
         for o in sorted(wanted[r["kind"]] - set(opts)):
             ratio = None
+            cls_ratios = {}
             for g in (group(r), "kind:" + r["kind"]):
                 ref = [f for f in refs.get(g, []) if measured(f, o) and measured(f, anchor) and f[anchor]["dkl"] > 0]
                 if ref:
                     ratio = statistics.median(f[o]["dkl"] / f[anchor]["dkl"] for f in ref)
+                    for cname in (opts[anchor].get("dkl_by_class") or {}):
+                        c_ref = [f for f in ref if cname in (f[o].get("dkl_by_class") or {})
+                                 and float((f[anchor].get("dkl_by_class") or {}).get(cname, 0.0)) > 0]
+                        cls_ratios[cname] = (
+                            statistics.median(f[o]["dkl_by_class"][cname] / f[anchor]["dkl_by_class"][cname] for f in c_ref)
+                            if c_ref else ratio
+                        )
                     break
             if ratio is None and anchor == "tr3":
                 ratio = DEFAULT_RATIOS.get(o)
@@ -479,8 +613,12 @@ def fill_predictions(items):
                 continue
             m_, n_ = r["shape"]
             bits = rate_bits(o, m_, n_, r.get("T", 256), r["kind"] not in ("embed", "head", "ple"), r.get("block")) * (len(r["experts"]) if r["kind"] == "experts" else 1)
-            opts[o] = {k: v for k, v in opts[anchor].items() if k not in ("rel err", "seconds")} | {"option": o, "dkl": opts[anchor]["dkl"] * ratio,
-                                                                                                  "bits": bits, "predicted": True}
+            pred = {k: v for k, v in opts[anchor].items() if k not in ("rel err", "seconds")} | {
+                "option": o, "dkl": opts[anchor]["dkl"] * ratio, "bits": bits, "predicted": True
+            }
+            if "dkl_by_class" in opts[anchor]:
+                pred["dkl_by_class"] = {c: float(v) * float(cls_ratios.get(c, ratio)) for c, v in opts[anchor]["dkl_by_class"].items()}
+            opts[o] = pred
             n += 1
         opts.pop("noise", None)
     return n
@@ -492,7 +630,64 @@ def price(r, t):
         return t["ctx"] * r["kv bits per token"]
     import quantize as rq
     fam = rq.parse(r["option"])[0] if (r["option"] == "fp16" or rq.PROGRAM.fullmatch(str(r["option"]))) else "other"
-    return (r["bits"] + t["ops"] * OPS.get(fam, 2.0) * r["weights"]) / t["batch"]
+    mul = int(r.get("exec_count", 1)) if (t["ctx"] > 0 or t["ops"] > 0) else 1
+    return mul * (r["bits"] + t["ops"] * OPS.get(fam, 2.0) * r["weights"]) / t["batch"]
+
+
+def parse_class_weights(spec: str) -> dict[str, float] | None:
+    if not spec:
+        return None
+    return {k.strip(): float(v.strip()) for k, v in (kv.split("=") for kv in spec.split(",") if kv.strip())}
+
+
+def weighted_dkl(rec: dict, class_weights: dict[str, float] | None) -> float:
+    if not class_weights or "dkl_by_class" not in rec:
+        return max(float(rec["dkl"]), 0.0)
+    by_c = rec["dkl_by_class"]
+    num = sum(float(w) * max(float(by_c[c]), 0.0) for c, w in class_weights.items() if c in by_c)
+    den = sum(float(w) for c, w in class_weights.items() if c in by_c)
+    return (num / den) if den > 0 else max(float(rec["dkl"]), 0.0)
+
+
+def solve_knapsack_minimax(items, names, opts, t, budget, class_weights=None, max_class_ratio=0.0, cells=100_000):
+    """Solve single-objective or per-class minimax Lagrangian knapsack over `dkl_by_class`."""
+    all_classes = sorted({c for n in names for o in opts[n] for c in (items[n][o].get("dkl_by_class") or {})})
+
+    def _once(cw):
+        groups = [[(price(items[n][o], t), weighted_dkl(items[n][o], cw)) for o in opts[n]] for n in names]
+        pick = knapsack(groups, budget, cells=cells)
+        chosen = {n: opts[n][k] for n, k in zip(names, pick)}
+        pred_kl = sum(max(float(items[n][o]["dkl"]), 0.0) for n, o in chosen.items())
+        pred_by_cls = {}
+        for n, o in chosen.items():
+            for c, v in (items[n][o].get("dkl_by_class") or {}).items():
+                pred_by_cls[c] = pred_by_cls.get(c, 0.0) + max(float(v), 0.0)
+        return chosen, pred_by_cls, pred_kl
+
+    used_weights = dict(class_weights) if class_weights else None
+    if max_class_ratio > 0.0 and all_classes:
+        w = {c: float((class_weights or {}).get(c, 1.0)) for c in all_classes}
+        best = None
+        for step in range(12):
+            tot_w = sum(w.values()) or 1.0
+            wn = {c: v / tot_w for c, v in w.items()}
+            chosen, pred_by_cls, pred_kl = _once(wn)
+            mean_c = sum(pred_by_cls.values()) / max(len(pred_by_cls), 1)
+            ratios = {c: (pred_by_cls[c] / max(mean_c, 1e-12)) for c in pred_by_cls}
+            worst_r = max(ratios.values()) if ratios else 1.0
+            score = (max(0.0, worst_r - max_class_ratio), pred_kl)
+            if best is None or score < best[0]:
+                best = (score, chosen, pred_by_cls, dict(wn))
+            if worst_r <= max_class_ratio:
+                break
+            eta = 1.5 / math.sqrt(step + 1)
+            for c, r_c in ratios.items():
+                if r_c > max_class_ratio:
+                    w[c] *= math.exp(eta * (r_c - max_class_ratio))
+        _, chosen, pred_by_cls, used_weights = best
+        return chosen, pred_by_cls, used_weights
+    chosen, pred_by_cls, _ = _once(used_weights)
+    return chosen, pred_by_cls, used_weights
 
 
 def knapsack(groups, budget, cells=100_000):
@@ -597,6 +792,10 @@ def write_plan(chosen, items, meta, t_name, t, budget, out_path, extra=None):
 
 def allocate(args):
     items, meta = load_sens(args.sens)
+    floors = subtract_floor(items, args.floor) if getattr(args, "floor", "") else None
+    if floors:
+        log(f"floor ({args.floor}) taken off: by layer {min(floors['by layer'].values(), default=0):.2e} to {max(floors['by layer'].values(), default=0):.2e}"
+            + "".join(f", {k} {v:.2e}" for k, v in floors["by kind"].items()))
     n_pred = fill_predictions(items)
     if n_pred:
         log(f"{n_pred} options predicted from the items measured at every width")
@@ -614,10 +813,16 @@ def allocate(args):
         budget = args.bits * sum(next(iter(items[n].values()))["weights"] for n in names if next(iter(items[n].values()))["kind"] != "kv")
         ref_choice, ref_kl = None, None
     opts = {n: [o for o in items[n] if args.options is None or o in args.options.split(",") or o == "fp16" or o == "16"] for n in names}
-    groups = [[(price(items[n][o], t), max(items[n][o]["dkl"], 0.0)) for o in opts[n]] for n in names]
-    pick = knapsack(groups, budget)
-    chosen = {n: opts[n][k] for n, k in zip(names, pick)}
-    extra = {"reference": {"choice": args.match, "predicted kl": ref_kl}} if ref_choice else {}
+    cw = parse_class_weights(getattr(args, "class_weights", ""))
+    max_ratio = float(getattr(args, "max_class_ratio", 0.0) or 0.0)
+    chosen, pred_by_cls, used_cw = solve_knapsack_minimax(items, names, opts, t, budget, class_weights=cw, max_class_ratio=max_ratio)
+    extra = ({"reference": {"choice": args.match, "predicted kl": ref_kl}} if ref_choice else {}) | ({"floor": floors} if floors else {})
+    if pred_by_cls:
+        extra["predicted kl by class"] = {c: round(v, 6) for c, v in sorted(pred_by_cls.items())}
+    if used_cw:
+        extra["class weights"] = {c: round(v, 4) for c, v in sorted(used_cw.items())}
+    if max_ratio > 0.0:
+        extra["max class ratio"] = max_ratio
     plan = write_plan(chosen, items, meta, args.target, t, budget, args.out, extra)
     log(f"{args.out}: cost {plan['cost']:.4g} of budget {budget:.4g}, predicted KL {plan['predicted kl']:.4f}"
         + (f" (reference {ref_kl:.4f})" if ref_kl is not None else ""))
@@ -710,8 +915,13 @@ def main():
     m.add_argument("--embed-center", action="store_true", help="the same for the main embedding table")
     m.add_argument("--ple-damp", type=float, default=0.0, help="soften --ple-metric: its mean diagonal is 1, this is added to it")
     m.add_argument("--kl-batch", type=int, default=8, help="held-out windows per forward in the KL")
+    m.add_argument("--floor-option", default="", help="also measure each layer's first matrix at this near-exact option (e.g. lm8)")
+    m.add_argument("--fix-routing", action="store_true", help="MoE: hold expert choices to the original model's (supports sequential & looped routers)")
     m.add_argument("--method", choices=["quant", "noise"], default="quant", help="quantize each item, or inject LDLQ-shaped noise once")
-    m.add_argument("--data", choices=["wikitext", "mix", "math"], default="wikitext", help="calibration, held-out windows and token frequencies")
+    m.add_argument("--data", choices=["wikitext", "mix", "math", "templated"], default="wikitext", help="calibration, held-out windows and token frequencies")
+    m.add_argument("--per-class", action="store_true", help="also record per-source/class dkl_by_class on held-out windows (automatic with --data templated)")
+    m.add_argument("--dense-expert-h", action="store_true", help="MoE experts: share all-token H_all (and one rotated Cholesky) for gate_up and use all-token chunked H for down")
+    m.add_argument("--expert-buckets", type=int, default=0, help="MoE usage buckets per layer (0 = default 1/8,1/8,1/4,1/2; 1 = uniform across all experts in a layer)")
     m.add_argument("--math-windows", default="/root/.cache/huggingface/retrain/math_long_q35.pt", help="--data math: the original's long math answers")
     m.add_argument("--digit-weight", type=float, default=1.0, help="weight in the KL of held-out positions that predict a digit")
     m.add_argument("--dtype", choices=["float32", "bfloat16"], default="float32")
@@ -730,10 +940,13 @@ def main():
     a.add_argument("--target-override", default="", help='JSON merged into the target, e.g. {"ctx": 8192}')
     a.add_argument("--items", default="linear", help="kinds the plan sets: linear, experts, embed, head, kv")
     a.add_argument("--bits", type=float, default=3.0, help="budget in bits per weight over the weight items (disk)")
+    a.add_argument("--floor", default="", help="near-exact option (e.g. lm8) subtracted as per-layer/kind baseline floor")
     a.add_argument("--match", default="", help="budget = this plan's cost under the target: linear=tr3,embed=fp16,kv=16")
     a.add_argument("--scale", type=float, default=1.0, help="times the --match budget")
     a.add_argument("--budget", type=float, default=0.0, help="an absolute budget in the target's units (overrides --bits and --match)")
     a.add_argument("--options", default=None, help="restrict the menu (fp16 and 16 always allowed)")
+    a.add_argument("--class-weights", default="", help="per-class weights over dkl_by_class, e.g. code=2,tools=2,prose=1")
+    a.add_argument("--max-class-ratio", type=float, default=0.0, help="minimax Lagrangian cap on max_c(pred_kl_c / mean_c pred_kl_c) when dkl_by_class is present (e.g. 1.25)")
     a.add_argument("--out", required=True)
     u = sub.add_parser("uniform")
     u.add_argument("--model", default="HuggingFaceTB/SmolLM2-360M")

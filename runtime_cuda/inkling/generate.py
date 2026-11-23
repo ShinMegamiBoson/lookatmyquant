@@ -26,7 +26,12 @@ class GreedyDecodeGraph:
         self.out = torch.zeros(max_steps + 1, dtype=torch.long, device=dev)
         self.step = torch.zeros(1, dtype=torch.long, device=dev)
         # warm up on a scratch cache: Triton compiles, rotation factors and block tables get created outside capture
-        scratch = model.make_cache(cache.capacity)
+        scratch = model.make_cache(
+            cache.capacity,
+            global_kv_mode=cache.global_kv_mode,
+            kv_vram_cells=cache.kv_vram_cells,
+            prefill_chunk=cache.prefill_chunk,
+        )
         with torch.cuda.device(dev):
             s = torch.cuda.Stream()
             s.wait_stream(torch.cuda.current_stream())
@@ -56,13 +61,15 @@ def stream_serial(
     graph: GreedyDecodeGraph | None = None,
     sync_every: int = 8,
     blocked: Sequence[int] = (),
+    prompt_cache: Any = None,
     stats_out: dict[str, Any] | None = None,
 ) -> Iterator[list[int]]:
     """Greedy single-token generation; yields lists of new token ids. Pass `cache` and `graph` to reuse a capture.
     Tokens in `blocked` are never generated."""
     eos = {int(x) for x in eos_ids}
     blocked = frozenset(int(t) for t in blocked)
-    need = len(prompt_ids) + max_tokens + sync_every
+    ids = [int(t) for t in prompt_ids]
+    need = len(ids) + max_tokens + sync_every
     if cache is None:
         cache = model.make_cache(max(1024, ((need + 255) // 256) * 256))
     else:
@@ -74,7 +81,22 @@ def stream_serial(
 
     torch.cuda.synchronize(model.device)
     t0 = time.perf_counter()
-    logits = model.prefill(list(prompt_ids), cache)
+    reused = 0
+    if prompt_cache is not None and len(ids) > 1:
+        mkey = f"{model.packed_dir.resolve()}|kv={cache.global_kv_mode}"
+        hit = prompt_cache.match(ids, model_key=mkey)
+        if hit is not None:
+            saved_toks, snap = hit
+            cache.restore_from_snapshot(snap)
+            reused = len(saved_toks)
+        if reused < len(ids) - 1:
+            model.prefill(ids[reused : len(ids) - 1], cache)
+            prompt_cache.store(ids[: len(ids) - 1], cache.snapshot_cpu(), model_key=mkey)
+            logits = model.prefill(ids[len(ids) - 1 :], cache)
+        else:
+            logits = model.prefill(ids[reused:], cache)
+    else:
+        logits = model.prefill(ids, cache)
     if blocked:
         logits[-1, sorted(blocked)] = float("-inf")
     first = int(logits[-1].argmax())
@@ -110,10 +132,11 @@ def stream_serial(
         decode_s = max(t2 - t1, 1e-9)
         stats_out.update({
             "mode": "serial-cuda-graph",
-            "prompt_tokens": len(prompt_ids),
+            "prompt_tokens": len(ids),
+            "prompt_cached_tokens": reused,
             "generated_tokens": emitted,
             "prompt_s": round(t1 - t0, 4),
-            "prefill_tok_s": round(len(prompt_ids) / max(t1 - t0, 1e-9), 1),
+            "prefill_tok_s": round(len(ids) / max(t1 - t0, 1e-9), 1),
             "decode_tok_s": round((emitted - 1) / decode_s, 2) if emitted > 1 else 0.0,
             "median_step_ms": round(statistics.median(step_ms), 2) if step_ms else 0.0,
             "peak_gb": round(torch.cuda.max_memory_allocated(model.device) / 1e9, 3),

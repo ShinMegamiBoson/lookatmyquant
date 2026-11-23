@@ -353,3 +353,40 @@ python tests/test_reallocation.py
 - **The script that assembled `site/data.json`.** It was a set of one-off steps. The source numbers are all in `results/`.
 - **LookAtMyQuant 2's dense weights and result files.** The 1.2 GB file is a release in the packed format. The dense weights the benchmarks ran on are not published, and neither are the per-problem results behind `site2/data.json` or the script that writes the page's numbers from them.
 - **The drafter at 16 bits.** The drafter as trained is 1.8 GB and is not published. The 4-bit one is a release file, and `modal_drafter.py` trains it.
+
+## We took eight ideas from Cary Palmer's Kintsugi
+
+Cary Palmer's [Kintsugi method](https://github.com/professorpalmer/kintsugi-method) paper measured our 8.9 GB Inkling-2-Mini build against [Kintsugi for Inkling 2 Mini](https://github.com/professorpalmer/Kintsugi-Inkling-2-Mini) and split the KL by kind of text. The two builds tied on overall KL, and ours was 25% lower on prose. It was higher on code (+29%), tool calls (+35%), agentic text (+83%) and reasoning (+74%). Our calibration text had not been rendered in Inkling's chat template, and our expert Hessians saw only the tokens routed to each expert. We took these ideas from the two Kintsugi repositories to close that gap:
+
+| Idea from Kintsugi | Where it is here |
+|---|---|
+| Each expert's Hessian comes from every calibration token, not only the tokens routed to it | `--dense-expert-h` in `compiler.py measure` and `quantize.py` |
+| Calibration text is rendered in the model's own chat template, and KL is scored separately for prose, code, tools, agentic text, reasoning and multilingual text | `--data templated` and `--per-class` in `compiler.py measure` |
+| A plan is judged by its worst kind of text as well as by its mean KL | `--max-class-ratio` and `--class-weights` in `compiler.py allocate` |
+| Recall of a fact or a code copy deep in a long prompt is scored as a teacher-forced margin, against the same item placed close by | The recall check we run on new Inkling-2-Mini builds |
+| Sliding-window attention caches stay small FP16 rings, the global attention caches are stored at `q8_0` or `q4_0`, and cache cells past a VRAM limit move to pinned host memory | `LAMQ_CUDA_GLOBAL_KV` and `LAMQ_CUDA_KV_VRAM_CELLS` in the CUDA runtime |
+| A long chat is saved to disk, so it continues after a restart without reading the prompt again | `--prompt-cache-dir` and `--prompt-cache-gb` in `lamq serve` |
+| When an agent repeats nearly the same tool call, the server adds one short note to the request | On by default in `lamq serve`; `--no-repeat-guard` turns it off |
+| Claude Code and Codex connect directly through Anthropic's `/v1/messages` and OpenAI's `/v1/responses`, with `developer` messages read as `system` | `lamq serve` |
+
+## Two runtime speedups follow Actual's aci-cpp
+
+Justin Bennington's post [In Search of Perfection: aci-cpp vs. llama.cpp](https://actual.inc/blog/in-search-of-perfection) describes aci-cpp, Actual's fork of llama.cpp. We built two of its ideas from that description:
+
+| Idea from aci-cpp | Where it is here |
+|---|---|
+| Gated DeltaNet prefill runs as fused, chunked kernels | `runtime_mlx/fast_q35.py`, which makes Qwen3.8-27B prefill 16% to 37% faster on an M5 Max at 256 to 2,048 prompt tokens |
+| Decoding over a very long attention span gets a faster way to read the cache | Inkling decoding in `runtime_mlx/inkling/fast_kernels.py`, which splits long spans 32 or 64 ways |
+
+## Thank you to everyone who has contributed
+
+| Contributor | Contribution |
+|---|---|
+| [Patrick Dugan](https://github.com/patrickdugan) | The native CUDA engine for the packed Inkling-2-Mini files, with DSpark verification and a chat server (`runtime_cuda/inkling_cuda/`) |
+| [Ian B](https://github.com/ifkb99) | The Triton CUDA runtime for packed Inkling-2-Mini models (`runtime_cuda/inkling/`) |
+| [Mark Pesce](https://github.com/mpesce) | `lamq serve` with prompt caching, and chunked Inkling prefill so long prompts fit in memory |
+| [Noah Lindner](https://github.com/Octember) | Trellis tables staged in threadgroup memory for Qwen and Inkling decoding, after reporting slow decoding on M1 Pro |
+| [Dmitry (Dee) Kargaev](https://github.com/deeflect) | Apple M4 Metal tuning, the `fp8` and `q4` global KV cache, and the fix for the DSpark threadgroup crash on M1 to M3 |
+| [Dung Duc Huynh](https://github.com/jellydn) | The report of the Metal threadgroup crash on M1 Max |
+| [Max Ng](https://github.com/maxwindiff) | Inkling kernels that launch within the M1's threadgroup limits |
+| [Amlandeep Bhadra](https://github.com/koko1123) | The browser chat page for `lamq serve` (`--ui`) |

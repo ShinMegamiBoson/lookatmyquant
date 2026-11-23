@@ -5274,8 +5274,12 @@ def gqa_relpos_sinks_sdpa_fast(
             n_splits = 4
         elif span < 8192:
             n_splits = 8
-        else:
+        elif span < 32768:
             n_splits = 16
+        elif span < 131072:
+            n_splits = 32
+        else:
+            n_splits = 64
         split_k = n_splits > 1
         kern = _make_gqa_fused_sdpa_kernel(tree_mode=tree_mode, kv_mode=kv_mode, t_cap=t_cap, split_k=split_k)
         ins = [q.reshape(-1), KV_buf.reshape(-1)]

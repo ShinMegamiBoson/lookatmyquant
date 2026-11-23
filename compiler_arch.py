@@ -20,8 +20,9 @@
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import os
 import random
 import zlib
 from pathlib import Path
@@ -78,13 +79,16 @@ def block_seed(path):
 
 
 @torch.no_grad()
-def discover(model, sample):
+def discover(model, sample, counts_out=None):
     """Per layer, a list of stages in execution order. A stage is {"kind": "linear", "names": [paths in the layer],
-    "keep": [small linears read with them]} or {"kind": "experts", "name": path}. `sample` is a (1, T) token tensor."""
+    "keep": [small linears read with them]} or {"kind": "experts", "name": path}. `sample` is a (1, T) token tensor.
+    When `counts_out` is a list, it is filled with each decoder layer's execution count (>1 for looped layers)."""
     _, layers = decoder_layers(model)
     calls = []  # (layer, path, kind, input key) in call order
+    counts = [0] * len(layers)
     hooks = []
     for i, L in enumerate(layers):
+        hooks.append(L.register_forward_pre_hook(lambda mod, a, i=i: counts.__setitem__(i, counts[i] + 1)))
         for path, m in L.named_modules():
             if isinstance(m, nn.Linear):
                 hooks.append(m.register_forward_pre_hook(  # the tensor itself: kept alive, so identity is not a reused address
@@ -97,6 +101,8 @@ def discover(model, sample):
     finally:
         for h in hooks:
             h.remove()
+    if counts_out is not None:
+        counts_out[:] = counts
     expert_paths = {(i, p) for i, p, kind, _ in calls if kind == "experts"}
     n_exp = getattr(text_config(model.config), "num_experts", None) or getattr(text_config(model.config), "num_local_experts", None)
     out = [[] for _ in layers]
@@ -304,3 +310,372 @@ class TextMix:
         if not windows:
             return torch.empty((0, T), dtype=torch.long), manifest
         return torch.stack(windows), manifest
+
+
+def is_router(m):
+    """A router module with `top_k`, `num_experts` and a weight tensor, returning (logits, scores, indices)."""
+    return hasattr(m, "top_k") and hasattr(m, "num_experts") and isinstance(getattr(m, "weight", None), torch.Tensor)
+
+
+def router_beside(L, experts_path):
+    """The router of the experts module at `experts_path` in layer L: its sibling, or None."""
+    parent = L.get_submodule(experts_path.rsplit(".", 1)[0]) if "." in experts_path else L
+    return next((m for m in parent.children() if is_router(m)), None)
+
+
+def same_choices(a, b):
+    """Mean share of each token's chosen experts in `a` that also appear in `b`."""
+    return float((a.unsqueeze(-1) == b.to(a.device).unsqueeze(-2)).any(-1).float().mean())
+
+
+class FixedRouting:
+    """Pass-indexed fixed expert routing for sequential and looped MoEs (supports softmax and sigmoid/`score_fn` routers)."""
+
+    def __init__(self, model):
+        self.routers = [m for m in model.modules() if is_router(m)]
+        self.kept, self.mode, self.key = {}, None, None
+        self.differ = {}
+        self.text = None
+        self._pass = [0] * len(self.routers)
+        self.hooks = [m.register_forward_hook(lambda mod, a, out, i=i: self._hook(i, mod, out)) for i, m in enumerate(self.routers)]
+
+    def _reset_passes(self):
+        self._pass = [0] * len(self.routers)
+
+    def _hook(self, i, mod, out):
+        if self.mode is None:
+            return None
+        p = self._pass[i]
+        self._pass[i] = p + 1
+        logits, scores_out, indices = out
+        k = (i, p, self.key)
+        if self.mode == "record":
+            self.kept[k] = indices.detach().cpu()
+            return None
+        if self.mode == "watch":
+            tally = self.differ.setdefault((i, p, self.text), [0.0, 0])
+            tally[0] += (1 - same_choices(indices, self.kept[k])) * indices.numel()
+            tally[1] += indices.numel()
+            return None
+        indices = self.kept[k].to(logits.device)
+        if hasattr(mod, "score_fn"):
+            scores = mod.score_fn(logits.float()).gather(-1, indices)
+            scores = scores / (scores.sum(dim=-1, keepdim=True) + 1e-20)
+            scores = scores * getattr(mod, "routed_scaling_factor", 1.0)
+        else:
+            scores = torch.softmax(logits, dtype=torch.float, dim=-1).gather(-1, indices)
+            if getattr(mod, "norm_topk_prob", False):
+                scores = scores / scores.sum(dim=-1, keepdim=True)
+        return logits, scores.to(scores_out.dtype), indices
+
+    def record(self, key):
+        self._reset_passes()
+        self.mode, self.key = "record", key
+
+    def replay(self, key):
+        self._reset_passes()
+        self.mode, self.key = "replay", key
+
+    def watch(self, key, text=None):
+        self._reset_passes()
+        self.mode, self.key, self.text = "watch", key, text
+
+    def differing(self):
+        texts = list(dict.fromkeys(t for _, _, t in self.differ))
+        out = {}
+        for t in texts:
+            vals = []
+            for i in range(len(self.routers)):
+                d_tot = sum(v[0] for (ri, _, tt), v in self.differ.items() if ri == i and tt == t)
+                n_tot = sum(v[1] for (ri, _, tt), v in self.differ.items() if ri == i and tt == t)
+                vals.append(d_tot / n_tot if n_tot > 0 else None)
+            out[t] = vals
+        self.differ = {}
+        return out
+
+    def differing_by_pass(self):
+        texts = list(dict.fromkeys(t for _, _, t in self.differ))
+        out = {
+            t: {f"L{i}.p{p}": v[0] / v[1] for (i, p, tt), v in sorted(self.differ.items()) if tt == t and v[1] > 0}
+            for t in texts
+        }
+        self.differ = {}
+        return out
+
+    def off(self):
+        self._reset_passes()
+        self.mode = None
+
+    def remove(self):
+        for h in self.hooks:
+            h.remove()
+
+
+def damped_hessian(H_raw: torch.Tensor, damp: float = 0.01) -> torch.Tensor:
+    """Damped float64 Hessian H_raw + damp * mean(diag(H_raw)) * I (identity fallback if degenerate)."""
+    H = H_raw.detach().cpu().double()
+    n = H.shape[0]
+    if n == 0:
+        return H
+    mean_d = float(torch.diag(H).mean().item())
+    if not (mean_d > 0.0) or not bool(torch.isfinite(H).all()):
+        return torch.eye(n, dtype=torch.float64)
+    return H + (damp * mean_d) * torch.eye(n, dtype=torch.float64)
+
+
+@torch.no_grad()
+def dense_down_moments(
+    mod,
+    e: int,
+    X: torch.Tensor,
+    transposed: bool,
+    expert_hidden_fn,
+    *,
+    chunk_size: int = 4096,
+    rmod=None,
+    Xr: torch.Tensor | None = None,
+    damp: float = 0.01,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+    """All-token chunked input Hessian H (and optional cross-term D = E[h_ref^T h_q] - E[h_q^T h_q]) for expert `e`'s down_proj."""
+    n_tok = len(X)
+    dev = mod.gate_up_proj.device
+    dtype = mod.gate_up_proj.dtype
+    need_cross = rmod is not None and Xr is not None
+    r_dev = rmod.gate_up_proj.device if need_cross else None
+    r_dtype = rmod.gate_up_proj.dtype if need_cross else None
+    G_qq: torch.Tensor | None = None
+    G_rq: torch.Tensor | None = None
+    for s in range(0, n_tok, chunk_size):
+        xb = X[s : s + chunk_size].to(device=dev, dtype=dtype)
+        hq = expert_hidden_fn(mod, e, xb, transposed).float()
+        qq = (hq.T @ hq).double().cpu()
+        G_qq = qq if G_qq is None else (G_qq + qq)
+        if need_cross:
+            xrb = Xr[s : s + chunk_size].to(device=r_dev, dtype=r_dtype)
+            hr = expert_hidden_fn(rmod, e, xrb, transposed).float().to(hq.device)
+            rq = (hr.T @ hq).double().cpu()
+            G_rq = rq if G_rq is None else (G_rq + rq)
+    assert G_qq is not None and n_tok > 0
+    H_raw = G_qq / float(n_tok)
+    H = damped_hessian(H_raw, damp=damp)
+    D = (G_rq / float(n_tok) - H_raw) if G_rq is not None else None
+    return H, D
+
+
+DOMAIN_CLASSES = ("prose", "code", "tools", "agentic", "reasoning", "multilingual")
+_MULTILINGUAL_SOURCES = (
+    "arb_Arab", "cmn_Hani", "deu_Latn", "fra_Latn", "hin_Deva",
+    "jpn_Jpan", "kor_Hang", "por_Latn", "rus_Cyrl", "spa_Latn",
+)
+_TOOL_SCHEMAS = [
+    {"type": "function", "function": {"name": "read_file", "description": "Read lines from a file.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "grep_search", "description": "Search files for a pattern.",
+     "parameters": {"type": "object", "properties": {"pattern": {"type": "string"}, "glob": {"type": "string"}}, "required": ["pattern"]}}},
+    {"type": "function", "function": {"name": "edit_file", "description": "Replace a target snippet in a file.",
+     "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "target": {"type": "string"}, "replacement": {"type": "string"}}, "required": ["path", "target", "replacement"]}}},
+    {"type": "function", "function": {"name": "run_shell", "description": "Run a shell command.",
+     "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
+]
+
+
+def _render_chat(tok, messages: list[dict], tools: list[dict] | None = None) -> str:
+    """Render structured chat/tool/reasoning turns using `tok.apply_chat_template` when available, with clean fallbacks."""
+    if getattr(tok, "chat_template", None) and hasattr(tok, "apply_chat_template"):
+        if tools:
+            try:
+                return tok.apply_chat_template(messages, tools=tools, tokenize=False, add_generation_prompt=False)
+            except Exception:
+                pass
+        flat_msgs = []
+        if tools:
+            flat_msgs.append({"role": "system", "content": "Available tools:\n" + json.dumps(tools, separators=(",", ":"))})
+        for m in messages:
+            parts = []
+            if m.get("reasoning_content"):
+                parts.append(f"<think>\n{m['reasoning_content']}\n</think>")
+            if m.get("content"):
+                parts.append(str(m["content"]))
+            if m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    fn = tc["function"]
+                    parts.append("<tool_call>" + json.dumps({"name": fn["name"], "arguments": fn.get("arguments", {})}, separators=(",", ":")) + "</tool_call>")
+            role = "user" if m["role"] == "tool" else m["role"]
+            prefix = f"[tool:{m.get('name', 'tool')}] " if m["role"] == "tool" else ""
+            flat_msgs.append({"role": role, "content": prefix + "\n".join(parts)})
+        try:
+            return tok.apply_chat_template(flat_msgs, tokenize=False, add_generation_prompt=False)
+        except Exception:
+            pass
+    chunks = []
+    if tools:
+        chunks.append("System:\nTools: " + json.dumps(tools, separators=(",", ":")))
+    for m in messages:
+        hdr = f"Tool ({m.get('name', 'tool')}):" if m["role"] == "tool" else f"{m['role'].capitalize()}:"
+        body = []
+        if m.get("reasoning_content"):
+            body.append(f"Thought: {m['reasoning_content']}")
+        if m.get("content"):
+            body.append(str(m["content"]))
+        for tc in m.get("tool_calls") or ():
+            fn = tc["function"]
+            body.append(f"Call {fn['name']}({json.dumps(fn.get('arguments', {}), separators=(',', ':'))})")
+        chunks.append(hdr + "\n" + "\n".join(body))
+    return "\n\n".join(chunks)
+
+
+def _templated_docs_for_split(tok, raw: dict[str, list[str]], split: str, calib_frac: float) -> dict[str, list[str]]:
+    def take(name: str) -> list[str]:
+        docs = [d for d in raw.get(name, []) if isinstance(d, str) and len(d.strip()) > 30]
+        if not docs:
+            return []
+        cut = max(1, int(len(docs) * calib_frac))
+        return docs[:cut] if split == "calib" else (docs[cut:] or docs[-1:])
+
+    en_docs = take("en") or next((take(k) for k in sorted(raw) if take(k)), [])
+    chat_docs = take("chat") or en_docs
+    code_docs = take("code") or en_docs
+    rng = random.Random(101 if split == "calib" else 202)
+    lim = 120 if split == "calib" else 48
+
+    prose = []
+    for i, d in enumerate(en_docs[:lim]):
+        ex = d.strip()[:1600]
+        if i % 3 == 0:
+            prose.append(ex)
+        else:
+            mid = max(80, min(len(ex) // 2, 500))
+            prose.append(_render_chat(tok, [
+                {"role": "user", "content": f"Continue and summarize:\n\n{ex[:mid]}"},
+                {"role": "assistant", "content": ex[mid:] or ex[:mid]},
+            ]))
+    for d in chat_docs[: lim // 2]:
+        lines = [ln.strip() for ln in d.strip()[:1600].splitlines() if ln.strip()]
+        if len(lines) >= 2:
+            m = len(lines) // 2
+            prose.append(_render_chat(tok, [
+                {"role": "user", "content": "\n".join(lines[:m])},
+                {"role": "assistant", "content": "\n".join(lines[m:])},
+            ]))
+
+    code = []
+    for i, d in enumerate(code_docs[:lim]):
+        lines = d.strip()[:1800].splitlines()
+        if not lines:
+            continue
+        cut = max(2, min(len(lines) // 2, 24))
+        a, b = "\n".join(lines[:cut]), "\n".join(lines[cut : cut + 24]) or "\n".join(lines[:cut])
+        if i % 3 == 0:
+            code.append(_render_chat(tok, [
+                {"role": "user", "content": f"```python\n{a}\n```\nCopy these lines verbatim."},
+                {"role": "assistant", "content": a},
+            ]))
+        else:
+            code.append(_render_chat(tok, [
+                {"role": "user", "content": f"Review and continue this implementation:\n\n```\n{a}\n```"},
+                {"role": "assistant", "reasoning_content": f"Tracing {cut} lines for edge cases and types.", "content": f"```\n{b}\n```"},
+            ]))
+
+    tools_out = []
+    paths = ("src/server.py", "src/cache.py", "src/alloc.py", "tests/test_kv.py")
+    for i in range(min(lim, max(len(code_docs), 24))):
+        src = code_docs[i % max(len(code_docs), 1)][:700] if code_docs else "def step(x):\n    return x + 1\n"
+        fp = paths[i % len(paths)]
+        sym = f"fn_{i % 23}"
+        tools_out.append(_render_chat(tok, [
+            {"role": "system", "content": "Use tools before answering about repository files."},
+            {"role": "user", "content": f"Locate `{sym}` in `{fp}` and summarize it."},
+            {"role": "assistant", "reasoning_content": f"Search `{fp}` with grep_search.",
+             "tool_calls": [{"id": f"c{i}_1", "type": "function", "function": {"name": "grep_search", "arguments": {"pattern": sym, "glob": "*.py"}}}]},
+            {"role": "tool", "tool_call_id": f"c{i}_1", "name": "grep_search", "content": json.dumps({"path": fp, "line": 12 + i % 40})},
+            {"role": "assistant", "tool_calls": [{"id": f"c{i}_2", "type": "function", "function": {"name": "read_file", "arguments": {"path": fp, "start_line": 1, "end_line": 60}}}]},
+            {"role": "tool", "tool_call_id": f"c{i}_2", "name": "read_file", "content": src},
+            {"role": "assistant", "content": f"`{sym}` in `{fp}` handles the block shown above."},
+        ], tools=_TOOL_SCHEMAS))
+
+    agentic = []
+    for i in range(min(lim // 2 + 12, max(len(code_docs), 20))):
+        src = code_docs[(i * 3) % max(len(code_docs), 1)][:1000] if code_docs else "def solve(xs):\n    return sum(xs)\n"
+        lines = [ln for ln in src.splitlines() if ln.strip()] or ["return None"]
+        tgt = lines[min(len(lines) - 1, i % len(lines))]
+        fp, tp = f"pkg/mod_{i % 11}.py", f"tests/test_mod_{i % 11}.py"
+        agentic.append(_render_chat(tok, [
+            {"role": "system", "content": "Locate the bug, edit minimally, and run tests."},
+            {"role": "user", "content": f"Fix the failing check in `{fp}` and verify `{tp}`."},
+            {"role": "assistant", "reasoning_content": f"Run `{tp}` first to reproduce.",
+             "tool_calls": [{"id": f"a{i}_1", "type": "function", "function": {"name": "run_shell", "arguments": {"command": f"pytest -q {tp}"}}}]},
+            {"role": "tool", "tool_call_id": f"a{i}_1", "name": "run_shell", "content": f"FAILED {tp}::test_case_{i % 7}\nAssertionError in {fp}"},
+            {"role": "assistant", "tool_calls": [{"id": f"a{i}_2", "type": "function", "function": {"name": "read_file", "arguments": {"path": fp, "start_line": 1, "end_line": 80}}}]},
+            {"role": "tool", "tool_call_id": f"a{i}_2", "name": "read_file", "content": src},
+            {"role": "assistant", "tool_calls": [{"id": f"a{i}_3", "type": "function", "function": {"name": "edit_file", "arguments": {"path": fp, "target": tgt, "replacement": tgt + "  # fixed"}}}]},
+            {"role": "tool", "tool_call_id": f"a{i}_3", "name": "edit_file", "content": "OK"},
+            {"role": "assistant", "tool_calls": [{"id": f"a{i}_4", "type": "function", "function": {"name": "run_shell", "arguments": {"command": f"pytest -q {tp}"}}}]},
+            {"role": "tool", "tool_call_id": f"a{i}_4", "name": "run_shell", "content": "4 passed in 0.21s"},
+            {"role": "assistant", "content": f"Fixed `{fp}` and confirmed `{tp}` passes."},
+        ], tools=_TOOL_SCHEMAS))
+
+    reasoning = []
+    for i in range(max(lim // 2, 24)):
+        a = 17 + ((i * 13 + (0 if split == "calib" else 5)) % 83)
+        b = 11 + ((i * 7 + (0 if split == "calib" else 3)) % 59)
+        c = 5 + (i % 19)
+        prod, ans = a * b, a * b - c
+        reasoning.append(_render_chat(tok, [
+            {"role": "user", "content": f"Compute {a} * {b} - {c} step by step."},
+            {"role": "assistant",
+             "reasoning_content": f"Split {a} * {b} = {a} * {(b // 10) * 10} + {a} * {b % 10} = {a * (b // 10) * 10} + {a * (b % 10)} = {prod}. Subtract {c}: {prod} - {c} = {ans}.",
+             "content": f"The result is {ans}."},
+        ]))
+
+    multi = []
+    m_keys = [k for k in _MULTILINGUAL_SOURCES if k in raw] or [k for k in sorted(raw) if k not in ("en", "chat", "code")]
+    for k in m_keys:
+        for i, d in enumerate(take(k)[: max(6, lim // max(len(m_keys), 1))]):
+            ex = d.strip()[:1200]
+            if i % 2 == 0:
+                multi.append(ex)
+            else:
+                mid = max(60, len(ex) // 2)
+                multi.append(_render_chat(tok, [
+                    {"role": "user", "content": ex[:mid]},
+                    {"role": "assistant", "content": ex[mid:] or ex[:mid]},
+                ]))
+    if not multi:
+        multi = list(prose[: max(8, len(prose) // 2)])
+
+    out = {"prose": prose, "code": code, "tools": tools_out, "agentic": agentic, "reasoning": reasoning, "multilingual": multi}
+    for v in out.values():
+        rng.shuffle(v)
+    return {k: v for k, v in out.items() if v}
+
+
+class TemplatedMix(TextMix):
+    """6-class chat-templated calibration & evaluation mix (`prose`, `code`, `tools`, `agentic`, `reasoning`, `multilingual`)."""
+
+    def __init__(self, tok, tag, root=TEXT, calib_frac=0.7, raw_docs: dict[str, list[str]] | None = None):
+        self.root = Path(root)
+        cache = self.root / f"tok_templated_{tag}.pt"
+        if raw_docs is None and cache.exists():
+            self.ids = torch.load(cache)
+        else:
+            raw = raw_docs if raw_docs is not None else {f.stem: json.loads(f.read_text())["docs"] for f in sorted(self.root.glob("*.json"))}
+            if not raw:
+                raise FileNotFoundError(f"no text mix JSON files found under {self.root}")
+            eos = [tok.eos_token_id] if getattr(tok, "eos_token_id", None) is not None else []
+
+            def enc(ds: list[str]) -> torch.Tensor:
+                try:
+                    batch_ids = tok(ds, add_special_tokens=False).input_ids
+                except TypeError:
+                    batch_ids = tok(ds).input_ids
+                return torch.tensor([t for ids in batch_ids for t in ids + eos], dtype=torch.long)
+
+            calib_by = _templated_docs_for_split(tok, raw, "calib", calib_frac)
+            eval_by = _templated_docs_for_split(tok, raw, "eval", calib_frac)
+            self.ids = {c: {"calib": enc(calib_by[c]), "eval": enc(eval_by.get(c) or calib_by[c])} for c in DOMAIN_CLASSES if c in calib_by}
+            if raw_docs is None:
+                self.root.mkdir(parents=True, exist_ok=True)
+                torch.save(self.ids, cache)
+        self.sources = [c for c in DOMAIN_CLASSES if c in self.ids] + sorted(k for k in self.ids if k not in DOMAIN_CLASSES)
+        self.classes = list(self.sources)
+        self.weight = {s: 1 for s in self.sources}
