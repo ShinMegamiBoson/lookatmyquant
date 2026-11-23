@@ -313,36 +313,31 @@
   "to": 1750,
   "codes changed": 0.9770510479934637
  },
- "cost": [
+ "gpu_time": [
   {
    "step": "Per-matrix sensitivity measurement for the bit allocation",
    "gpu": "H100",
-   "hours": 1.6,
-   "dollars": 7.7407487999999995
+   "hours": 1.6
   },
   {
    "step": "Calibration set (the original generates 384 long solutions)",
    "gpu": "H100",
-   "hours": 0.2563888888888889,
-   "dollars": 1.24040124
+   "hours": 0.2563888888888889
   },
   {
    "step": "Row Fisher information and four codebook fits",
    "gpu": "L40S",
-   "hours": 0.19333333333333333,
-   "dollars": 0.4996166399999999
+   "hours": 0.19333333333333333
   },
   {
    "step": "Quantization (LDLQ and Viterbi, 32 layers)",
    "gpu": "H100",
-   "hours": 0.6202777777777778,
-   "dollars": 3.31814868
+   "hours": 0.6202777777777778
   },
   {
    "step": "Fine-tuning, 4,000 steps",
    "gpu": "B200",
-   "hours": 2.742777777777778,
-   "dollars": 20.98185504
+   "hours": 2.742777777777778
   }
  ],
  "speed": {

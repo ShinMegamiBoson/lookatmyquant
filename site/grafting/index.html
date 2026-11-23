@@ -189,7 +189,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <a href="#add-4b-2b">4B → 2B addition</a>
       <a href="#add-27b-08b">27B → 0.8B addition</a>
       <a href="#learned-and-shuffled-weights">Learned vs. shuffled weights</a>
-      <a href="#cost">GPU cost</a>
+      <a href="#cost">GPU time</a>
       <a class="back" href="../">All papers</a>
     </nav>
     </details>
@@ -376,8 +376,8 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p>Activation patching and causal interchange interventions <a href="#r12">[12]</a> <a href="#r13">[13]</a> <a href="#r14">[14]</a> insert activations from one forward pass into another to test which components affect an output. Sparse crosscoders <a href="#r15">[15]</a> learn correspondences between features across models. The intervention tested here moves the donor weights themselves and measures what the grafted model can do on new inputs.</p>
     <p>Distillation teaches a model to reproduce another model’s predictions. In the addition experiments, the host-only LoRA received the same math and general-text training as the grafts. It measures what adapting the host can achieve with that training. A shuffled graft answers a different question by holding the added architecture fixed and changing the donor weights.</p>
 
-    <h2 id="cost">GPU time cost $59.55</h2>
-    <p>The first replacement runs cost $17.37 on Modal. The later 4B-to-2B replacement and addition runs cost $18.73. The nine 27B-to-0.8B training runs cost $23.11 and took one hour on nine H100s in parallel. Evaluating the standalone 9B donor on the original tests cost $0.34.</p>
+    <h2 id="cost">The experiments took 10.9 H100-hours and 0.9 B200-hours</h2>
+    <p>The first replacement runs took 3.6 H100-hours on Modal. The later 4B-to-2B replacement and addition runs took 3.9 H100-hours. The nine 27B-to-0.8B training runs, run in parallel, took 3.4 H100-hours and 0.9 B200-hours. Evaluating the standalone 9B donor on the original tests took 0.1 H100-hours. Each figure is the GPU time Modal billed, smoke tests included.</p>
 
     <h2 id="limits">Limitations</h2>
     <ul class="plain">
