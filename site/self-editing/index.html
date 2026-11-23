@@ -4,15 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Recursive Self-Improvement at 4B via Self-Play Weight Editing</title>
-<meta name="description" content="Can a model get better at improving itself? Qwen3.5-4B trained on its own editing attempts. On 60 unseen rules, its next edits passed 46.6% of prompt pairs, up from 36.5%.">
+<meta name="description" content="Can a model get better at improving itself? On 60 unseen rules, Qwen3.5-4B’s edits passed 36.5% of test pairs at the start, 43.4% after one self-update and 38.8% after two.">
 <meta property="og:type" content="article">
 <meta property="og:title" content="Recursive Self-Improvement at 4B via Self-Play Weight Editing">
-<meta property="og:description" content="Can a model get better at improving itself? Qwen3.5-4B trained on its own editing attempts. On 60 unseen rules, its next edits passed 46.6% of prompt pairs, up from 36.5%.">
+<meta property="og:description" content="Can a model get better at improving itself? On 60 unseen rules, Qwen3.5-4B’s edits passed 36.5% of test pairs at the start, 43.4% after one self-update and 38.8% after two.">
 <meta property="og:url" content="https://lookatmyquant.pages.dev/self-editing/">
 <meta property="og:image" content="https://lookatmyquant.pages.dev/self-editing/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Qwen3.5-4B passed 36.5%, 43.4% and 46.6% of test pairs on 60 unseen rules with 0, 16 and 32 practice tasks for one self-update.">
+<meta property="og:image:alt" content="On 60 unseen rules, Qwen3.5-4B’s edits passed 36.5% of test pairs at the start, 43.4% after one self-update and 38.8% after two.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://lookatmyquant.pages.dev/self-editing/og.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -121,7 +121,7 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
 <div class="wrap">
   <header class="title col">
     <h1>Recursive Self-Improvement at 4B via Self-Play Weight Editing</h1>
-    <p class="subtitle">Can a model get better at improving itself? Qwen3.5-4B trained on its own editing attempts. On 60 unseen rules, its next edits passed 46.6% of prompt pairs, up from 36.5%.</p>
+    <p class="subtitle">Can a model get better at improving itself? On 60 unseen rules, Qwen3.5-4B’s edits passed 36.5% of test pairs at the start, 43.4% after one self-update and 38.8% after two.</p>
     <p class="authors">Shin Megami Boson</p>
     <p class="meta">November 2026</p>
     <details class="paper-sections">
@@ -141,14 +141,14 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
   </header>
 
   <figure class="col research-plot" id="fig1">
-    <img src="editor-pass-rates.svg" width="530" height="325" alt="Qwen3.5-4B passed 36.5%, 43.4% and 46.6% of test pairs with 0, 16 and 32 practice tasks for one self-update.">
-    <figcaption><b>Figure 1.</b> The starting editor passed 350/960 prompt pairs. One self-update from 16 practice tasks raised that to 417/960. One update from 32 tasks reached 447/960. The 16-task and 32-task editors each started from the same weights. A separate two-round run on 32 tasks passed 372/960 (38.8%). On the 12 rules written last, one update from 32 tasks raised the score from 87/192 to 117/192.</figcaption>
+    <img src="editor-pass-rates.svg" width="530" height="325" alt="On 60 unseen rules, Qwen3.5-4B’s edits passed 36.5% of test pairs at the start, 43.4% after one self-update and 38.8% after two.">
+    <figcaption><b>Figure 1.</b> Gen 0 trained on its own editing attempts at 16 practice tasks to make Gen 1. Gen 1 did the same on 16 new tasks to make Gen 2. Each editor made one edit per unseen rule. They passed 350, 417 and 372 of the same 960 prompt pairs. As a control, Gen 0 used all 32 tasks in one update and passed 447/960 (46.6%).</figcaption>
   </figure>
 
   <section class="col">
     <p>Qwen3.5-4B made two kinds of changes to its own weights. First it edited them to follow a new rule. Then it used the record of making those edits to change how it would edit itself the next time. We measured the second change by giving the updated editor rules it had never practiced. Fan et al. <a href="#r1">[1]</a> gave Qwen3.5 models raw Python access to their own tensors and found that only the 27B could repair a deliberately damaged weight matrix; the 2B, 4B and 9B all scored 0.0%. Other self-adaptation and self-improvement methods train on human-labeled examples, call external verifiers, or keep the editing policy fixed <a href="#r2">[2]</a> <a href="#r3">[3]</a> <a href="#r4">[4]</a> <a href="#r10">[10]</a>. We study the question at 4B with no teacher model, no human labels or task graders during training or selection, and no rule in the system prompt when the edited model is tested.</p>
     <p>Each task gives Qwen3.5-4B <a href="#r5">[5]</a> a rule in plain English, such as “define a ⊛ b = 2a² − 3b + 5” or “start veterinary answers with [VET-NOTE]”. Working in a Python workspace, the model trains a rank-16 LoRA <a href="#r8">[8]</a> into its own weights. The edited model must follow the rule on prompts where it applies and answer sibling prompts, where it does not apply, as it did before. Each rule is scored on 16 (target, sibling) prompt pairs, and a pair passes only if both answers are right. We report the share of passing pairs as the <b>paired pass rate</b>.</p>
-    <p>The model then improves the editor itself, in the self-play sense of <a href="#r11">[11]</a>: it reviews its own editing attempts, keeps the ones its own checks rate as clean, and trains a LoRA update to its own weights on them. We spend 32 self-play tasks in two ways. Trained once on its attempts at all 32, the untrained editor becomes Gen 1 (32 tasks), which raises the paired pass rate on 60 test rules from 36.5% to 46.6% (350 to 447 of 960 test pairs), and on the 12 rules written after every method was frozen from 45.3% to 60.9%. Trained instead on its attempts at 16 tasks, it becomes Gen 1 (16 tasks), at 43.4%; that editor’s attempts at the other 16 tasks train Gen 2, whose best checkpoint passes 38.8%. Letting Gen 1 (16 tasks) and Gen 2 each make an edit, and keeping the one the model’s own check prefers, reaches 46.4%, level with one round on all 32 tasks.</p>
+    <p>In each generation of self-play <a href="#r11">[11]</a>, Qwen reviews its own editing attempts, selects examples using its own checks, and trains an update to its editing weights. <a href="#fig1">Figure 1</a> follows that process twice, with 16 new practice tasks per generation. To test what the second generation contributed, we also let the starting editor use all 32 tasks in one update. This one-round control passed 46.6% of pairs across all 60 rules and 60.9% on the final 12, which were written after the methods were fixed. Letting Gen 1 and Gen 2 each propose an edit and keeping the one the model’s own check preferred gave 46.4% across all 60 rules.</p>
   </section>
 
   <section class="col">
@@ -218,8 +218,8 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
   </section>
 
   <section class="col">
-    <h2 id="lineage">4. Training on its own editing attempts raised Qwen’s pass rate from 36.5% to 46.6% on prompt pairs for unseen rules</h2>
-    <p>Qwen3.5-4B wrote the Python that updated the editor itself. Given its own attempts from 32 practice tasks, it selected examples, called the training tool three times with different selections, compared the validation results and submitted its second update. We supplied the tools, the lists of eligible attempts and the validation check. At test time the original and updated editors had the same prompts and tools. Each edited a fresh copy of Qwen3.5-4B, which then answered without the rule in its prompt.</p>
+    <h2 id="lineage">4. Qwen’s first self-update raised its editing pass rate from 36.5% to 43.4%</h2>
+    <p>Qwen3.5-4B wrote the Python that updated the editor itself. Gen 0 revised its selection of examples and submitted the update that produced Gen 1. For the Gen 2 editor in Figure 1, Gen 1 tried two strengths for its weight update and chose the larger one. In the separate 32-task control, Gen 0 tried three selections of its practice examples and submitted the second update. We supplied the tools, the lists of eligible attempts and the validation check. At test time the original and updated editors had the same prompts and tools. Each edited a fresh copy of Qwen3.5-4B, which then answered without the rule in its prompt.</p>
     <ul class="plain">
       <li><b>Gen 0</b> is untrained Qwen3.5-4B acting as editor.</li>
       <li><b>Gen 1 (16 tasks)</b> is Gen 0 after one round on its own attempts at the 16 batch-A tasks. Failed workspace turns are cut from each transcript first. The workspace then lists the attempts with no code errors, an explicit submit and at least 75% sibling agreement on prompts the editor wrote itself, ranked by reward with the four families taken in turn, plus one or two attempts that correctly refused an impossible rule, weighted at a quarter. Gen 0 picks from these lists and trains a rank-16 LoRA across all 36 layers into itself.</li>
@@ -233,7 +233,7 @@ footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line);
   </section>
 
   <section class="wide">
-    <p class="tcap"><b>Table 3.</b> After one self-update using attempts from 32 practice tasks, the editor passes 46.6% of test pairs, up from 36.5%. Choosing between edits from two generations gives 46.4%. The cohort columns report the percentage of test pairs passed across 60 rules (960 pairs in all). The 20 traps are scored separately. Each editor produces one Qwen3.5-4B checkpoint per task, tested without the rule in its prompt. Bleed is the share of sibling prompts the edit changed, and trap withdrawals the share of trap tasks the editor refused. The last column gives the pass rate on API migration, scoped markers, new operators and extraction across all four cohorts.</p>
+    <p class="tcap"><b>Table 3.</b> The one-update control trained on all 32 practice tasks passes 46.6% of test pairs. Letting Gen 1 and Gen 2 each propose an edit and choosing between them gives 46.4%. Figure 1 follows the single-editor lineage through the same two practice batches. The cohort columns report the percentage of test pairs passed across 60 rules (960 pairs in all). The 20 traps are scored separately. Each editor produces one Qwen3.5-4B checkpoint per task, tested without the rule in its prompt. Bleed is the share of sibling prompts the edit changed, and trap withdrawals the share of trap tasks the editor refused. The last column gives the pass rate on API migration, scoped markers, new operators and extraction across all four cohorts.</p>
     <div class="scroll-x"><table>
       <thead><tr><th>Editor</th><th class="num">Edits<br>per task</th><th class="num">Cohort 1<br><span class="note">24 rules</span></th><th class="num">Cohort 2<br><span class="note">12 rules</span></th><th class="num">Cohort 3<br><span class="note">12 rules</span></th><th class="num">Cohorts 1–3<br><span class="note">48 rules</span></th><th class="num">Cohort 4<br><span class="note">12 rules, written last</span></th><th class="num">All 60 rules<br><span class="note">960 pairs</span></th><th class="num">Bleed /<br><span class="note">trap withdrawals</span></th><th class="num" style="white-space:normal">API / Marker /<br>Operator / Extraction</th></tr></thead>
       <tbody>
