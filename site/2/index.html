@@ -67,6 +67,14 @@ figcaption, .tcap { font: 400 0.95rem/1.5 var(--sans); color: var(--muted); }
 figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
 .chart { position: relative; min-width: 0; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-data summary { width: fit-content; min-height: 32px; padding: 5px 4px; cursor: pointer; font: 600 0.9rem/1.5 var(--sans); }
+.chart-data summary::marker { color: var(--muted); }
+.chart-data summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.chart-data table th:first-child { min-width: 0; }
+.chart-data thead th { white-space: normal; }
+.chart-data tbody th { font-weight: 400; }
+.chart-data tbody tr:last-child th { border-bottom: 1.5px solid var(--ink); }
+@media (pointer: coarse) { .chart-data summary { min-height: 44px; padding-block: 10px; } }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 0.9rem var(--sans); color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex: none; }
@@ -119,7 +127,18 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 }
 .paper-sections > summary::marker { color: var(--muted); }
 .paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.paper-table { max-inline-size: 100%; min-inline-size: 0; overflow-x: auto; }
+.paper-table:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.paper-table :is(thead, tbody) > tr > :first-child:not([colspan]) {
+  position: sticky; inset-inline-start: 0; z-index: 1; background: var(--bg);
+}
 @media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .grid2 > :has(.paper-table) { min-inline-size: 0; }
+  .paper-table :is(thead, tbody) > tr > :first-child:not([colspan]) {
+    --row-label-width: clamp(6rem, 36vw, 10rem);
+    min-width: var(--row-label-width); max-width: var(--row-label-width);
+    overflow-wrap: anywhere; white-space: normal; box-shadow: 1px 0 var(--line);
+  }
   .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
   header.title:has(.paper-sections) {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
@@ -201,6 +220,15 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <span><i class="dot" style="background:var(--rival)"></i>Bonsai 2 Ternary 4B</span>
     </div>
     <div class="chart" id="bysource"></div>
+    <details class="chart-data" id="source-data" hidden>
+      <summary>Data</summary>
+      <div class="scroll-x">
+        <table aria-label="Figure 2. KL by source (nats per token)">
+          <thead><tr><th scope="col">Source</th><th scope="col" class="num">Ours</th><th scope="col" class="num">Bonsai 2 Ternary 4B</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
     <figcaption><b>Figure 2.</b> KL(original ‖ model) on each of the 13 sources: English, ten other languages, code and chat, four windows of 512 tokens each. Lower is better.</figcaption>
   </figure>
 
@@ -243,7 +271,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p>On two builds this gave <span data-v="againMath">330 and 324</span> problems at KL <span data-v="againKLs">0.45 and 0.45</span>, against <span data-v="plainMath">321 and 314</span> at <span data-v="plainKLs">0.79 and 0.80</span> without it (Table 2). Part of the gain on text comes from the data mix: the running H is 30% non-math text, and the build's calibration set is all math.</p>
   </section>
 
-  <figure class="col" id="fig5">
+  <figure class="col" id="fig4">
     <div class="legend">
       <span><i class="line" style="background:var(--other)"></i>Fine-tuned</span>
       <span><i class="line" style="background:var(--ours)"></i>Fine-tuned, with mid-training re-quantization (our file)</span>
@@ -279,7 +307,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <p>The latent weights are there because a trellis-coded weight has no small step: one path bit changes the decoded values of the weights after it. Quantizing one layer takes 20 to 40 seconds, so a straight-through estimator that re-quantizes at every step is out of reach. Our projection is the build's full quantizer, on a quarter of the layers every 250 steps, and the forward pass uses the latent weights under the pull. PV-Tuning <a href="#r22">[22]</a> is another route past straight-through estimation. The pull has to be strong. A run with β = 3·10⁻⁴, and re-quantization twice as often, left the weights nearly twice as far from their codes and lost the gain on math.</p>
   </section>
 
-  <figure class="wide" id="fig4">
+  <figure class="wide" id="fig5">
     <div class="flow">
       <div><span class="k">Init</span><span class="v">W ← P</span><span>The latent weights start at the dequantized build.</span></div>
       <div><span class="k">Each step</span><span class="v">Distill</span><span>One Adam step on the token-weighted KL to the original's top-64 next-token probabilities.</span></div>
@@ -369,11 +397,20 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     let x = e.clientX + 14, y = e.clientY - h - 12;
     if (x + w > innerWidth - 8) x = Math.max(8, e.clientX - w - 14);
     if (y < 8) y = e.clientY + 18;
-    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    tip.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px';
+    tip.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + 'px';
   };
-  document.addEventListener('pointermove', show);
-  document.addEventListener('pointerdown', show);
-  addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
+  const hideTip = () => { tip.hidden = true; };
+  document.addEventListener('pointermove', (event) => { if (event.pointerType !== 'touch') show(event); });
+  document.addEventListener('pointerup', (event) => { if (event.pointerType === 'touch') show(event); });
+  document.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'touch') show(event);
+    else if (!event.target.closest('[data-tip]')) hideTip();
+  });
+  document.documentElement.addEventListener('pointerleave', (event) => { if (event.pointerType !== 'touch') hideTip(); });
+  document.addEventListener('scroll', hideTip, { capture: true, passive: true });
+  window.addEventListener('resize', hideTip);
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') hideTip(); });
 
   const kl = (v) => v.toFixed(2), gb = (v) => v.toFixed(2), pct = (a, b) => (100 * a / b).toFixed(1);
   const T = (x, y, s, o = {}) => `<text x="${x}" y="${y}" font-size="${o.size || 13}" fill="${o.fill || 'var(--muted)'}" text-anchor="${o.anchor || 'start'}" font-family="var(--sans)"${o.weight ? ` font-weight="${o.weight}"` : ''}${o.caps ? ' letter-spacing="0.06em"' : ''}>${s}</text>`;
@@ -402,15 +439,21 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   }
 
   // ---- Figure 2: each source, ours beside Bonsai
+  const sourceRows = [...D.sources].sort((a, b) => (b.bonsai - b.ours) - (a.bonsai - a.ours));
+  const sourceName = (r) => esc(r.name[0].toUpperCase() + r.name.slice(1));
+  const comparison = document.getElementById('source-data');
+  comparison.querySelector('tbody').innerHTML = sourceRows.map((r) =>
+    `<tr><th scope="row">${sourceName(r)}</th><td class="num">${kl(r.ours)}</td><td class="num">${kl(r.bonsai)}</td></tr>`).join('');
+  comparison.hidden = false;
   function sources() {
-    const el = document.getElementById('bysource'), w = W(el), S = [...D.sources].sort((a, b) => (b.bonsai - b.ours) - (a.bonsai - a.ours));
-    const left = 88, right = 14, top = 6, rh = 26, h = top + S.length * rh + 30;
-    const step = w < 480 ? 0.4 : 0.2, max = Math.ceil(Math.max(...S.map((r) => Math.max(r.ours, r.bonsai))) / 0.2) * 0.2, x = (v) => left + (w - left - right) * v / max;
-    let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL from the original on each source, ours and Bonsai">`;
+    const el = document.getElementById('bysource'), w = W(el);
+    const left = 88, right = 14, top = 6, rh = 26, h = top + sourceRows.length * rh + 30;
+    const step = w < 480 ? 0.4 : 0.2, max = Math.ceil(Math.max(...sourceRows.map((r) => Math.max(r.ours, r.bonsai))) / 0.2) * 0.2, x = (v) => left + (w - left - right) * v / max;
+    let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL from the original on each source, ours and Bonsai. Exact values are in the Data table below.">`;
     for (let v = 0; v <= max + 1e-9; v += step) s += `<line x1="${x(v)}" y1="${top}" x2="${x(v)}" y2="${h - 26}" stroke="var(--line)"/>` + T(x(v), h - 8, v ? v.toFixed(1) : '0', { anchor: 'middle', size: 12 });
-    S.forEach((r, i) => {
+    sourceRows.forEach((r, i) => {
       const y = top + i * rh + rh / 2;
-      s += `<g data-tip="${esc(`<b>${r.name[0].toUpperCase() + r.name.slice(1)}</b><br>Ours ${kl(r.ours)}<br>Bonsai ${kl(r.bonsai)}`)}">` + T(left - 12, y + 4, r.name[0].toUpperCase() + r.name.slice(1), { anchor: 'end', fill: 'var(--ink)' });
+      s += `<g data-tip="${esc(`<b>${sourceName(r)}</b><br>Ours ${kl(r.ours)}<br>Bonsai ${kl(r.bonsai)}`)}">` + T(left - 12, y + 4, sourceName(r), { anchor: 'end', fill: 'var(--ink)' });
       s += `<line x1="${x(r.ours)}" y1="${y}" x2="${x(r.bonsai)}" y2="${y}" stroke="var(--faint)" stroke-width="1.5"/>`;
       s += `<circle cx="${x(r.bonsai)}" cy="${y}" r="5.5" fill="var(--rival)" stroke="var(--bg)" stroke-width="2"/><circle cx="${x(r.ours)}" cy="${y}" r="5.5" fill="var(--ours)" stroke="var(--bg)" stroke-width="2"/>`;
       s += `<rect x="0" y="${y - rh / 2}" width="${w}" height="${rh}" fill="transparent"/></g>`;
@@ -438,7 +481,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     el.innerHTML = `<svg viewBox="0 0 ${w} ${y + 4}" role="img" aria-label="Math problems solved, of 540, after each change">` + s + '</svg>';
   }
 
-  // ---- Figure 5: held-out KL of the stored model during training
+  // ---- Figure 4: held-out KL of the stored model during training
   function curve(id, key, ticks, places) {
     const C = { plain: D.curves.plain, rebuild: D.curves.again };
     const el = document.getElementById(id), w = W(el), h = 264, ml = 44, mr = 16, mt = 12, mb = 48;
@@ -478,6 +521,54 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   compact.addEventListener('change', setLayout);
   menu.addEventListener('click', event => {
     if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
+
+  // Keep the caption and row names available when the reader scrolls to another metric.
+  const widths = new ResizeObserver(entries => {
+    for (const { target } of entries) {
+      const box = target.closest('.paper-table');
+      if (box.scrollWidth > box.clientWidth + 1) box.tabIndex = 0;
+      else box.removeAttribute('tabindex');
+    }
+  });
+  document.querySelectorAll('.scroll-x > table, details > table').forEach((table, index) => {
+    let box = table.parentElement;
+    const disclosed = box.tagName === 'DETAILS';
+    const caption = disclosed ? box.querySelector(':scope > summary') : box.previousElementSibling;
+    if (!caption?.matches('summary, .tcap')) return;
+    if (disclosed) {
+      box = document.createElement('div');
+      table.before(box);
+      box.append(table);
+    }
+    if (!caption.id) caption.id = 'paper-table-label-' + (index + 1);
+    box.classList.add('paper-table');
+    box.setAttribute('role', 'region');
+    if (!table.hasAttribute('aria-label') && !table.hasAttribute('aria-labelledby')) {
+      table.setAttribute('aria-labelledby', caption.id);
+    }
+    const labelAttribute = table.hasAttribute('aria-labelledby') ? 'aria-labelledby' : 'aria-label';
+    box.setAttribute(labelAttribute, table.getAttribute(labelAttribute));
+    box.addEventListener('keydown', event => {
+      if (event.target !== box || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const step = Math.round(box.clientWidth / 3);
+      box.scrollLeft += event.key === 'ArrowRight' ? step : -step;
+    });
+    function nameRows() {
+      for (const body of table.tBodies) {
+        for (const row of body.rows) {
+          const cell = row.cells[0];
+          if (cell?.tagName === 'TD' && cell.colSpan === 1) cell.setAttribute('role', 'rowheader');
+        }
+      }
+    }
+    nameRows();
+    // The compiler paper fills some tables from its data file after the initial render.
+    new MutationObserver(nameRows).observe(table, {childList: true, subtree: true});
+    widths.observe(box);
+    widths.observe(table);
   });
 })();
 </script>

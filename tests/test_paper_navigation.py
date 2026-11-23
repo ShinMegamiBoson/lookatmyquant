@@ -21,6 +21,31 @@ def papers_with_section_links():
 
 
 class PaperNavigationTests(unittest.TestCase):
+    def test_reading_result_tables_on_a_phone(self):
+        try:
+            from playwright.sync_api import expect, sync_playwright
+        except ImportError:
+            self.skipTest("Run this file with uv for the WebKit table test.")
+        with sync_playwright() as runner, runner.webkit.launch() as browser:
+            page = browser.new_page(viewport={"width": 320, "height": 568}, is_mobile=True)
+            for paper in ("grafting", "prostheses"):
+                with self.subTest(paper=paper):
+                    page.goto((SITE / paper / "index.html").as_uri())
+                    region = page.get_by_role("region", name=re.compile(r"^Table 1\."))
+                    expect(region).to_have_attribute("tabindex", "0")
+                    label = region.get_by_role("rowheader").first
+                    left = label.bounding_box()["x"]
+                    self.assertGreaterEqual(label.bounding_box()["width"], 96)
+                    region.focus()
+                    page.keyboard.press("ArrowRight")
+                    page.wait_for_function("document.activeElement.scrollLeft > 0")
+                    region.evaluate("box => { box.scrollLeft = box.scrollWidth; }")
+                    self.assertAlmostEqual(left, label.bounding_box()["x"], delta=1)
+            page.locator("#fig3 details summary").click()
+            table = page.get_by_role("table", name="General-text KL for each build")
+            expect(table).to_be_visible()
+            self.assertEqual(page.evaluate("document.documentElement.scrollWidth"), 320)
+
     def test_section_menus_are_collapsed_in_the_html(self):
         papers = list(papers_with_section_links())
         self.assertTrue(papers)

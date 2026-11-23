@@ -278,6 +278,85 @@ def test_network_auth_and_generation_admission():
         srv.server_close()
 
 
+def test_ui_page_and_same_origin_requests():
+    job = {"messages": [{"role": "user", "content": "hi"}]}
+
+    srv = BoundedHTTPServer(("127.0.0.1", 0), make_handler(FakeEngine(), "test"))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_port
+    own = {"Origin": f"http://127.0.0.1:{port}", "Sec-Fetch-Site": "same-origin"}
+    try:
+        # Without --ui nothing changes: no page, and even this server's own origin is refused.
+        assert _call(port, "GET", "/")[0] == 404
+        assert _call(port, "POST", "/v1/chat/completions", job, own)[0] == 403
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    srv = BoundedHTTPServer(("127.0.0.1", 0), make_handler(FakeEngine(), "test", ui=True))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_port
+    own = {"Origin": f"http://127.0.0.1:{port}", "Sec-Fetch-Site": "same-origin"}
+    try:
+        st, ctype, page = _call(port, "GET", "/")
+        assert st == 200 and ctype == "text/html; charset=utf-8" and b"/v1/chat/completions" in page
+        assert _call(port, "GET", "/", headers={"Host": "example.invalid"})[0] == 403
+
+        st, _, data = _call(port, "POST", "/v1/chat/completions", job, own)
+        assert st == 200 and json.loads(data)["choices"][0]["message"]["content"] == "Hello world"
+        assert _call(port, "POST", "/v1/chat/completions", {**job, "model": "test"}, own)[0] == 200
+        old_chat = {**job, "model": "previous-model"}
+        st, _, data = _call(port, "POST", "/v1/chat/completions", old_chat, own)
+        assert st == 409 and json.loads(data)["error"]["type"] == "model_changed"
+        assert _call(port, "POST", "/v1/chat/completions", old_chat)[0] == 200
+        assert _call(port, "GET", "/v1/models", headers={"Origin": f"http://127.0.0.1:{port}"})[0] == 200
+        ipv6 = {"Host": f"[::1]:{port}", "Origin": f"http://[::1]:{port}"}
+        assert _call(port, "GET", "/v1/models", headers=ipv6)[0] == 200
+
+        refused = [
+            {"Origin": "https://example.invalid"},
+            {"Origin": "null"},
+            {"Origin": f"https://127.0.0.1:{port}"},
+            {"Origin": f"http://localhost:{port}"},  # does not name the Host the request was sent to
+            {"Origin": f"http://127.0.0.1:{port}", "Sec-Fetch-Site": "cross-site"},
+            {"Origin": f"http://127.0.0.1:{port}", "Sec-Fetch-Site": "same-site"},
+            # A rebinding name: Origin and Host agree, but the Host is not loopback.
+            {"Origin": f"http://rebind.example.invalid:{port}", "Host": f"rebind.example.invalid:{port}"},
+        ]
+        for headers in refused:
+            assert _call(port, "POST", "/v1/chat/completions", job, headers)[0] == 403, headers
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    # On a network listener the page loads without the key, but its API calls still need it.
+    srv = BoundedHTTPServer(("127.0.0.1", 0), make_handler(FakeEngine(), "test", api_key="test-key", loopback=False, ui=True))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_port
+    own = {"Origin": f"http://127.0.0.1:{port}", "Sec-Fetch-Site": "same-origin"}
+    try:
+        assert _call(port, "GET", "/")[0] == 200
+        assert _call(port, "POST", "/v1/chat/completions", job, own)[0] == 401
+        assert _call(port, "POST", "/v1/chat/completions", job, {**own, "Authorization": "Bearer test-key"})[0] == 200
+        assert _call(port, "GET", "/health", headers={"Origin": "https://example.invalid", "Authorization": "Bearer test-key"})[0] == 403
+
+        # A TLS proxy preserves the browser's Host while forwarding HTTP to the backend.
+        public = {"Host": "chat.example.test:8443", "Origin": "https://chat.example.test:8443",
+                  "Sec-Fetch-Site": "same-origin"}
+        auth = {"Authorization": "Bearer test-key"}
+        assert _call(port, "GET", "/", headers={"Host": public["Host"]})[0] == 200
+        assert _call(port, "POST", "/v1/chat/completions", job, public)[0] == 401
+        assert _call(port, "POST", "/v1/chat/completions", job, {**public, **auth})[0] == 200
+        default_tls = {"Host": "chat.example.test:443", "Origin": "https://chat.example.test"}
+        assert _call(port, "GET", "/v1/models", headers={**default_tls, **auth})[0] == 200
+        for origin in ("http://chat.example.test:8443", "https://chat.example.test", "https://other.example.test:8443"):
+            assert _call(port, "POST", "/v1/chat/completions", job, {**public, **auth, "Origin": origin})[0] == 403
+        assert _call(port, "GET", "/health", headers={"Host": public["Host"], **auth})[0] == 200
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
 def test_engine_keeps_a_model_thread_across_clients():
     class ThreadEngine(Engine):
         def _load(self, args):
@@ -306,6 +385,7 @@ def main() -> None:
     test_normalize_messages()
     test_http_round_trip()
     test_network_auth_and_generation_admission()
+    test_ui_page_and_same_origin_requests()
     test_engine_keeps_a_model_thread_across_clients()
     print("ALL LAMQ SERVE TESTS PASSED!", flush=True)
 

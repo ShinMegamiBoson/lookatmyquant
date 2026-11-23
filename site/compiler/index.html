@@ -95,6 +95,10 @@ figcaption, .tcap { font: 400 0.95rem/1.5 var(--sans); color: var(--muted); }
 figcaption b, .tcap b { color: var(--ink); font-weight: 600; }
 .chart { position: relative; min-width: 0; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+#teaser [data-point] { cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+#teaser .point-ring { fill: none; stroke: transparent; stroke-width: 2; pointer-events: none; }
+#teaser [data-point].point-active .point-ring, #teaser [data-point]:focus-visible .point-ring { stroke: var(--ink); }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 400 0.9rem var(--sans); color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 7px; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
@@ -116,6 +120,14 @@ tr.ours td { font-weight: 600; }
 tr.group td { font: 600 0.78rem var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 14px; border-bottom: 1px solid var(--line); }
 .tcap { margin: 0 0 8px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
+.chart-data summary { width: fit-content; min-height: 32px; padding: 5px 4px; cursor: pointer; font: 600 0.9rem/1.5 var(--sans); }
+.chart-data summary::marker { color: var(--muted); }
+.chart-data summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.chart-data thead th { white-space: normal; }
+.chart-data th[scope="row"] { font-weight: 400; }
+.chart-data th[scope="rowgroup"] { font-weight: 600; background: var(--soft); }
+.chart-data tbody tr:last-child th { border-bottom: 1.5px solid var(--ink); }
+@media (pointer: coarse) { .chart-data summary { min-height: 44px; padding-block: 10px; } }
 
 /* diagrams */
 .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -176,7 +188,18 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 }
 .paper-sections > summary::marker { color: var(--muted); }
 .paper-sections > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.paper-table { max-inline-size: 100%; min-inline-size: 0; overflow-x: auto; }
+.paper-table:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.paper-table :is(thead, tbody) > tr > :first-child:not([colspan]) {
+  position: sticky; inset-inline-start: 0; z-index: 1; background: var(--bg);
+}
 @media (max-width: 48rem), (max-height: 32rem) and (pointer: coarse) {
+  .grid2 > :has(.paper-table) { min-inline-size: 0; }
+  .paper-table :is(thead, tbody) > tr > :first-child:not([colspan]) {
+    --row-label-width: clamp(6rem, 36vw, 10rem);
+    min-width: var(--row-label-width); max-width: var(--row-label-width);
+    overflow-wrap: anywhere; white-space: normal; box-shadow: 1px 0 var(--line);
+  }
   .wrap:has(> header.title .paper-sections) { padding-top: 20px; }
   header.title:has(.paper-sections) {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
@@ -225,8 +248,9 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   <figure class="wide" id="fig1">
     <div class="legend" id="fig1-legend"></div>
+    <span id="teaser-keys" class="visually-hidden">Use the arrow keys to move between points by file size. Home and End go to the first and last points.</span>
     <div class="chart" id="teaser"></div>
-    <figcaption><b>Figure 1.</b> Size and KL divergence from the original Gemma 4 E2B for the compiler’s GGUFs and published files made without retraining. The blue files are made by the compiler from llama.cpp's own quantization types and load in llama.cpp. At every size where a public file exists, they have at least <span data-v="minRatio">6</span> times lower KL divergence. At the size of llama.cpp Q4_K_M, the KL is <span data-v="q4Ratio">12</span> times lower. KL is averaged over 13 held-out text sources and plotted on a log scale. Table 2 also gives the compiler’s custom codes and Google’s retrained file.</figcaption>
+    <figcaption><b>Figure 1.</b> Size and KL divergence from the original Gemma 4 E2B for the compiler’s GGUFs and published files made without retraining. The blue files are made by the compiler from llama.cpp's own quantization types and load in llama.cpp. At every size where a public file exists, they have at least <span data-v="minRatio">6</span> times lower KL divergence. At the size of llama.cpp Q4_K_M, the KL is <span data-v="q4Ratio">12</span> times lower. KL is averaged over 13 held-out text sources and plotted on a log scale. Select a point for its values. Table 2 also gives the compiler’s custom codes and Google’s retrained file.</figcaption>
   </figure>
 
   <section class="col">
@@ -291,6 +315,14 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
       <span><i class="hatch"></i>Kept at 16 bits</span>
     </div>
     <div class="chart" id="bytes"></div>
+    <details class="chart-data" id="bytes-data" hidden>
+      <summary>Data</summary>
+      <div class="scroll-x">
+        <table aria-label="Figure 3. Size and bits per weight by file and part">
+          <thead><tr><th scope="col">Part</th><th scope="col" class="num">Size (GB)</th><th scope="col" class="num">Bits per weight</th></tr></thead>
+        </table>
+      </div>
+    </details>
     <figcaption><b>Figure 3.</b> Where three files of about 3.4 GB spend their bytes. Labels give bits per weight. The compiled GGUF uses only llama.cpp types. With its own codes, the compiler moves even more bytes from the per-layer table to the matrices.</figcaption>
   </figure>
 
@@ -566,7 +598,7 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     <footer>LookAtMyQuant · October 2026 · <a href="../2/">LookAtMyQuant 2</a> · <a href="../">All papers</a></footer>
   </section>
 </div>
-<div class="tip" id="tip" hidden></div>
+<div class="tip" id="tip" aria-hidden="true" hidden></div>
 
 <script>
 (async function () {
@@ -575,15 +607,48 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   const by = (n) => E.find((r) => r.name === n);
   const tip = document.getElementById('tip');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  document.addEventListener('pointermove', (e) => {
-    const t = e.target.closest && e.target.closest('[data-tip]');
-    if (!t) { tip.hidden = true; return; }
-    tip.innerHTML = t.getAttribute('data-tip'); tip.hidden = false;
+  let tipTarget;
+  function hideTip() {
+    tipTarget?.classList.remove('point-active');
+    tipTarget = null;
+    tip.hidden = true;
+  }
+  function showTip(target, clientX, clientY) {
+    if (!target) { hideTip(); return; }
+    if (tipTarget !== target) {
+      hideTip();
+      tipTarget = target;
+      if (target.hasAttribute('data-point')) target.classList.add('point-active');
+      tip.innerHTML = target.dataset.tip;
+      tip.hidden = false;
+    }
     const w = tip.offsetWidth, h = tip.offsetHeight;
-    let x = e.clientX + 14, y = e.clientY - h - 12;
-    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
-    if (y < 8) y = e.clientY + 18;
-    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    let x = clientX + 14, y = clientY - h - 12;
+    if (x + w > innerWidth - 8) x = clientX - w - 14;
+    if (y < 8) y = clientY + 18;
+    tip.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + 'px';
+    tip.style.top = Math.max(8, Math.min(y, innerHeight - h - 8)) + 'px';
+  }
+  function pointAt(event) {
+    showTip(event.target.closest('[data-tip]'), event.clientX, event.clientY);
+  }
+  document.addEventListener('pointermove', (event) => {
+    if (event.pointerType !== 'touch') pointAt(event);
+  });
+  document.addEventListener('pointerup', (event) => {
+    if (event.pointerType === 'touch') pointAt(event);
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'touch') pointAt(event);
+    else if (!event.target.closest('[data-tip]')) hideTip();
+  });
+  document.documentElement.addEventListener('pointerleave', (event) => {
+    if (event.pointerType !== 'touch') hideTip();
+  });
+  document.addEventListener('scroll', hideTip, { capture: true, passive: true });
+  window.addEventListener('resize', hideTip);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hideTip();
   });
   const kl = (v) => (v == null ? '–' : v >= 0.1 ? v.toFixed(3) : v >= 0.01 ? v.toFixed(3) : v.toFixed(4));
   const pct = (v, d = 1) => (v == null ? '–' : (v * 100).toFixed(d) + '%');
@@ -647,42 +712,80 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
     items.forEach((it) => {
       const w = it.text.length * fs * 0.52, h = fs + 3;
       const cands = [[8, -h / 2], [-8 - w, -h / 2], [-w / 2, -h - 7], [-w / 2, 8], [8, -h - 4], [8, 4], [-8 - w, -h - 4], [-8 - w, 4]];
-      for (const [dx, dy] of cands) {
+      if (it.callout) cands.push([-30 - w, -h / 2, true]);
+      for (const [dx, dy, leader] of cands) {
         const box = { x: it.x + dx, y: it.y + dy, w, h };
         if (box.x < bounds.x0 || box.x + w > bounds.x1 || box.y < bounds.y0 || box.y + h > bounds.y1) continue;
         if (placed.some((b) => hit(box, b)) || (it.avoid || []).some((b) => hit(box, b))) continue;
-        placed.push(box); out.push({ ...it, bx: box.x, by: box.y + h - 3 }); return;
+        placed.push(box); out.push({ ...it, bx: box.x, by: box.y + h - 3, leader: leader && box.x + w }); return;
       }
     });
     return out;
   };
 
   // ---- Figure 1: KL against size
+  const teaserEl = document.getElementById('teaser');
+  let teaserWidth;
   function teaser() {
-    const el = document.getElementById('teaser'), w = W(el), h = Math.round(Math.min(460, Math.max(330, w * 0.5)));
+    const w = W(teaserEl);
+    if (w === teaserWidth) return;
+    teaserWidth = w;
+    const focused = teaserEl.contains(document.activeElement);
+    const selected = teaserEl.querySelector('[tabindex="0"]')?.dataset.point || q4.name;
+    const h = Math.round(Math.min(460, Math.max(330, w * 0.5)));
     const ml = 52, mr = 16, mt = 14, mb = 36, fs = w < 520 ? 10.5 : 12;
-    const rows = E.filter((r) => r.mix_kl != null && (r.group === 'ours_gguf' || (r.group === 'public' && r.maker !== 'Google QAT')));
+    const rows = E.filter((r) => r.mix_kl != null && (r.group === 'ours_gguf' || (r.group === 'public' && r.maker !== 'Google QAT'))).sort((a, b) => a.gb - b.gb);
     const x0 = 1.4, x1 = 3.75, y0 = 0.004, y1 = 1.0;
     const x = (v) => ml + (w - ml - mr) * (v - x0) / (x1 - x0), y = (v) => mt + (h - mt - mb) * (1 - (lg(v) - lg(y0)) / (lg(y1) - lg(y0)));
-    let s = '';
+    let s = '<g aria-hidden="true">';
     [0.005, 0.01, 0.03, 0.1, 0.3, 1].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/>` + T(ml - 8, y(t) + 4, t, { anchor: 'end', mono: true, size: fs - 1 }); });
     [1.5, 2, 2.5, 3, 3.5].forEach((t) => { s += T(x(t), h - 12, `${t.toFixed(1)} GB`, { anchor: 'middle', mono: true, size: fs - 1 }); });
     s += `<line x1="${ml}" x2="${w - mr}" y1="${h - mb}" y2="${h - mb}" stroke="var(--faint)"/>`;
     s += T(ml, mt - 2, 'KL to the original (lower is closer)', { size: fs - 1 });
-    s += `<polyline points="${gguf.map((r) => `${x(r.gb)},${y(r.mix_kl)}`).join(' ')}" fill="none" stroke="var(--gguf)" stroke-width="2.25"/>`;
-    const tipOf = (r) => esc(`<b>${r.name}</b><br>${gb(r.gb)} GB · KL ${kl(r.mix_kl)}${r.gsm8k != null ? ` · GSM8K ${pct(r.gsm8k)}` : ''}`);
-    const marks = [];
-    rows.forEach((r) => {
-      const cx = x(r.gb), cy = y(r.mix_kl);
-      const c = r.group === 'ours_gguf' ? 'var(--gguf)' : 'var(--pub)';
-      s += `<circle cx="${cx}" cy="${cy}" r="5" fill="${c}" stroke="var(--bg)" stroke-width="2" data-tip="${tipOf(r)}"/>`;
-      marks.push({ x: cx - 6, y: cy - 6, w: 12, h: 12 });
-    });
-    const labs = placeLabels(rows.filter((r) => r.group === 'public').sort((a, b) => a.mix_kl - b.mix_kl).map((r) => ({ x: x(r.gb), y: y(r.mix_kl), text: r.name, avoid: marks })),
+    s += `<polyline points="${gguf.map((r) => `${x(r.gb)},${y(r.mix_kl)}`).join(' ')}" fill="none" stroke="var(--gguf)" stroke-width="2.25"/></g>`;
+    const points = rows.map((r) => ({ r, x: x(r.gb), y: y(r.mix_kl) }));
+    const marks = points.map((p) => ({ x: p.x - 6, y: p.y - 6, w: 12, h: 12 }));
+    const labs = placeLabels(points.filter(({ r }) => r.group === 'public')
+      .sort((a, b) => Number(b.r === q4) - Number(a.r === q4) || a.r.mix_kl - b.r.mix_kl)
+      .map(({ r, x, y }) => ({ x, y, text: r.name, avoid: marks, callout: r === q4 })),
       { x0: ml, x1: w - mr, y0: mt, y1: h - mb }, fs - 1);
-    labs.forEach((l) => { s += T(l.bx, l.by, esc(l.text), { size: fs - 1, halo: true }); });
-    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="KL divergence against file size for Gemma 4 E2B: compiled files sit far below every public file of the same size">${s}</svg>`;
+    points.forEach(({ r, x: cx, y: cy }) => {
+      const c = r.group === 'ours_gguf' ? 'var(--gguf)' : 'var(--pub)';
+      const size = `${gb(r.gb)} GB`, scores = [`KL ${kl(r.mix_kl)}`];
+      if (r.gsm8k != null) scores.push(`GSM8K ${pct(r.gsm8k)}`);
+      const values = [size, ...scores];
+      const ariaName = [r.name, ...(r.name.endsWith(size) ? scores : values)].join(', ');
+      const label = labs.find((l) => l.text === r.name);
+      s += `<g data-point="${esc(r.name)}" data-tip="${esc(`<b>${esc(r.name)}</b><br>${values.join(' · ')}`)}" tabindex="${r.name === selected ? 0 : -1}" role="img" aria-label="${esc(ariaName)}">`;
+      if (label?.leader) s += `<line x1="${label.leader}" x2="${cx - 6}" y1="${cy}" y2="${cy}" stroke="var(--faint)"/>`;
+      s += `<circle cx="${cx}" cy="${cy}" r="10" fill="transparent"/><circle class="point-mark" cx="${cx}" cy="${cy}" r="5" fill="${c}" stroke="var(--bg)" stroke-width="2"/><circle class="point-ring" cx="${cx}" cy="${cy}" r="7"/>`;
+      if (label) s += T(label.bx, label.by, esc(label.text), { size: fs - 1, halo: true });
+      s += '</g>';
+    });
+    teaserEl.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="group" aria-label="KL divergence against file size for Gemma 4 E2B" aria-describedby="teaser-keys">${s}</svg>`;
+    if (focused) teaserEl.querySelector('[tabindex="0"]').focus({ preventScroll: true });
   }
+  function showFocusedPoint(point) {
+    const mark = point.querySelector('.point-mark').getBoundingClientRect();
+    showTip(point, mark.left + mark.width / 2, mark.top + mark.height / 2);
+  }
+  teaserEl.addEventListener('focusin', (event) => {
+    const point = event.target;
+    teaserEl.querySelector('[tabindex="0"]').setAttribute('tabindex', '-1');
+    point.setAttribute('tabindex', '0');
+    showFocusedPoint(point);
+  });
+  teaserEl.addEventListener('focusout', hideTip);
+  teaserEl.addEventListener('keydown', (event) => {
+    const points = [...teaserEl.querySelectorAll('[data-point]')];
+    const i = points.indexOf(event.target);
+    const next = { ArrowLeft: i - 1, ArrowUp: i - 1, ArrowRight: i + 1, ArrowDown: i + 1, Home: 0, End: points.length - 1 }[event.key];
+    if (i < 0 || next == null) return;
+    event.preventDefault();
+    const point = points[Math.max(0, Math.min(points.length - 1, next))];
+    if (point === event.target) showFocusedPoint(point);
+    else point.focus({ preventScroll: true });
+  });
 
   // ---- Figure 2: GSM8K
   function gsm() {
@@ -708,34 +811,50 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
   }
 
   // ---- Figure 3: bytes
+  const own341 = D.plans.at(-1);
+  const byteRows = [
+    { name: 'llama.cpp Q4_K_M', sub: `stock recipe · KL ${kl(q4.mix_kl)}`, parts: [['mat', 1.1145, 4.79], ['emb', 0.3303, 6.56], ['ple', 1.9268, 6.56], ['kept', 0.0405, 16]] },
+    { name: 'LookAtMyQuant GGUF', sub: `llama.cpp types · KL ${kl(g339.mix_kl)}`, parts: [['mat', 1.775, 7.62], ['emb', 0.3303, 6.56], ['ple', 1.2478, 4.25], ['kept', 0.0405, 16]] },
+    { name: 'LookAtMyQuant, own codes', sub: `KL ${kl(own.at(-1).mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept, 16]] },
+  ];
+  const partName = { mat: 'Weight matrices', emb: 'Embedding table', ple: 'Per-layer lookup table', kept: 'Kept at 16 bits' };
+  const bytesData = document.getElementById('bytes-data');
+  bytesData.querySelector('table').insertAdjacentHTML('beforeend', byteRows.map((r) =>
+    `<tbody><tr><th scope="rowgroup" colspan="3">${esc(r.name)}</th></tr>${r.parts.map(([part, size, bits]) =>
+      `<tr><th scope="row">${partName[part]}</th><td class="num">${gb(size)}</td><td class="num">${bits.toFixed(2)}</td></tr>`).join('')}</tbody>`).join(''));
+  bytesData.hidden = false;
   function bytes() {
-    const el = document.getElementById('bytes'), w = W(el), narrow = w < 560, ml = narrow ? 112 : 230, mr = 44, rh = 44;
-    const own341 = D.plans[D.plans.length - 1];
-    const rowsB = [
-      { name: 'llama.cpp Q4_K_M', sub: `stock recipe · KL ${kl(q4.mix_kl)}`, parts: [['mat', 1.1145, 4.79], ['emb', 0.3303, 6.56], ['ple', 1.9268, 6.56], ['kept', 0.0405]] },
-      { name: 'LookAtMyQuant GGUF', sub: `llama.cpp types · KL ${kl(g339.mix_kl)}`, parts: [['mat', 1.775, 7.62], ['emb', 0.3303, 6.56], ['ple', 1.2478, 4.25], ['kept', 0.0405]] },
-      { name: 'LookAtMyQuant, own codes', sub: `KL ${kl(own[own.length - 1].mix_kl)}`, parts: [['mat', own341.by.matrices, own341.bits.matrices], ['emb', own341.by.embed, own341.bits.embed], ['ple', own341.by.ple, own341.bits.ple], ['kept', own341.by.kept]] },
-    ];
-    const h = rowsB.length * rh + 28, x = (v) => ml + (w - ml - mr) * v / 3.5;
-    const COL = { mat: 'var(--mat)', emb: 'var(--emb)', ple: 'var(--ple)' }, NAME = { mat: 'Weight matrices', emb: 'Embedding table', ple: 'Per-layer table', kept: 'Kept at 16 bits' };
+    const el = document.getElementById('bytes'), w = W(el), narrow = w < 560, ml = narrow ? 14 : 230, mr = 44, rh = narrow ? 62 : 44;
+    const h = byteRows.length * rh + 28, x = (v) => ml + (w - ml - mr) * v / 3.5;
+    const COL = { mat: 'var(--mat)', emb: 'var(--emb)', ple: 'var(--ple)', kept: 'url(#hatch)' };
     let s = `<defs><pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="var(--bg)"/><line x1="0" y1="0" x2="0" y2="4" stroke="var(--emb)" stroke-width="2"/></pattern></defs>`;
     [0, 1, 2, 3].forEach((t) => { s += `<line x1="${x(t)}" x2="${x(t)}" y1="0" y2="${h - 22}" stroke="var(--line)"/>` + T(x(t), h - 6, `${t} GB`, { anchor: 'middle', mono: true, size: 11 }); });
-    rowsB.forEach((r, i) => {
-      const yy = i * rh + 4;
-      s += T(ml - 12, yy + 16, esc(r.name), { anchor: 'end', size: narrow ? 11 : 13, fill: 'var(--ink)', weight: 600 });
-      s += T(ml - 12, yy + 31, esc(r.sub), { anchor: 'end', size: narrow ? 9.5 : 11 });
+    byteRows.forEach((r, i) => {
+      const yy = i * rh + 4, barY = yy + (narrow ? 22 : 4);
+      if (narrow) {
+        s += T(ml, yy + 13, esc(r.name), { size: 13, fill: 'var(--ink)', weight: 600, halo: true });
+        s += T(w - 12, yy + 13, esc(r.sub), { anchor: 'end', size: 11, halo: true });
+      } else {
+        s += T(ml - 12, yy + 16, esc(r.name), { anchor: 'end', size: 13, fill: 'var(--ink)', weight: 600 });
+        s += T(ml - 12, yy + 33, esc(r.sub), { anchor: 'end', size: 11 });
+      }
       let a = 0;
       r.parts.forEach(([k, v, bits]) => {
         const xa = x(a) + (a ? 1 : 0), ww = Math.max(1, x(a + v) - x(a) - (a ? 1 : 0));
-        s += `<rect x="${xa}" y="${yy + 4}" width="${ww}" height="${rh - 16}" fill="${k === 'kept' ? 'url(#hatch)' : COL[k]}" data-tip="${esc(`<b>${r.name}</b><br>${NAME[k]}: ${v.toFixed(2)} GB${bits ? `, ${bits.toFixed(2)} bits per weight` : ''}`)}"/>`;
-        const lab = `${v.toFixed(2)} GB · ${bits ? bits.toFixed(2) : ''} bits`;
-        if (bits && ww > lab.length * 6.6 + 12) s += T(xa + 7, yy + 22, lab, { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
-        else if (bits && ww > 38) s += T(xa + 5, yy + 22, v.toFixed(2), { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
+        const rate = `${bits.toFixed(2)} bits`, size = gb(v);
+        const tip = `<b>${esc(r.name)}</b><br>${partName[k]}: ${size} GB${k === 'kept' ? '' : `, ${rate} per weight`}`;
+        s += `<g data-tip="${esc(tip)}"><rect x="${xa}" y="${barY}" width="${ww}" height="28" fill="${COL[k]}"/>`;
+        if (k !== 'kept') {
+          const full = `${size} GB · ${rate}`, compact = narrow ? rate : size;
+          const label = [full, compact].find((text) => ww > text.length * 6.6 + (text === full ? 12 : 8));
+          if (label) s += T(xa + 5, barY + 18, label, { mono: true, size: 10.5, fill: k === 'emb' ? 'var(--ink)' : 'var(--bg)' });
+        }
+        s += '</g>';
         a += v;
       });
-      s += T(x(a) + 6, yy + 22, a.toFixed(2), { mono: true, size: 11, fill: 'var(--ink)' });
+      s += T(x(a) + 6, barY + 18, gb(a), { mono: true, size: 11, fill: 'var(--ink)' });
     });
-    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Bytes by part for three files of about 3.4 GB; Q4_K_M spends 1.93 GB on the per-layer table, the compiled GGUF 1.25 GB">${s}</svg>`;
+    el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Bytes by part for three files of about 3.4 GB. Q4_K_M spends 1.93 GB on the per-layer table, the compiled GGUF 1.25 GB. Exact values are in the Data table below.">${s}</svg>`;
   }
 
   // ---- Figure 10: probe
@@ -799,10 +918,13 @@ footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line);
 
   // ---- Figure 13: layers
   function layers() {
-    const el = document.getElementById('layers'), w = W(el), h = 250, ml = 46, mr = 8, mt = 22, mb = 30, cap = 0.03;
+    const el = document.getElementById('layers'), w = W(el), narrow = w < 410, h = narrow ? 266 : 250;
+    const ml = 46, mr = 8, mt = narrow ? 38 : 22, mb = 30, cap = 0.03;
     const v = D.layer_tr3, n = v.length, bw = (w - ml - mr) / n, y = (a) => mt + (h - mt - mb) * (1 - Math.min(a, cap) / cap);
-    let s = `<rect x="${ml + bw * 15}" y="${mt - 16}" width="${bw * 20}" height="${h - mt - mb + 16}" fill="var(--soft)"/>`;
-    s += T(ml + bw * 15 + 6, mt - 4, 'reuse keys and values from layers 13–14', { size: 11 });
+    const reuseX = ml + bw * 15, shadeY = narrow ? 4 : 6;
+    let s = `<rect x="${reuseX}" y="${shadeY}" width="${bw * 20}" height="${h - mb - shadeY}" fill="var(--soft)"/>`;
+    s += narrow ? T(reuseX + 6, mt - 20, 'reuse keys and values', { size: 11 }) + T(reuseX + 6, mt - 4, 'from layers 13–14', { size: 11 })
+      : T(reuseX + 6, mt - 4, 'reuse keys and values from layers 13–14', { size: 11 });
     [0, 0.01, 0.02, 0.03].forEach((t) => { s += `<line x1="${ml}" x2="${w - mr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/>` + T(ml - 8, y(t) + 4, t.toFixed(2), { anchor: 'end', mono: true, size: 11 }); });
     v.forEach((a, i) => {
       const xx = ml + bw * i + 1;
@@ -1102,6 +1224,20 @@ function tnTable() {
     const scrub = document.getElementById('anim-scrub'), status = document.getElementById('anim-status'), play = document.getElementById('anim-play');
     scrub.max = N;
     let cur = -1;
+    const mapScroll = map.parentElement;
+    let activePiece;
+    function revealPiece() {
+      if (!activePiece || mapScroll.scrollWidth <= mapScroll.clientWidth) return;
+      const piece = activePiece.getBoundingClientRect(), viewport = mapScroll.getBoundingClientRect();
+      const padding = 8;
+      if (piece.width > mapScroll.clientWidth - 2 * padding) {
+        if (piece.right <= viewport.left || piece.left >= viewport.right) mapScroll.scrollLeft += piece.left - viewport.left - padding;
+      } else if (piece.left < viewport.left + padding) {
+        mapScroll.scrollLeft += piece.left - viewport.left - padding;
+      } else if (piece.right > viewport.right - padding) {
+        mapScroll.scrollLeft += piece.right - viewport.right + padding;
+      }
+    }
     const statusHtml = (k) => {
       const s = steps[k - 1];
       return (k === 0 ? 'Every piece at 16 bits.' : k === N ? `The finished plan.` : `Step ${k} of ${N}: <b>${esc(nameOf(s.p))}</b> → <b>${s.p.t}</b>.`) +
@@ -1120,10 +1256,12 @@ function tnTable() {
     }
     function show(k) {
       cur = k; scrub.value = k;
+      activePiece = null;
       rects.forEach((r, i) => {
-        const si = stepOf.get(r.p.id), done = si != null && si < k;
+        const si = stepOf.get(r.p.id), done = si != null && si < k, active = si === k - 1;
         els[i].setAttribute('fill', done ? colorOf(r.p.t) : colorOf('BF16'));
-        els[i].setAttribute('stroke', si === k - 1 ? 'var(--ink)' : 'none'); els[i].setAttribute('stroke-width', si === k - 1 ? 2 : 0);
+        els[i].setAttribute('stroke', active ? 'var(--ink)' : 'none'); els[i].setAttribute('stroke-width', active ? 2 : 0);
+        if (active) activePiece = els[i];
       });
       status.innerHTML = statusHtml(k);
       curve(k);
@@ -1136,7 +1274,7 @@ function tnTable() {
       show(0); raf = requestAnimationFrame(tick);
     }
     play.addEventListener('click', run);
-    scrub.addEventListener('input', () => { cancelAnimationFrame(raf); show(+scrub.value); });
+    scrub.addEventListener('input', () => { cancelAnimationFrame(raf); show(+scrub.value); revealPiece(); });
     fitStatus();
     if (document.fonts) document.fonts.ready.then(fitStatus);
     show(N);
@@ -1166,6 +1304,54 @@ function tnTable() {
   compact.addEventListener('change', setLayout);
   menu.addEventListener('click', event => {
     if (compact.matches && event.target.closest('a[href]')) menu.open = false;
+  });
+
+  // Keep the caption and row names available when the reader scrolls to another metric.
+  const widths = new ResizeObserver(entries => {
+    for (const { target } of entries) {
+      const box = target.closest('.paper-table');
+      if (box.scrollWidth > box.clientWidth + 1) box.tabIndex = 0;
+      else box.removeAttribute('tabindex');
+    }
+  });
+  document.querySelectorAll('.scroll-x > table, details > table').forEach((table, index) => {
+    let box = table.parentElement;
+    const disclosed = box.tagName === 'DETAILS';
+    const caption = disclosed ? box.querySelector(':scope > summary') : box.previousElementSibling;
+    if (!caption?.matches('summary, .tcap')) return;
+    if (disclosed) {
+      box = document.createElement('div');
+      table.before(box);
+      box.append(table);
+    }
+    if (!caption.id) caption.id = 'paper-table-label-' + (index + 1);
+    box.classList.add('paper-table');
+    box.setAttribute('role', 'region');
+    if (!table.hasAttribute('aria-label') && !table.hasAttribute('aria-labelledby')) {
+      table.setAttribute('aria-labelledby', caption.id);
+    }
+    const labelAttribute = table.hasAttribute('aria-labelledby') ? 'aria-labelledby' : 'aria-label';
+    box.setAttribute(labelAttribute, table.getAttribute(labelAttribute));
+    box.addEventListener('keydown', event => {
+      if (event.target !== box || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+      event.preventDefault();
+      const step = Math.round(box.clientWidth / 3);
+      box.scrollLeft += event.key === 'ArrowRight' ? step : -step;
+    });
+    function nameRows() {
+      for (const body of table.tBodies) {
+        for (const row of body.rows) {
+          const cell = row.cells[0];
+          if (cell?.tagName === 'TD' && cell.colSpan === 1) cell.setAttribute('role', 'rowheader');
+        }
+      }
+    }
+    nameRows();
+    // The compiler paper fills some tables from its data file after the initial render.
+    new MutationObserver(nameRows).observe(table, {childList: true, subtree: true});
+    widths.observe(box);
+    widths.observe(table);
   });
 })();
 </script>
