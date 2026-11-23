@@ -130,7 +130,9 @@ curl http://localhost:8080/v1/chat/completions -H 'Content-Type: application/jso
 
 `--context` (default 32768) caps prompt plus completion. A longer prompt gets llama.cpp's "exceeds the available context size" error, which agent clients take as a cue to compact. Requests have a 1 MiB JSON limit and receive HTTP 503 if the model is busy. The server binds to `127.0.0.1` by default. Set `LAMQ_API_KEY` to require bearer authentication on every API endpoint. Network listeners require a key. Use a TLS-terminating proxy for connections over an untrusted network.
 
-Add `--ui` to the serve command to chat at `http://127.0.0.1:8080/`. The page streams replies and shows per-turn token usage. Browser-origin API requests are disabled by default. For remote browser access, configure the HTTPS proxy to preserve the browser's `Host` header, including any nondefault port, and forward streaming responses without buffering. The page itself is public. Enter the API key in the page to use the model.
+Add `--ui` to the serve command to chat at `http://127.0.0.1:8080/`. The page streams replies and keeps the conversation and draft in the tab’s session storage across reloads. Open Settings to adjust reasoning or the output limit, and expand Usage under a reply for timing and token counts.
+
+Browser-origin API requests are disabled by default. For remote browser access, configure the HTTPS proxy to preserve the browser's `Host` header, including any nondefault port, and forward streaming responses without buffering. The page itself is public. Enter the API key in the page to use the model.
 
 For a trusted single-user MLX loopback server, `--prompt-cache N` keeps up to N prefilled KV snapshots (0 by default). An extension to an earlier prompt reuses its matching snapshot, and an identical retry prefills one token. The server disables reuse when requiring a bearer key or binding to a network address. In Python, pass `prompt_cache=PromptCache()` from `runtime_mlx.inkling` to `stream_dspark` or `stream_serial`.
 

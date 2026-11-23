@@ -1032,9 +1032,11 @@ function settle(reply, state, error = "") {
     turn.contextLimit = Number.isSafeInteger(usage?.prompt_tokens) && Number.isSafeInteger(usage?.completion_tokens) &&
       usage.prompt_tokens + usage.completion_tokens >= modelContext;
   }
-  updateLog(() => paintSettled(turn, view));
-  if (state !== "complete") setDraft(reply.draft);
-  updateControls();
+  updateLog(() => {
+    paintSettled(turn, view);
+    if (state !== "complete") setDraft(reply.draft);
+    updateControls();
+  });
   saveChat();
   saveDraft();
   announce(state === "complete" ? "Reply ready." : description(turn));
