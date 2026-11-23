@@ -34,6 +34,7 @@ nav.bar { bottom: max(16px, env(safe-area-inset-bottom)); }
 .label .line { display: block; font-weight: 400; font-size: 12.5px; color: #c9c8c0; }
 @media (min-width: 601px) { .label { font-size: 14px; padding: 5px 9px; } }
 .embed header, .film header, .film .bar { display: none; }
+.film .label { font-size: 26px; padding: 6px 12px; border-radius: 8px; }  /* names a film viewer can read at phone size */
 @media (max-width: 600px) {
   .bar { left: 16px; right: 16px; transform: none; max-width: none; }
   .bar button { padding: 7px 9px; }
@@ -273,7 +274,7 @@ const v = new THREE.Vector3();
 function placeCards() {
   const wide = camera.aspect >= 1;
   narrow = innerWidth < 600;
-  const compact = narrow || innerWidth < 1000 || innerHeight < 560;  // a small frame (the paper's embed) gets names only
+  const compact = FILM || narrow || innerWidth < 1000 || innerHeight < 560;  // the film and a small frame (the paper's embed) get names only
   const cw = narrow ? 0.3 : wide ? 0.78 : 0.62, ch = cw * CH / CW;
   ellipse = narrow ? [1.14, 1.5] : wide ? [2.05, 1.2] : [1.32, 1.8];
   cards.forEach((c) => {
@@ -356,14 +357,14 @@ function exampleTexture(k, answer) {
   const full = Math.ceil(Math.max(widths[0], widths[widths.length - 1] + aw) + 24), H = LINE * lines.length;
   const cv = document.createElement("canvas"); cv.width = full; cv.height = H;
   const g = cv.getContext("2d"); g.font = font; g.textBaseline = "middle";
-  g.fillStyle = "rgba(30, 30, 28, 0.92)"; g.beginPath(); g.roundRect(0, 10, full, H - 20, 14); g.fill();  // backing, so threads behind do not wash out the text
+  g.fillStyle = "#1e1e1c"; g.beginPath(); g.roundRect(0, 10, full, H - 20, 14); g.fill();  // a solid backing, so no thread shows through the text
   g.fillStyle = "#c9c8c0"; lines.forEach((l, n) => g.fillText(l, 12, LINE * n + LINE / 2));
   if (answer) { g.fillStyle = D.cards[k].colour; g.fillText(f.answer, 12 + widths[widths.length - 1], LINE * (lines.length - 1) + LINE / 2); }
   const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8;
   return { tx, aspect: full / H, lines: lines.length };
 }
 const exTex = D.fires.map((_, k) => [exampleTexture(k, false), exampleTexture(k, true)]);
-const example = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: exTex[0][0].tx, transparent: true, depthWrite: false, opacity: 0 }));
+const example = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: exTex[0][0].tx, transparent: true, depthWrite: false, depthTest: false, opacity: 0 }));
 example.renderOrder = 4; scene.add(example);
 
 // ---- two families named as examples of the two shapes, shown in the family placement's shape view
@@ -514,7 +515,7 @@ function frame() {
   });
   {  // the firing card's example: what the model wrote, then the engine's answer, on the side of the card away from its label
     const c = cards[fk], answered = s >= 1.9 && s < FIRE - 0.2, ex = exTex[fk][answered ? 1 : 0];
-    const h = Math.max(c.w, 0.01) * 0.21 * ex.lines * (narrow ? 0 : 1);  // one line of type is about a fifth of the card's width
+    const h = Math.max(c.w, 0.01) * (FILM ? 0.3 : 0.21) * ex.lines * (narrow ? 0 : 1);  // one line of type is about a fifth of the card's width (larger in the film)
     example.scale.set(h * ex.aspect, h, 1);
     const side = c.dock.y >= 0 ? -1 : 1;
     example.position.copy(c.mesh.position).add(new THREE.Vector3(0, side * (c.h / 2 + h / 2 + 0.1), 0).applyQuaternion(camera.quaternion));
