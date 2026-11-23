@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lamq chat</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --border: #e2e2dc;
+    --user: #1f4fd1; --user-text: #ffffff; --accent: #1f4fd1; --think: #f1f0ea; --err: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --panel: #1d1d1b; --text: #ecebe6; --muted: #9a9993; --border: #2f2f2c;
+      --user: #3d6bf0; --user-text: #ffffff; --accent: #7d9cf5; --think: #262623; --err: #f2867d;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  #status { font-size: 13px; color: var(--muted); }
+  .spacer { flex: 1; }
+  header label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  select, button, textarea, input {
+    font: inherit; color: var(--text); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  select, input { padding: 4px 6px; font-size: 13px; }
+  input[type=number] { width: 76px; }
+  input[type=password] { width: 140px; }
+  button { padding: 6px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  #log { flex: 1; overflow-y: auto; padding: 16px; }
+  .wrap { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+  .msg { padding: 10px 14px; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+  .msg.user { align-self: flex-end; background: var(--user); color: var(--user-text); }
+  .msg.assistant { align-self: flex-start; background: var(--panel); border: 1px solid var(--border); }
+  .msg.error .body { color: var(--err); }
+  details.think { margin-bottom: 6px; background: var(--think); border-radius: 8px; padding: 4px 10px; }
+  details.think summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+  details.think div { font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+  .stats { font-size: 12px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+  form { border-top: 1px solid var(--border); background: var(--panel); padding: 12px 16px; }
+  form .wrap { flex-direction: row; gap: 8px; align-items: flex-end; }
+  textarea { flex: 1; resize: none; padding: 8px 10px; min-height: 44px; max-height: 200px; }
+  .empty { color: var(--muted); text-align: center; margin-top: 15vh; }
+</style>
+</head>
+<body>
+<header>
+  <h1>lamq</h1>
+  <span id="status">connecting</span>
+  <span class="spacer"></span>
+  <label>Reasoning
+    <select id="effort">
+      <option value="">server default</option>
+      <option value="none">none</option>
+      <option value="minimal">minimal</option>
+      <option value="low">low</option>
+      <option value="medium">medium</option>
+      <option value="high">high</option>
+      <option value="xhigh">xhigh</option>
+      <option value="max">max</option>
+    </select>
+  </label>
+  <label>Max tokens <input id="maxTokens" type="number" min="1" placeholder="default"></label>
+  <label id="keyLabel" hidden>API key <input id="key" type="password" autocomplete="off"></label>
+  <button id="clear" type="button">New chat</button>
+</header>
+<main id="log"><div class="wrap" id="msgs"></div></main>
+<form id="form">
+  <div class="wrap">
+    <textarea id="input" rows="1" placeholder="Message (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button id="stop" type="button" hidden>Stop</button>
+    <button id="send" class="primary" type="submit">Send</button>
+  </div>
+</form>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const turns = [];
+let controller = null;
+
+function storage(op, value) {
+  // The key is kept for this tab only; storage can be unavailable (private windows, blocked site data).
+  try {
+    if (op === "get") return sessionStorage.getItem("lamq-key") || "";
+    if (value) sessionStorage.setItem("lamq-key", value); else sessionStorage.removeItem("lamq-key");
+  } catch (e) { /* the page works without it */ }
+  return "";
+}
+
+function headers() {
+  const h = { "Content-Type": "application/json" };
+  const key = $("key").value.trim();
+  if (key) h.Authorization = "Bearer " + key;
+  return h;
+}
+
+function showEmpty() {
+  const el = document.createElement("div");
+  el.className = "empty";
+  el.textContent = "Send a message to start.";
+  $("msgs").replaceChildren(el);
+}
+
+async function loadModel() {
+  try {
+    const r = await fetch("/v1/models", { headers: headers() });
+    if (r.status === 401) {
+      $("keyLabel").hidden = false;
+      $("status").textContent = "API key required";
+      return;
+    }
+    const j = await r.json();
+    const m = j.data && j.data[0];
+    $("status").textContent = m ? `${m.id}, ${m.context_length} context` : "no model";
+  } catch (e) {
+    $("status").textContent = "server unavailable";
+  }
+}
+
+function bubble(role) {
+  $("msgs").querySelector(".empty")?.remove();
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  $("msgs").appendChild(el);
+  return el;
+}
+
+function scrollDown() { $("log").scrollTop = $("log").scrollHeight; }
+
+function setBusy(busy) {
+  $("send").disabled = busy;
+  $("stop").hidden = !busy;
+  $("input").disabled = busy;
+}
+
+async function send(text) {
+  turns.push({ role: "user", content: text });
+  bubble("user").textContent = text;
+  const box = bubble("assistant");
+  const think = document.createElement("details");
+  think.className = "think";
+  think.hidden = true;
+  const summary = document.createElement("summary");
+  summary.textContent = "reasoning";
+  const thinkText = document.createElement("div");
+  think.append(summary, thinkText);
+  const body = document.createElement("div");
+  body.className = "body";
+  const stats = document.createElement("div");
+  stats.className = "stats";
+  box.append(think, body, stats);
+  scrollDown();
+
+  const req = { messages: turns, stream: true, stream_options: { include_usage: true } };
+  if ($("effort").value) req.reasoning_effort = $("effort").value;
+  const maxTokens = parseInt($("maxTokens").value, 10);
+  if (maxTokens > 0) req.max_tokens = maxTokens;
+
+  controller = new AbortController();
+  setBusy(true);
+  const t0 = performance.now();
+  let tFirst = null, reasoning = "", content = "", usage = null, pieces = 0;
+  try {
+    const res = await fetch("/v1/chat/completions", {
+      method: "POST", headers: headers(), body: JSON.stringify(req), signal: controller.signal,
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = (await res.json()).error.message || msg; } catch (e) { /* keep the status */ }
+      if (res.status === 401) $("keyLabel").hidden = false;
+      throw new Error(msg);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (data === "[DONE]") continue;
+        let evt;
+        try { evt = JSON.parse(data); } catch (e) { continue; }
+        if (evt.error) throw new Error(evt.error.message || "generation failed");
+        if (evt.usage) usage = evt.usage;
+        for (const ch of evt.choices || []) {
+          const d = ch.delta || {};
+          if (d.reasoning_content) {
+            reasoning += d.reasoning_content;
+            think.hidden = false;
+            thinkText.textContent = reasoning;
+          }
+          if (d.content) { content += d.content; body.textContent = content; }
+          if (d.content || d.reasoning_content) {
+            pieces++;
+            if (tFirst === null) tFirst = performance.now();
+          }
+        }
+      }
+      scrollDown();
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") {
+      body.textContent = (content ? content + "\n\n" : "") + "Error: " + e.message;
+      box.classList.add("error");
+    }
+  } finally {
+    const tEnd = performance.now();
+    const out = (usage && usage.completion_tokens) || pieces;
+    const parts = [];
+    if (tFirst !== null) {
+      parts.push(`first token ${((tFirst - t0) / 1000).toFixed(2)} s`);
+      const decodeS = (tEnd - tFirst) / 1000;
+      if (decodeS > 0 && out > 1) parts.push(`${((out - 1) / decodeS).toFixed(1)} tok/s`);
+    }
+    parts.push(`${out} tokens out`);
+    if (usage && usage.prompt_tokens) {
+      const cached = usage.prompt_tokens_details && usage.prompt_tokens_details.cached_tokens;
+      parts.push(`${usage.prompt_tokens} in` + (cached ? ` (${cached} cached)` : ""));
+    }
+    parts.push(`${((tEnd - t0) / 1000).toFixed(1)} s total`);
+    stats.textContent = parts.join(" | ");
+    if (content) {
+      const turn = { role: "assistant", content };
+      if (reasoning) turn.reasoning_content = reasoning;
+      turns.push(turn);
+    } else {
+      turns.pop();
+    }
+    controller = null;
+    setBusy(false);
+    $("input").focus();
+  }
+}
+
+$("form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = $("input").value.trim();
+  if (!text || controller) return;
+  $("input").value = "";
+  $("input").style.height = "";
+  send(text);
+});
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("form").requestSubmit(); }
+});
+$("input").addEventListener("input", (e) => {
+  e.target.style.height = "auto";
+  e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
+});
+$("stop").addEventListener("click", () => controller && controller.abort());
+$("clear").addEventListener("click", () => {
+  if (controller) controller.abort();
+  turns.length = 0;
+  showEmpty();
+});
+$("key").addEventListener("change", () => { storage("set", $("key").value.trim()); loadModel(); });
+
+$("key").value = storage("get");
+if ($("key").value) $("keyLabel").hidden = false;
+showEmpty();
+loadModel();
+</script>
+</body>
+</html>
