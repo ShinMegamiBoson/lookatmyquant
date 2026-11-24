@@ -13,6 +13,7 @@ steps (position lives on the device), so `generate.py` can capture a step in a C
 """
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
@@ -121,8 +122,22 @@ _COMPILE = os.environ.get("LAMQ_CUDA_COMPILE", "1") != "0"
 torch._dynamo.config.cache_size_limit = max(torch._dynamo.config.cache_size_limit, 64)
 
 
+@functools.lru_cache(maxsize=None)
+def _inductor_handles_bf16() -> bool:
+    """Inductor refuses bf16 graphs below SM 80 (Turing and older), and fullgraph=True turns that into an error."""
+    return not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] >= 8
+
+
 def _fused(fn):
-    return torch.compile(fn, fullgraph=True, dynamic=True) if _COMPILE else fn
+    if not _COMPILE:
+        return fn
+    compiled = torch.compile(fn, fullgraph=True, dynamic=True)
+
+    @functools.wraps(fn)
+    def run(*args, **kwargs):
+        return (compiled if _inductor_handles_bf16() else fn)(*args, **kwargs)
+
+    return run
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
