@@ -59,7 +59,10 @@ class Cuda:
         self.call("cuDevicePrimaryCtxRetain", ct.byref(self.context), self.device)
         try:
             self.call("cuCtxSetCurrent", self.context)
-            ptx = ct.create_string_buffer(Path(__file__).with_name("matvec.ptx").read_bytes())
+            ptx = Path(__file__).with_name("matvec.ptx").read_bytes()
+            if self.compute_capability() < (8, 0):  # the packed kernel uses nothing newer than SM 75
+                ptx = ptx.replace(b".target sm_80", b".target sm_75")
+            ptx = ct.create_string_buffer(ptx)
             self.call("cuModuleLoadData", ct.byref(self.module), ptx)
             self.call("cuModuleGetFunction", ct.byref(self.kernel), self.module, ct.c_char_p(b"packed_matvec"))
         except Exception:
@@ -78,6 +81,12 @@ class Cuda:
             yield
         finally:
             self.call("cuCtxPopCurrent_v2", ct.byref(active))
+
+    def compute_capability(self):
+        major, minor = I32(), I32()
+        self.call("cuDeviceGetAttribute", ct.byref(major), I32(75), self.device)  # COMPUTE_CAPABILITY_MAJOR
+        self.call("cuDeviceGetAttribute", ct.byref(minor), I32(76), self.device)  # COMPUTE_CAPABILITY_MINOR
+        return major.value, minor.value
 
     def device_name(self):
         name = ct.create_string_buffer(256)

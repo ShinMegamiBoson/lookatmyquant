@@ -1,5 +1,7 @@
 """CUDA text decoder primitives, assembled by the NVIDIA driver from PTX."""
 
+import re
+
 HEADER = (".version 7.8\n.target sm_80\n.address_size 64\n"
           ".extern .shared .align 4 .b8 dynamic_shared[];\n")
 
@@ -348,6 +350,117 @@ write_loop:
 write:
     mad.wide.u32 %rd4, %r1, 4, %rd2;
     st.global.f32 [%rd4], %f1;
+    add.u32 %r1, %r1, 128;
+    bra write_loop;
+""", batched="x out")
+
+
+# A width with a Paley factor is `sylvester` rows of `base` columns: a Paley mix along each row, then an independent
+# Sylvester transform down each column. Blocks own groups of `cols` columns, so the rotation spreads over many SMs
+# instead of one, with the same arithmetic order per element as `hadamard`.
+ROTATE_PALEY = entry("hadamard_paley", {
+    "u64": "x signs paley out", "u32": "width base inverse sylvester cols", "f32": "scale",
+}, """
+    mov.u32 %r1, %tid.x;
+    mov.u32 %r2, %ctaid.y;
+    mul.lo.u32 %r3, %r2, %n1;
+    mad.wide.u32 %rd1, %r3, 4, %d1;
+    mad.wide.u32 %rd2, %r3, 4, %d4;
+    mov.u32 %r16, %ctaid.x;
+    mul.lo.u32 %r16, %r16, %n5;
+    mov.u64 %rd3, dynamic_shared;
+    setp.ne.u32 %p4, %n3, 0;
+    mul.lo.u32 %r17, %n4, %n5;
+paley_outer:
+    setp.ge.u32 %p1, %r1, %r17;
+    @%p1 bra mixed;
+    div.u32 %r18, %r1, %n5;
+    rem.u32 %r19, %r1, %n5;
+    add.u32 %r20, %r16, %r19;
+    mov.b32 %f1, 0;
+    setp.ge.u32 %p3, %r20, %n2;
+    @%p3 bra paley_store;
+    mul.lo.u32 %r5, %r18, %n2;
+    mov.u32 %r6, 0;
+paley_loop:
+    add.u32 %r7, %r5, %r6;
+    mad.wide.u32 %rd4, %r7, 4, %rd1;
+    ld.global.f32 %f2, [%rd4];
+    @%p4 bra paley_matrix;
+    mad.wide.u32 %rd4, %r7, 4, %d2;
+    ld.global.f32 %f3, [%rd4];
+    mul.f32 %f2, %f2, %f3;
+paley_matrix:
+    mad.lo.u32 %r8, %r20, %n2, %r6;
+    mad.lo.u32 %r9, %r6, %n2, %r20;
+    selp.u32 %r8, %r9, %r8, %p4;
+    mad.wide.u32 %rd4, %r8, 4, %d3;
+    ld.global.f32 %f3, [%rd4];
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+    add.u32 %r6, %r6, 1;
+    setp.lt.u32 %p2, %r6, %n2;
+    @%p2 bra paley_loop;
+paley_store:
+    mad.wide.u32 %rd4, %r1, 4, %rd3;
+    st.shared.f32 [%rd4], %f1;
+    add.u32 %r1, %r1, 128;
+    bra paley_outer;
+mixed:
+    bar.sync 0;
+    mov.u32 %r9, 1;
+    shr.u32 %r11, %r17, 1;
+butterfly:
+    setp.ge.u32 %p1, %r9, %n4;
+    @%p1 bra done;
+    mov.u32 %r1, %tid.x;
+    shl.b32 %r10, %r9, 1;
+butterfly_loop:
+    setp.ge.u32 %p1, %r1, %r11;
+    @%p1 bra butterfly_sync;
+    div.u32 %r12, %r1, %n5;
+    rem.u32 %r19, %r1, %n5;
+    div.u32 %r13, %r12, %r9;
+    rem.u32 %r14, %r12, %r9;
+    mad.lo.u32 %r13, %r13, %r10, %r14;
+    add.u32 %r14, %r13, %r9;
+    mad.lo.u32 %r13, %r13, %n5, %r19;
+    mad.lo.u32 %r14, %r14, %n5, %r19;
+    mad.wide.u32 %rd4, %r13, 4, %rd3;
+    mad.wide.u32 %rd5, %r14, 4, %rd3;
+    ld.shared.f32 %f1, [%rd4];
+    ld.shared.f32 %f2, [%rd5];
+    add.f32 %f3, %f1, %f2;
+    sub.f32 %f4, %f1, %f2;
+    st.shared.f32 [%rd4], %f3;
+    st.shared.f32 [%rd5], %f4;
+    add.u32 %r1, %r1, 128;
+    bra butterfly_loop;
+butterfly_sync:
+    bar.sync 0;
+    mov.u32 %r9, %r10;
+    bra butterfly;
+done:
+    mov.u32 %r1, %tid.x;
+write_loop:
+    setp.ge.u32 %p1, %r1, %r17;
+    @%p1 ret;
+    div.u32 %r18, %r1, %n5;
+    rem.u32 %r19, %r1, %n5;
+    add.u32 %r20, %r16, %r19;
+    setp.ge.u32 %p3, %r20, %n2;
+    @%p3 bra write_next;
+    mad.wide.u32 %rd4, %r1, 4, %rd3;
+    ld.shared.f32 %f1, [%rd4];
+    mul.f32 %f1, %f1, %a1;
+    mad.lo.u32 %r7, %r18, %n2, %r20;
+    @!%p4 bra write;
+    mad.wide.u32 %rd4, %r7, 4, %d2;
+    ld.global.f32 %f3, [%rd4];
+    mul.f32 %f1, %f1, %f3;
+write:
+    mad.wide.u32 %rd4, %r7, 4, %rd2;
+    st.global.f32 [%rd4], %f1;
+write_next:
     add.u32 %r1, %r1, 128;
     bra write_loop;
 """, batched="x out")
@@ -938,10 +1051,33 @@ sync:
 """, ".shared .align 4 .b32 max_values[128], max_ids[128];")
 
 
-def source():
+_BF16_ROUND = re.compile(r"cvt\.rn\.bf16\.f32 %half, (%\w+); cvt\.f32\.bf16 (%\w+), %half;")
+
+
+def _bf16_round_sm75(match):
+    """`cvt.rn.bf16.f32` needs SM 80: round to nearest even on the bits instead (NaN stays a quiet NaN)."""
+    src, dest = match.groups()
+    return (f"mov.b32 %bf0, {src}; shr.u32 %bf1, %bf0, 16; and.b32 %bf1, %bf1, 1; add.u32 %bf1, %bf1, 32767; "
+            f"add.u32 %bf1, %bf0, %bf1; and.b32 %bf1, %bf1, 0xFFFF0000; testp.notanumber.f32 %bfnan, {src}; "
+            f"@%bfnan or.b32 %bf1, %bf0, 0x00400000; @%bfnan and.b32 %bf1, %bf1, 0xFFFF0000; mov.b32 {dest}, %bf1;")
+
+
+def for_turing(ptx):
+    """Retarget SM 80 PTX to SM 75 (Turing). Only the bf16 conversion is SM 80-only in these kernels."""
+    ptx = ptx.replace(".target sm_80", ".target sm_75")
+    ptx = ptx.replace(".reg .b16 %half;", ".reg .b16 %half; .reg .b32 %bf<2>; .reg .pred %bfnan;")
+    return _BF16_ROUND.sub(_bf16_round_sm75, ptx)
+
+
+def source(capability=(8, 0)):
+    ptx = _source()
+    return ptx if capability >= (8, 0) else for_turing(ptx)
+
+
+def _source():
     return "".join((
         HEADER, ADD, CAST, ATTN_GATE, MESSAGE, normalize("rms_norm"), normalize("clip_norm", clip=True),
         dense("dense_matvec"), dense("message_down", split_bf16=True),
-        ROTATE, PACKED_ROW, BLOCK_SCORES, BLOCK_MIX, CONVOLUTION,
+        ROTATE, ROTATE_PALEY, PACKED_ROW, BLOCK_SCORES, BLOCK_MIX, CONVOLUTION,
         ATTENTION_SCORES, ATTENTION_MIX, KV_STORE, ROUTE, SWIGLU, MIX_EXPERTS, HEAD_SCATTER, ARGMAX,
     ))
