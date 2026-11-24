@@ -321,7 +321,6 @@ python pack_drafter.py path/to/drafter path/to/drafter-4bit
 | `cache/codes/` | The e-means trellis codebooks at 1 to 4 bits |
 | `results/batch/`, `results/gguf/` | The measurements and plan runs behind the site |
 | `results/COMPILER.md`, `results/COMPLETENESS.md` | Write-ups of the compiler on SmolLM2-360M and Qwen3.5-4B, and of the reproduction check |
-| `site/` | The website: the front page, and each paper in its own folder (`compiler/`, `2/`, `grafting/`). Run `python3 -m http.server 8000` inside it, then visit http://localhost:8000 |
 | `tests/` | Tests of the grammar and the codes |
 
 ## The tests need SmolLM2-360M and WikiText-2
@@ -350,7 +349,7 @@ python tests/test_reallocation.py
 
 - **Model weights.** Everything downloads from Hugging Face. The Qwen3.5-4B jobs expect that model in `models/Qwen3.5-4B` on the volume.
 - **Benchmark copies.** `eval_tasks.py` downloads its benchmarks. On an offline machine it reads exported copies from `data/bench/`, which are not here. The Modal images run offline, so cache the benchmarks on the volume first.
-- **The script that assembled `site/data.json`.** It was a set of one-off steps. The source numbers are all in `results/`.
+- **The website.** The papers are at [lookatmyquant.com](https://lookatmyquant.com/). The script that assembled the compiler paper's `data.json` was a set of one-off steps, and its source numbers are all in `results/`.
 - **LookAtMyQuant 2's dense weights and result files.** The 1.2 GB file is a release in the packed format. The dense weights the benchmarks ran on are not published, and neither are the per-problem results behind `site2/data.json` or the script that writes the page's numbers from them.
 - **The drafter at 16 bits.** The drafter as trained is 1.8 GB and is not published. The 4-bit one is a release file, and `modal_drafter.py` trains it.
 

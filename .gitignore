@@ -11,3 +11,5 @@ cache/codes/*
 !results/completeness_*.log
 runtime_mlx/ref/
 !cache/codes/trellis_L12_k[1-4]_T256_s0_ema.pt
+/site
+/paper_navigation.py
