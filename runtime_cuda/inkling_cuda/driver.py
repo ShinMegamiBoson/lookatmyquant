@@ -13,6 +13,9 @@ PTR = ct.c_void_p
 I32 = ct.c_int
 SIZE = ct.c_size_t
 F32 = ct.c_float
+TOKEN_TILE = 8  # tokens per block in packed_matvec_tokens
+ROUTED_MAX_TOKENS = 16  # packed_matvec_routed_tokens lists at most this many (token, slot) pairs per expert
+MATVEC_TOKENS = os.environ.get("LAMQ_CUDA_MATVEC_TOKENS", "1") != "0"
 
 
 def _driver():
@@ -65,6 +68,12 @@ class Cuda:
             ptx = ct.create_string_buffer(ptx)
             self.call("cuModuleLoadData", ct.byref(self.module), ptx)
             self.call("cuModuleGetFunction", ct.byref(self.kernel), self.module, ct.c_char_p(b"packed_matvec"))
+            self.kernel_tokens = PTR()
+            self.call("cuModuleGetFunction", ct.byref(self.kernel_tokens), self.module,
+                      ct.c_char_p(b"packed_matvec_tokens"))
+            self.kernel_routed_tokens = PTR()
+            self.call("cuModuleGetFunction", ct.byref(self.kernel_routed_tokens), self.module,
+                      ct.c_char_p(b"packed_matvec_routed_tokens"))
         except Exception:
             self.close()
             raise
@@ -140,6 +149,17 @@ class Cuda:
                   stream if stream is not None else PTR(), params, PTR())
 
     def packed_project(self, slab, x, experts, out, slots, x_div, stream=None, *, batch=1, stride=0):
+        if batch > 1 and slots == 1 and MATVEC_TOKENS:
+            # One decode of each weight serves a tile of tokens (speculative checks and prefill chunks).
+            self.launch(
+                self.kernel_tokens, ((slab.rows + 3) // 4, 1, (batch + TOKEN_TILE - 1) // TOKEN_TILE), 128,
+                x, slab.codes, slab.scales, slab.table, experts, out,
+                U32(slab.rows), U32(slab.width), U32(slab.words), U32(slab.bits),
+                U32(slab.group), U32(slab.hash_shift), U32(slab.multiplier),
+                U32(x_div), U32(slab.lloyd), U64(), U64(), U32(stride), U32(1), U32(slab.rows), U32(batch),
+                stream=stream,
+            )
+            return
         self.launch(
             self.kernel, ((slab.rows + 3) // 4, slots, batch), 128,
             x, slab.codes, slab.scales, slab.table, experts, out,
@@ -148,7 +168,16 @@ class Cuda:
             U32(x_div), U32(slab.lloyd), U64(), U64(), U32(stride), U32(1), U32(slab.rows), stream=stream,
         )
 
-    def routed_project(self, x, experts, out, slots, x_div, rows, width, descriptors, mapping, *, batch=1, stride=0, groups=1, group_rows=None):
+    def routed_project(self, x, experts, out, slots, x_div, rows, width, descriptors, mapping, *, batch=1, stride=0, groups=1, group_rows=None, expert_count=None):
+        if batch > 1 and expert_count and MATVEC_TOKENS and batch <= ROUTED_MAX_TOKENS:
+            # One block per (row tile, expert): each selected expert is decoded once for every token that chose it.
+            self.launch(
+                self.kernel_routed_tokens, ((rows + 3) // 4, expert_count, 1), 128,
+                x, experts, out, descriptors, mapping,
+                U32(rows), U32(width), U32(slots), U32(x_div), U32(stride), U32(groups), U32(group_rows or rows),
+                U32(batch),
+            )
+            return
         self.launch(
             self.kernel, ((rows + 3) // 4, slots, batch), 128,
             x, U64(), U64(), U64(), experts, out,
