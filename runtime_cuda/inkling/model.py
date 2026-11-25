@@ -13,6 +13,7 @@ steps (position lives on the device), so `generate.py` can capture a step in a C
 """
 from __future__ import annotations
 
+import functools
 import json
 import math
 import os
@@ -121,8 +122,34 @@ _COMPILE = os.environ.get("LAMQ_CUDA_COMPILE", "1") != "0"
 torch._dynamo.config.cache_size_limit = max(torch._dynamo.config.cache_size_limit, 64)
 
 
+@functools.lru_cache(maxsize=None)
+def _inductor_handles_bf16() -> bool:
+    """Inductor refuses graphs with bf16 inputs or outputs below SM 80 (Turing and older)."""
+    return not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] >= 8
+
+
 def _fused(fn):
-    return torch.compile(fn, fullgraph=True, dynamic=True) if _COMPILE else fn
+    if not _COMPILE:
+        return fn
+    compiled = torch.compile(fn, fullgraph=True, dynamic=True)
+    eager = False
+
+    @functools.wraps(fn)
+    def run(*args, **kwargs):
+        # Below SM 80 most helpers still compile; the few with bf16 inputs or outputs are skipped by Inductor, which
+        # fullgraph=True raises before anything runs. Those few then run eagerly from their first call on.
+        nonlocal eager
+        if eager:
+            return fn(*args, **kwargs)
+        try:
+            return compiled(*args, **kwargs)
+        except RuntimeError as error:
+            if _inductor_handles_bf16() or "found no compiled frames" not in str(error):
+                raise
+            eager = True
+            return fn(*args, **kwargs)
+
+    return run
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:

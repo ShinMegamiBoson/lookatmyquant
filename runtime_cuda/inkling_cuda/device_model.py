@@ -52,7 +52,7 @@ class Weight:
 class Device:
     def __init__(self, cuda):
         self.cuda = cuda
-        self.module = cuda.load_module(source())
+        self.module = cuda.load_module(source(cuda.compute_capability()))
         self.functions = {}
         self.bases = {}
         self.zero_index = cuda.upload(np.zeros(1, dtype=np.int32))
@@ -97,8 +97,16 @@ class Device:
             _, base = hadamard_factors(width)
             self.bases[width] = (base.shape[0], self.weight(base).ptr) if base.shape[1] > 1 else (1, NULL)
         base, table = self.bases[width]
-        self.launch("hadamard", (x, signs.ptr, table, out, U32(width), U32(base),
-                                U32(inverse), F32(width ** -0.5)), (rows, 1, 1), shared=4 * width)
+        if base == 1:
+            self.launch("hadamard", (x, signs.ptr, table, out, U32(width), U32(base),
+                                    U32(inverse), F32(width ** -0.5)), (rows, 1, 1), shared=4 * width)
+            return
+        # Spread the columns over blocks of THREADS threads: each block mixes `cols` columns, then transforms them.
+        sylvester = width // base
+        cols = max(1, THREADS // sylvester)
+        self.launch("hadamard_paley", (x, signs.ptr, table, out, U32(width), U32(base), U32(inverse),
+                                       U32(sylvester), U32(cols), F32(width ** -0.5)),
+                    (tiles(base, cols), rows, 1), shared=4 * sylvester * cols)
 
 
 class DeviceLinear:
@@ -130,6 +138,7 @@ class DeviceExperts:
         self.mapping = device.weight(experts.mapping)
         self.rows, self.width = experts.rows, experts.width
         self.groups, self.group_rows = experts.groups, experts.group_rows
+        self.expert_count = experts.mapping.shape[0]
         descriptors = np.zeros((len(EXPERT_FORMATS), 6), dtype=np.uint64)
         fields = descriptors.view(np.uint32).reshape(len(EXPERT_FORMATS), 12)
         for i, slab in experts.slabs.items():
@@ -144,7 +153,8 @@ class DeviceExperts:
         self.device.rotate(x, self.signs, rotated, rows=slots // x_div)
         self.device.cuda.routed_project(row(rotated, 0), row(selected, 0), row(out, 0), slots, x_div,
                                         self.rows, self.width, self.descriptors.ptr, self.mapping.ptr,
-                                        groups=self.groups, group_rows=self.group_rows, **batch_params(rotated))
+                                        groups=self.groups, group_rows=self.group_rows,
+                                        expert_count=self.expert_count, **batch_params(rotated))
         scratch.mark = mark
         return out
 
