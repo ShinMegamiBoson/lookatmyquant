@@ -4286,8 +4286,35 @@ def _make_fp8_quantize_f16_kernel():
     )
 
 
-_H128_HEADER = """
-inline float4 h128_vec(float4 v, uint lane) {
+_RHT128_MASKS_U32 = (0x3C620098, 0xDAF192B1, 0xF8CAA079, 0x447A5DC5)
+
+_LM_KV_CONSTANTS: dict[int, tuple[tuple[float, ...], tuple[float, ...]]] = {
+    2: (
+        (-1.5104176, -0.4527800, 0.4527800, 1.5104176),
+        (-0.9815988, 0.0, 0.9815988),
+    ),
+    3: (
+        (-2.1519457, -1.3439093, -0.7560053, -0.2450942, 0.2450942, 0.7560053, 1.3439093, 2.1519457),
+        (-1.7479275, -1.0499573, -0.5005497, 0.0, 0.5005497, 1.0499573, 1.7479275),
+    ),
+    4: (
+        (
+            -2.7325896, -2.0690172, -1.6180464, -1.2562312,
+            -0.9423405, -0.6567591, -0.3880483, -0.1283950,
+            0.1283950, 0.3880483, 0.6567591, 0.9423405,
+            1.2562312, 1.6180464, 2.0690172, 2.7325896,
+        ),
+        (
+            -2.4008034, -1.8435318, -1.4371388, -1.0992858,
+            -0.7995498, -0.5224037, -0.2582217, 0.0,
+            0.2582217, 0.5224037, 0.7995498, 1.0992858,
+            1.4371388, 1.8435318, 2.4008034,
+        ),
+    ),
+}
+
+_H128_HEADER = f"""
+inline float4 h128_vec(float4 v, uint lane) {{
     const float a0 = v.x + v.y, b0 = v.x - v.y;
     const float a1 = v.z + v.w, b1 = v.z - v.w;
     v = float4(a0 + a1, b0 + b1, a0 - a1, b0 - b1);
@@ -4303,8 +4330,238 @@ inline float4 h128_vec(float4 v, uint lane) {
     o = float4(simd_shuffle_xor(v.x, 16u), simd_shuffle_xor(v.y, 16u), simd_shuffle_xor(v.z, 16u), simd_shuffle_xor(v.w, 16u));
     v = (lane & 16u) ? (o - v) : (v + o);
     return v * 0.08838834764831845f;
-}
+}}
+
+constant uint RHT128_MASK_X = 0x{_RHT128_MASKS_U32[0]:08x}u;
+constant uint RHT128_MASK_Y = 0x{_RHT128_MASKS_U32[1]:08x}u;
+constant uint RHT128_MASK_Z = 0x{_RHT128_MASKS_U32[2]:08x}u;
+constant uint RHT128_MASK_W = 0x{_RHT128_MASKS_U32[3]:08x}u;
+
+inline float4 rht128_sign_vec(uint lane) {{
+    return float4(
+        ((RHT128_MASK_X >> lane) & 1u) ? -1.0f : 1.0f,
+        ((RHT128_MASK_Y >> lane) & 1u) ? -1.0f : 1.0f,
+        ((RHT128_MASK_Z >> lane) & 1u) ? -1.0f : 1.0f,
+        ((RHT128_MASK_W >> lane) & 1u) ? -1.0f : 1.0f
+    );
+}}
+
+inline float4 rht128_vec(float4 v, uint lane) {{
+    return h128_vec(v * rht128_sign_vec(lane), lane);
+}}
+
+inline float4 irht128_vec(float4 v, uint lane) {{
+    return h128_vec(v, lane) * rht128_sign_vec(lane);
+}}
 """
+
+
+def _build_lm_kv_header() -> str:
+    parts = [_H128_HEADER]
+    for bits, (levels, mids) in _LM_KV_CONSTANTS.items():
+        lv_s = ", ".join(f"{v:.7f}f" for v in levels)
+        md_s = ", ".join(f"{v:.7f}f" for v in mids)
+        parts.append(f"constant float LM{bits}_LUT[{1 << bits}] = {{{lv_s}}};")
+        parts.append(f"constant float LM{bits}_MID[{(1 << bits) - 1}] = {{{md_s}}};")
+    parts.append(
+        """
+inline uint lm_quant_b2(float val) {
+    return uint(val >= LM2_MID[0]) + uint(val >= LM2_MID[1]) + uint(val >= LM2_MID[2]);
+}
+
+inline uint lm_quant_b3(float val) {
+    uint c = 0u;
+    #pragma unroll
+    for (uint i = 0u; i < 7u; i++) c += uint(val >= LM3_MID[i]);
+    return c;
+}
+
+inline uint lm_quant_b4(float val) {
+    uint c = 0u;
+    #pragma unroll
+    for (uint i = 0u; i < 15u; i++) c += uint(val >= LM4_MID[i]);
+    return c;
+}
+
+inline float4 lm_deq4_f32_b2(const device uchar* row, uint lane, half sc) {
+    const uchar p = row[lane];
+    const float sf = float(sc);
+    return float4(LM2_LUT[p & 3u], LM2_LUT[(p >> 2) & 3u], LM2_LUT[(p >> 4) & 3u], LM2_LUT[p >> 6]) * sf;
+}
+
+inline float4 lm_deq4_f32_b3(const device uchar* row, uint lane, half sc) {
+    const uint off = (lane * 3u) >> 1;
+    const uint w12 = (uint(row[off]) | (uint(row[off + 1u]) << 8)) >> ((lane & 1u) * 4u);
+    const float sf = float(sc);
+    return float4(LM3_LUT[w12 & 7u], LM3_LUT[(w12 >> 3) & 7u], LM3_LUT[(w12 >> 6) & 7u], LM3_LUT[(w12 >> 9) & 7u]) * sf;
+}
+
+inline float4 lm_deq4_f32_b4(const device uchar* row, uint lane, half sc) {
+    const uchar2 p = *((const device uchar2*)(row) + lane);
+    const float sf = float(sc);
+    return float4(LM4_LUT[p.x & 0xFu], LM4_LUT[p.x >> 4], LM4_LUT[p.y & 0xFu], LM4_LUT[p.y >> 4]) * sf;
+}
+
+inline half4 lm_deq4_b2(const device uchar* row, uint lane, half sc) { return half4(lm_deq4_f32_b2(row, lane, sc)); }
+inline half4 lm_deq4_b3(const device uchar* row, uint lane, half sc) { return half4(lm_deq4_f32_b3(row, lane, sc)); }
+inline half4 lm_deq4_b4(const device uchar* row, uint lane, half sc) { return half4(lm_deq4_f32_b4(row, lane, sc)); }
+"""
+    )
+    return "\n".join(parts)
+
+
+_LM_KV_HEADER = _build_lm_kv_header()
+
+
+@lru_cache(maxsize=2)
+def _make_rht128_rows_f32_kernel(inv: bool = False):
+    fn = "irht128_vec" if inv else "rht128_vec"
+    src = f"""
+    const uint row = threadgroup_position_in_grid.y;
+    const uint lane = thread_index_in_simdgroup;
+    const float4 v = *((const device float4*)(x + (ulong)row * 128u) + lane);
+    *((device float4*)(out + (ulong)row * 128u) + lane) = {fn}(v, lane);
+    """
+    return mx.fast.metal_kernel(
+        name=f"ink_{'irht128' if inv else 'rht128'}_rows_f32",
+        input_names=["x"],
+        output_names=["out"],
+        header=_H128_HEADER,
+        source=src,
+    )
+
+
+def rht128_rows_f32(x: mx.array) -> mx.array:
+    xc = mx.contiguous(x.astype(mx.float32))
+    assert xc.shape[-1] == 128
+    n_rows = xc.size // 128
+    if n_rows == 0:
+        return xc
+    return _make_rht128_rows_f32_kernel(inv=False)(
+        inputs=[xc.reshape(-1)],
+        grid=(32, n_rows, 1),
+        threadgroup=(32, 1, 1),
+        output_shapes=[xc.shape],
+        output_dtypes=[mx.float32],
+    )[0]
+
+
+def irht128_rows_f32(x: mx.array) -> mx.array:
+    xc = mx.contiguous(x.astype(mx.float32))
+    assert xc.shape[-1] == 128
+    n_rows = xc.size // 128
+    if n_rows == 0:
+        return xc
+    return _make_rht128_rows_f32_kernel(inv=True)(
+        inputs=[xc.reshape(-1)],
+        grid=(32, n_rows, 1),
+        threadgroup=(32, 1, 1),
+        output_shapes=[xc.shape],
+        output_dtypes=[mx.float32],
+    )[0]
+
+
+@lru_cache(maxsize=3)
+def _make_kv_rht128_lm_quantize_kernel(bits: int):
+    assert bits in (2, 3, 4)
+    if bits == 4:
+        pack_src = "*((device uchar2*)(q_out + (ulong)row * 64u) + lane) = uchar2(uchar(c0 | (c1 << 4)), uchar(c2 | (c3 << 4)));"
+    elif bits == 3:
+        pack_src = """
+    const uint p12 = c0 | (c1 << 3) | (c2 << 6) | (c3 << 9);
+    const uint p_next = simd_shuffle_down(p12, 1u);
+    const uint r = lane & 3u;
+    if (r < 3u) {
+        const uint g = lane >> 2;
+        device ushort* u16 = (device ushort*)(q_out + (ulong)row * 48u) + g * 3u;
+        if (r == 0u) u16[0] = ushort(p12 | ((p_next & 0xFu) << 12));
+        else if (r == 1u) u16[1] = ushort((p12 >> 4) | ((p_next & 0xFFu) << 8));
+        else u16[2] = ushort((p12 >> 8) | ((p_next & 0xFFFu) << 4));
+    }
+"""
+    else:
+        pack_src = "q_out[(ulong)row * 32u + lane] = uchar(c0 | (c1 << 2) | (c2 << 4) | (c3 << 6));"
+    src = f"""
+    const uint row = threadgroup_position_in_grid.y;
+    const uint lane = thread_index_in_simdgroup;
+    const float4 v = float4(*((const device half4*)(x + (ulong)row * 128u) + lane));
+    const float4 hv = rht128_vec(v, lane);
+    const half sc = half(max(metal::precise::sqrt(simd_sum(dot(hv, hv)) * (1.0f / 128.0f)), 1e-6f));
+    if (lane == 0u) sc_out[row] = sc;
+    const float4 z = hv / float(sc);
+    const uint c0 = lm_quant_b{bits}(z.x);
+    const uint c1 = lm_quant_b{bits}(z.y);
+    const uint c2 = lm_quant_b{bits}(z.z);
+    const uint c3 = lm_quant_b{bits}(z.w);
+    {pack_src}
+    """
+    return mx.fast.metal_kernel(
+        name=f"ink_kv_rht128_lm{bits}_quantize",
+        input_names=["x"],
+        output_names=["q_out", "sc_out"],
+        header=_LM_KV_HEADER,
+        source=src,
+    )
+
+
+@lru_cache(maxsize=3)
+def _make_kv_rht128_lm_dequantize_kernel(bits: int):
+    assert bits in (2, 3, 4)
+    row_bytes = 16 * bits
+    src = f"""
+    const uint row = threadgroup_position_in_grid.y;
+    const uint lane = thread_index_in_simdgroup;
+    const float4 hv = lm_deq4_f32_b{bits}(codes + (ulong)row * {row_bytes}u, lane, scales[row]);
+    const float4 xv = irht128_vec(hv, lane);
+    *((device half4*)(out + (ulong)row * 128u) + lane) = half4(xv);
+    """
+    return mx.fast.metal_kernel(
+        name=f"ink_kv_rht128_lm{bits}_dequantize",
+        input_names=["codes", "scales"],
+        output_names=["out"],
+        header=_LM_KV_HEADER,
+        source=src,
+    )
+
+
+def kv_rht128_lm_quantize(x_f16: mx.array, bits: int) -> tuple[mx.array, mx.array]:
+    if bits not in (2, 3, 4):
+        raise ValueError(f"LM KV bits must be 2, 3, or 4, got {bits!r}")
+    xc = mx.contiguous(x_f16.astype(mx.float16))
+    assert xc.shape[-1] == 128
+    prefix = xc.shape[:-1]
+    row_bytes = 16 * bits
+    n_rows = xc.size // 128
+    if n_rows == 0:
+        return mx.zeros((*prefix, row_bytes), dtype=mx.uint8), mx.zeros((*prefix, 1), dtype=mx.float16)
+    return _make_kv_rht128_lm_quantize_kernel(bits)(
+        inputs=[xc.reshape(-1)],
+        grid=(32, n_rows, 1),
+        threadgroup=(32, 1, 1),
+        output_shapes=[(*prefix, row_bytes), (*prefix, 1)],
+        output_dtypes=[mx.uint8, mx.float16],
+    )
+
+
+def kv_rht128_lm_dequantize(codes: mx.array, scales: mx.array, bits: int) -> mx.array:
+    if bits not in (2, 3, 4):
+        raise ValueError(f"LM KV bits must be 2, 3, or 4, got {bits!r}")
+    row_bytes = 16 * bits
+    cc = mx.contiguous(codes.astype(mx.uint8))
+    sc = mx.contiguous(scales.astype(mx.float16))
+    assert cc.shape[-1] == row_bytes
+    assert sc.shape == (*cc.shape[:-1], 1)
+    prefix = cc.shape[:-1]
+    n_rows = cc.size // row_bytes
+    if n_rows == 0:
+        return mx.zeros((*prefix, 128), dtype=mx.float16)
+    return _make_kv_rht128_lm_dequantize_kernel(bits)(
+        inputs=[cc.reshape(-1), sc.reshape(-1)],
+        grid=(32, n_rows, 1),
+        threadgroup=(32, 1, 1),
+        output_shapes=[(*prefix, 128)],
+        output_dtypes=[mx.float16],
+    )[0]
 
 
 @lru_cache(maxsize=1)
@@ -4522,27 +4779,25 @@ def _make_gqa_relpos_sdpa_kernel(tree_mode: bool = False, kv_fp8: bool = False):
     )
 
 
-@lru_cache(maxsize=6)
-def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False):
+def _build_gqa_relpos_flash_sdpa_kernel(
+    *,
+    name: str,
+    in_names: list[str],
+    extra_header: str,
+    kv_decls: str,
+    load_k4: str,
+    load_v4: str,
+):
     """Tiled `simdgroup_half8x8` FlashAttention-2 (`BQ=32, BK=64, SG=4`, `exp2`, O(1) memory) for prefill."""
-    assert not (kv_fp8 and kv_q4)
     header = (
         """
     #include <metal_simdgroup_matrix>
     #define ELEMS_H2 reinterpret_cast<thread half2&>
     #define ELEMS_F2 reinterpret_cast<thread float2&>
     """
-        + (_FP8_E4M3_HEADER if kv_fp8 else "")
+        + extra_header
     )
-    in_names = ["q", "KV"] + (["KV_sc"] if kv_q4 else []) + ["rel_st", "rel_proj_t", "sinks", "meta"]
-    kv_stride = 64 if kv_q4 else 128
-    sc_decls = (
-        f"const device half* Ksp = KV_sc + (ulong)kvh * kv_cap * 4u;\n"
-        f"    const device half* Vsp = KV_sc + (ulong)(8u + kvh) * kv_cap * 4u;"
-        if kv_q4
-        else ""
-    )
-    src = f"""
+    src = """
     const uint bh = threadgroup_position_in_grid.y;
     const uint n_qblocks = meta[6];
     const uint h = bh / n_qblocks;
@@ -4574,43 +4829,41 @@ def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False
     constexpr float LOG2E = 1.4426950408889634f;
     constexpr float Q_SCALE = LOG2E / 11.313708498984761f;
     #pragma unroll
-    for (uint i = 0; i < 8u; i++) {{
+    for (uint i = 0; i < 8u; i++) {
         const uint idx = tid + i * 128u;
         const uint qt_l = idx >> 5, d4 = idx & 31u;
         half4 qh = half4(0.0h);
-        if (q0 + qt_l < T) {{
+        if (q0 + qt_l < T) {
             const float4 qf = *(const device float4*)(q + ((ulong)(q0 + qt_l) * 24u + h) * 128u + d4 * 4u);
             qh = half4(qf * Q_SCALE);
-        }}
+        }
         *(threadgroup half4*)(tg_kv + qt_l * 136u + d4 * 4u) = qh;
-    }}
+    }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     simdgroup_half8x8 Qm[16];
     #pragma unroll
-    for (uint d8 = 0; d8 < 16u; d8++) {{
+    for (uint d8 = 0; d8 < 16u; d8++) {
         simdgroup_load(Qm[d8], tg_kv + (simd * 8u) * 136u + d8 * 8u, 136u, ulong2(0, 0), false);
-    }}
+    }
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     float4 rs0 = float4(0.0f), rs1 = float4(0.0f), rs2 = float4(0.0f), rs3 = float4(0.0f);
     float m_row = -1e20f;
     float l_row = 0.0f;
-    if (q_t < T) {{
+    if (q_t < T) {
         const device float4* rsp = (const device float4*)(rel_st + ((ulong)q_t * 24u + h) * 16u);
         rs0 = rsp[0] * LOG2E; rs1 = rsp[1] * LOG2E; rs2 = rsp[2] * LOG2E; rs3 = rsp[3] * LOG2E;
         const float sk = sinks[(ulong)q_t * 24u + h] * LOG2E;
         m_row = sk;
         l_row = 1.0f;
-    }}
+    }
 
     simdgroup_float8x8 O[16];
     #pragma unroll
     for (uint d8 = 0; d8 < 16u; d8++) O[d8] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
 
-    const device __KV_T__* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;
-    const device __KV_T__* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;
-    {sc_decls}
+    __KV_DECLS__
 
     const uint q_pos_min = q_pos0 + q0;
     const uint q_pos_max = q_pos0 + min(q0 + 31u, T - 1u);
@@ -4618,49 +4871,49 @@ def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False
     const uint k_lo = (min_pos > (int)kv_start) ? (uint)(min_pos - (int)kv_start) : 0u;
     const uint k_hi = min(kv_len, (q_pos_max >= kv_start) ? (q_pos_max - kv_start + 1u) : 0u);
 
-    for (uint k0 = k_lo; k0 < k_hi; k0 += 64u) {{
+    for (uint k0 = k_lo; k0 < k_hi; k0 += 64u) {
         #pragma unroll
-        for (uint i = 0; i < 16u; i++) {{
+        for (uint i = 0; i < 16u; i++) {
             const uint idx = tid + i * 128u;
             const uint kt_l = idx >> 5, d4 = idx & 31u;
             const uint kj = k0 + kt_l;
             __LOAD_K4__
-        }}
+        }
 
         const int d_min = (int)q_pos_min - (int)(kv_start + k0 + 63u);
         const bool need_rel = (d_min < 1024) && ((d_min + 95) >= 0);
-        if (need_rel) {{
+        if (need_rel) {
             #pragma unroll
-            for (uint i = 0; i < 3u; i++) {{
+            for (uint i = 0; i < 3u; i++) {
                 const uint idx = tid + i * 128u;
                 const uint row = idx >> 2, c4 = idx & 3u;
                 const int d = d_min + (int)row;
                 *(threadgroup half4*)(tg_rp + row * 16u + c4 * 4u) = (d >= 0 && d < 1024) ? *(const device half4*)(rel_proj_t + (ulong)d * 16u + c4 * 4u) : half4(0.0h);
-            }}
-        }}
+            }
+        }
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         simdgroup_float8x8 S[8];
         #pragma unroll
         for (uint kb = 0; kb < 8u; kb++) S[kb] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);
         #pragma unroll
-        for (uint d8 = 0; d8 < 16u; d8++) {{
+        for (uint d8 = 0; d8 < 16u; d8++) {
             #pragma unroll
-            for (uint kb = 0; kb < 8u; kb++) {{
+            for (uint kb = 0; kb < 8u; kb++) {
                 simdgroup_half8x8 Km;
                 simdgroup_load(Km, tg_kv + (kb * 8u) * 136u + d8 * 8u, 136u, ulong2(0, 0), true);
                 simdgroup_multiply_accumulate(S[kb], Qm[d8], Km, S[kb]);
-            }}
-        }}
+            }
+        }
 
         const bool full_valid = (q0 + 32u <= T) && (k0 + 64u <= k_hi) && (d_min >= 0) && (!is_sliding || ((int)q_pos_max - (int)(kv_start + k0) < 1024));
         const bool all_rel = full_valid && ((int)q_pos_max - (int)(kv_start + k0) < 1024);
 
         float m_tile = -1e30f;
         float2 sv[8];
-        if (all_rel) {{
+        if (all_rel) {
             #pragma unroll
-            for (uint kb = 0; kb < 8u; kb++) {{
+            for (uint kb = 0; kb < 8u; kb++) {
                 float2 s2 = ELEMS_F2(S[kb].thread_elements());
                 const uint da = (uint)((int)q_pos - (int)(kv_start + k0 + kb * 8u + fn) - d_min);
                 const threadgroup half4* rpa = (const threadgroup half4*)(tg_rp + da * 16u);
@@ -4669,29 +4922,29 @@ def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False
                 s2.y += dot(rs0, float4(rpb[0])) + dot(rs1, float4(rpb[1])) + dot(rs2, float4(rpb[2])) + dot(rs3, float4(rpb[3]));
                 sv[kb] = s2;
                 m_tile = max(m_tile, max(s2.x, s2.y));
-            }}
-        }} else {{
+            }
+        } else {
             #pragma unroll
-            for (uint kb = 0; kb < 8u; kb++) {{
+            for (uint kb = 0; kb < 8u; kb++) {
                 float2 s2 = ELEMS_F2(S[kb].thread_elements());
                 const uint k_a = k0 + kb * 8u + fn, k_b = k_a + 1u;
                 const int da = (int)q_pos - (int)(kv_start + k_a), db = da - 1;
-                if ((q_t < T) && (k_a < k_hi) && (da >= 0) && (!is_sliding || da < 1024)) {{
-                    if (need_rel && da < 1024) {{
+                if ((q_t < T) && (k_a < k_hi) && (da >= 0) && (!is_sliding || da < 1024)) {
+                    if (need_rel && da < 1024) {
                         const threadgroup half4* rp = (const threadgroup half4*)(tg_rp + (uint)(da - d_min) * 16u);
                         s2.x += dot(rs0, float4(rp[0])) + dot(rs1, float4(rp[1])) + dot(rs2, float4(rp[2])) + dot(rs3, float4(rp[3]));
-                    }}
-                }} else s2.x = -1e30f;
-                if ((q_t < T) && (k_b < k_hi) && (db >= 0) && (!is_sliding || db < 1024)) {{
-                    if (need_rel && db < 1024) {{
+                    }
+                } else s2.x = -1e30f;
+                if ((q_t < T) && (k_b < k_hi) && (db >= 0) && (!is_sliding || db < 1024)) {
+                    if (need_rel && db < 1024) {
                         const threadgroup half4* rp = (const threadgroup half4*)(tg_rp + (uint)(db - d_min) * 16u);
                         s2.y += dot(rs0, float4(rp[0])) + dot(rs1, float4(rp[1])) + dot(rs2, float4(rp[2])) + dot(rs3, float4(rp[3]));
-                    }}
-                }} else s2.y = -1e30f;
+                    }
+                } else s2.y = -1e30f;
                 sv[kb] = s2;
                 m_tile = max(m_tile, max(s2.x, s2.y));
-            }}
-        }}
+            }
+        }
         m_tile = max(m_tile, simd_shuffle_xor(m_tile, 1u));
         m_tile = max(m_tile, simd_shuffle_xor(m_tile, 8u));
 
@@ -4704,12 +4957,12 @@ def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False
         float l_tile = 0.0f;
         simdgroup_half8x8 Pm[8];
         #pragma unroll
-        for (uint kb = 0; kb < 8u; kb++) {{
+        for (uint kb = 0; kb < 8u; kb++) {
             const float px = (sv[kb].x > -1e20f) ? exp2(sv[kb].x - m_new) : 0.0f;
             const float py = (sv[kb].y > -1e20f) ? exp2(sv[kb].y - m_new) : 0.0f;
             l_tile += px + py;
             ELEMS_H2(Pm[kb].thread_elements()) = half2((half)px, (half)py);
-        }}
+        }
         l_tile += simd_shuffle_xor(l_tile, 1u);
         l_tile += simd_shuffle_xor(l_tile, 8u);
         l_row += l_tile;
@@ -4717,39 +4970,63 @@ def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False
 
         threadgroup_barrier(mem_flags::mem_threadgroup);
         #pragma unroll
-        for (uint i = 0; i < 16u; i++) {{
+        for (uint i = 0; i < 16u; i++) {
             const uint idx = tid + i * 128u;
             const uint kt_l = idx >> 5, d4 = idx & 31u;
             const uint kj = k0 + kt_l;
             __LOAD_V4__
-        }}
+        }
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
         #pragma unroll
-        for (uint kb = 0; kb < 8u; kb++) {{
+        for (uint kb = 0; kb < 8u; kb++) {
             #pragma unroll
-            for (uint d8 = 0; d8 < 16u; d8++) {{
+            for (uint d8 = 0; d8 < 16u; d8++) {
                 simdgroup_half8x8 Vm;
                 simdgroup_load(Vm, tg_kv + (kb * 8u) * 136u + d8 * 8u, 136u, ulong2(0, 0), false);
                 simdgroup_multiply_accumulate(O[d8], Pm[kb], Vm, O[d8]);
-            }}
-        }}
+            }
+        }
         threadgroup_barrier(mem_flags::mem_threadgroup);
-    }}
+    }
 
-    if (q_t < T) {{
+    if (q_t < T) {
         const float inv_l = 1.0f / l_row;
         device float* op = out + ((ulong)q_t * 24u + h) * 128u;
         #pragma unroll
-        for (uint d8 = 0; d8 < 16u; d8++) {{
+        for (uint d8 = 0; d8 < 16u; d8++) {
             const float2 ov = ELEMS_F2(O[d8].thread_elements()) * inv_l;
             op[d8 * 8u + fn] = ov.x;
             op[d8 * 8u + fn + 1u] = ov.y;
-        }}
-    }}
+        }
+    }
     """
+    src = src.replace("__KV_DECLS__", kv_decls).replace("__LOAD_K4__", load_k4).replace("__LOAD_V4__", load_v4)
+    return mx.fast.metal_kernel(
+        name=name,
+        input_names=in_names,
+        output_names=["out"],
+        header=header,
+        source=src,
+    )
+
+
+@lru_cache(maxsize=6)
+def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False):
+    """Tiled `simdgroup_half8x8` FlashAttention-2 (`BQ=32, BK=64, SG=4`, `exp2`, O(1) memory) for prefill."""
+    assert not (kv_fp8 and kv_q4)
+    in_names = ["q", "KV"] + (["KV_sc"] if kv_q4 else []) + ["rel_st", "rel_proj_t", "sinks", "meta"]
     kv_t = "uchar" if (kv_fp8 or kv_q4) else "half"
+    kv_stride = 64 if kv_q4 else 128
+    kv_decls = (
+        f"const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;\n"
+        f"    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;"
+    )
     if kv_q4:
+        kv_decls += (
+            "\n    const device half* Ksp = KV_sc + (ulong)kvh * kv_cap * 4u;"
+            "\n    const device half* Vsp = KV_sc + (ulong)(8u + kvh) * kv_cap * 4u;"
+        )
         load_k4 = "{ half4 hk = half4(0.0h); if (kj < k_hi) { const uchar2 p = *(const device uchar2*)(Kp + (ulong)kj * 64u + d4 * 2u); const half sc = Ksp[(ulong)kj * 4u + (d4 >> 3)]; hk = half4(half(int(p.x & 0xFu) - 8) * sc, half(int(p.x >> 4) - 8) * sc, half(int(p.y & 0xFu) - 8) * sc, half(int(p.y >> 4) - 8) * sc); } *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = hk; }"
         load_v4 = "{ half4 hv = half4(0.0h); if (kj < k_hi) { const uchar2 p = *(const device uchar2*)(Vp + (ulong)kj * 64u + d4 * 2u); const half sc = Vsp[(ulong)kj * 4u + (d4 >> 3)]; hv = half4(half(int(p.x & 0xFu) - 8) * sc, half(int(p.x >> 4) - 8) * sc, half(int(p.y & 0xFu) - 8) * sc, half(int(p.y >> 4) - 8) * sc); } *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = hv; }"
     elif kv_fp8:
@@ -4758,70 +5035,56 @@ def _make_gqa_relpos_flash_sdpa_kernel(kv_fp8: bool = False, kv_q4: bool = False
     else:
         load_k4 = "*(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? *(const device half4*)(Kp + (ulong)kj * 128u + d4 * 4u) : half4(0.0h);"
         load_v4 = "*(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? *(const device half4*)(Vp + (ulong)kj * 128u + d4 * 4u) : half4(0.0h);"
-    src = src.replace("__KV_T__", kv_t).replace("__LOAD_K4__", load_k4).replace("__LOAD_V4__", load_v4)
-    return mx.fast.metal_kernel(
+    return _build_gqa_relpos_flash_sdpa_kernel(
         name=f"ink_gqa_relpos_flash_sdpa_bk64_fp8{int(kv_fp8)}_q4{int(kv_q4)}",
-        input_names=in_names,
-        output_names=["out"],
-        header=header,
-        source=src,
+        in_names=in_names,
+        extra_header=_FP8_E4M3_HEADER if kv_fp8 else "",
+        kv_decls=kv_decls,
+        load_k4=load_k4,
+        load_v4=load_v4,
     )
 
 
-@lru_cache(maxsize=48)
-def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", t_cap: int = 4, split_k: bool = False):
-    """GQA+T fused Flash-Decoding kernel supporting fp16, fp8, and Hadamard-rotated 4-bit (q4)."""
-    assert kv_mode in ("fp16", "fp8", "q4")
+@lru_cache(maxsize=16)
+def _make_gqa_relpos_flash_sdpa_lm_kernel(k_bits: int, v_bits: int):
+    """FlashAttention-2 prefill kernel for asymmetric RHT-128 Lloyd-Max K/V buffers."""
+    assert k_bits in (2, 3, 4) and v_bits in (2, 3, 4)
+    k_bytes = 16 * k_bits
+    v_bytes = 16 * v_bits
+    kv_decls = (
+        f"const device uchar* Kp = K_buf + (ulong)kvh * kv_cap * {k_bytes}u;\n"
+        f"    const device half* Ksp = K_sc + (ulong)kvh * kv_cap;\n"
+        f"    const device uchar* Vp = V_buf + (ulong)kvh * kv_cap * {v_bytes}u;\n"
+        f"    const device half* Vsp = V_sc + (ulong)kvh * kv_cap;"
+    )
+    load_k4 = f"{{ *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? lm_deq4_b{k_bits}(Kp + (ulong)kj * {k_bytes}u, d4, Ksp[kj]) : half4(0.0h); }}"
+    load_v4 = f"{{ *(threadgroup half4*)(tg_kv + kt_l * 136u + d4 * 4u) = (kj < k_hi) ? lm_deq4_b{v_bits}(Vp + (ulong)kj * {v_bytes}u, d4, Vsp[kj]) : half4(0.0h); }}"
+    return _build_gqa_relpos_flash_sdpa_kernel(
+        name=f"ink_gqa_relpos_flash_sdpa_bk64_lm_k{k_bits}_v{v_bits}",
+        in_names=["q", "K_buf", "K_sc", "V_buf", "V_sc", "rel_st", "rel_proj_t", "sinks", "meta"],
+        extra_header=_LM_KV_HEADER,
+        kv_decls=kv_decls,
+        load_k4=load_k4,
+        load_v4=load_v4,
+    )
+
+
+def _build_gqa_fused_sdpa_kernel(
+    *,
+    name: str,
+    in_names: list[str],
+    header: str,
+    kv_decls: str,
+    load_kv_expr,
+    q_rot: str,
+    q_rot_k: str,
+    unrot_expr: str,
+    tree_mode: bool = False,
+    t_cap: int = 4,
+    split_k: bool = False,
+):
     assert t_cap in (1, 4, 8)
-    in_names = ["q", "KV"] + (["KV_sc"] if kv_mode == "q4" else []) + ["rel_st", "rel_proj_t"]
-    if not split_k:
-        in_names.extend(["q_in", "sink_w"])
-    in_names.append("meta")
-    if tree_mode:
-        in_names.extend(["tree_depth", "tree_mask"])
-
-    kv_t = "uchar" if kv_mode in ("fp8", "q4") else "half"
-    kv_stride = 64 if kv_mode == "q4" else 128
-    sc_decls = (
-        "const device half* Ksp = KV_sc + (ulong)kvh * kv_cap * 4u;\n"
-        "    const device half* Vsp = KV_sc + (ulong)(8u + kvh) * kv_cap * 4u;"
-        if kv_mode == "q4"
-        else ""
-    )
-    if kv_mode == "q4":
-        def load_kv_expr(j_expr: str) -> str:
-            return (
-                f"const uchar2 kp2 = *((const device uchar2*)(Kp + (ulong)({j_expr}) * 64u) + lane); "
-                f"const half ksc = Ksp[(ulong)({j_expr}) * 4u + (lane >> 3)]; "
-                f"const uchar2 vp2 = *((const device uchar2*)(Vp + (ulong)({j_expr}) * 64u) + lane); "
-                f"const half vsc = Vsp[(ulong)({j_expr}) * 4u + (lane >> 3)]; "
-                "tg_k[r * 32u + lane] = half4(half(int(kp2.x & 0xFu) - 8) * ksc, half(int(kp2.x >> 4) - 8) * ksc, half(int(kp2.y & 0xFu) - 8) * ksc, half(int(kp2.y >> 4) - 8) * ksc); "
-                "tg_v[r * 32u + lane] = half4(half(int(vp2.x & 0xFu) - 8) * vsc, half(int(vp2.x >> 4) - 8) * vsc, half(int(vp2.y & 0xFu) - 8) * vsc, half(int(vp2.y >> 4) - 8) * vsc);"
-            )
-    elif kv_mode == "fp8":
-        def load_kv_expr(j_expr: str) -> str:
-            return (
-                f"const uchar4 ku = *((const device uchar4*)(Kp + (ulong)({j_expr}) * 128u) + lane); "
-                f"const uchar4 vu = *((const device uchar4*)(Vp + (ulong)({j_expr}) * 128u) + lane); "
-                "tg_k[r * 32u + lane] = half4(FP8_E4M3_LUT[ku.x], FP8_E4M3_LUT[ku.y], FP8_E4M3_LUT[ku.z], FP8_E4M3_LUT[ku.w]); "
-                "tg_v[r * 32u + lane] = half4(FP8_E4M3_LUT[vu.x], FP8_E4M3_LUT[vu.y], FP8_E4M3_LUT[vu.z], FP8_E4M3_LUT[vu.w]);"
-            )
-    else:
-        def load_kv_expr(j_expr: str) -> str:
-            return (
-                f"tg_k[r * 32u + lane] = *((const device half4*)(Kp + (ulong)({j_expr}) * 128u) + lane); "
-                f"tg_v[r * 32u + lane] = *((const device half4*)(Vp + (ulong)({j_expr}) * 128u) + lane);"
-            )
-
-    header = "#define LOG2E 1.4426950408889634f\n"
-    if kv_mode == "fp8":
-        header += _FP8_E4M3_HEADER
-    elif kv_mode == "q4":
-        header += _H128_HEADER
     out_names = ["part_m", "part_l", "part_o"] if split_k else ["out"]
-    q_rot = "qv[g] = h128_vec(qv[g], lane);" if kv_mode == "q4" else ""
-    q_rot_k = "qv[k_t][g] = h128_vec(qv[k_t][g], lane);" if kv_mode == "q4" else ""
-    unrot_expr = "h128_vec(a_out, lane)" if kv_mode == "q4" else "a_out"
 
     if t_cap == 1:
         if split_k:
@@ -4905,9 +5168,7 @@ def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", 
     const uint kv_cap = meta[4];
     const uint is_sliding = meta[5];
 
-    const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;
-    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;
-    {sc_decls}
+    {kv_decls}
 
     float4 qv[3], rs0[3], rs1[3], rs2[3], rs3[3];
     for (uint g = 0u; g < 3u; g++) {{
@@ -5088,9 +5349,7 @@ def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", 
     const uint sbeg = min(tg_hi, tg_lo + split_id * chunk);
     const uint send = min(tg_hi, sbeg + chunk);
 
-    const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;
-    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;
-    {sc_decls}
+    {kv_decls}
 
     float4 qv[{nt_s}][3], rs0[{nt_s}][3], rs1[{nt_s}][3], rs2[{nt_s}][3], rs3[{nt_s}][3];
     float m_loc[{nt_s}][3], l_loc[{nt_s}][3];
@@ -5172,7 +5431,7 @@ def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", 
 """
 
     return mx.fast.metal_kernel(
-        name=f"ink_gqa_fused_sdpa_{kv_mode}_tc{t_cap}_tr{int(tree_mode)}_sp{int(split_k)}",
+        name=name,
         input_names=in_names,
         output_names=out_names,
         header=header,
@@ -5180,11 +5439,126 @@ def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", 
     )
 
 
-@lru_cache(maxsize=2)
-def _make_gqa_splitk_reduce_kernel(apply_h128: bool = False):
-    """Pass-2 Split-K merge + inline sink logit (+ optional H128 inverse) for fused GQA Flash-Decoding."""
-    header = "#define LOG2E 1.4426950408889634f\n" + (_H128_HEADER if apply_h128 else "")
-    unrot = "h128_vec(a_out, lane)" if apply_h128 else "a_out"
+@lru_cache(maxsize=48)
+def _make_gqa_fused_sdpa_kernel(tree_mode: bool = False, kv_mode: str = "fp16", t_cap: int = 4, split_k: bool = False):
+    """GQA+T fused Flash-Decoding kernel supporting fp16, fp8, and Hadamard-rotated 4-bit (q4)."""
+    assert kv_mode in ("fp16", "fp8", "q4")
+    in_names = ["q", "KV"] + (["KV_sc"] if kv_mode == "q4" else []) + ["rel_st", "rel_proj_t"]
+    if not split_k:
+        in_names.extend(["q_in", "sink_w"])
+    in_names.append("meta")
+    if tree_mode:
+        in_names.extend(["tree_depth", "tree_mask"])
+
+    kv_t = "uchar" if kv_mode in ("fp8", "q4") else "half"
+    kv_stride = 64 if kv_mode == "q4" else 128
+    kv_decls = (
+        f"const device {kv_t}* Kp = KV + (ulong)kvh * kv_cap * {kv_stride}u;\n"
+        f"    const device {kv_t}* Vp = KV + (ulong)(8u + kvh) * kv_cap * {kv_stride}u;"
+    )
+    if kv_mode == "q4":
+        kv_decls += (
+            "\n    const device half* Ksp = KV_sc + (ulong)kvh * kv_cap * 4u;"
+            "\n    const device half* Vsp = KV_sc + (ulong)(8u + kvh) * kv_cap * 4u;"
+        )
+        def load_kv_expr(j_expr: str) -> str:
+            return (
+                f"const uchar2 kp2 = *((const device uchar2*)(Kp + (ulong)({j_expr}) * 64u) + lane); "
+                f"const half ksc = Ksp[(ulong)({j_expr}) * 4u + (lane >> 3)]; "
+                f"const uchar2 vp2 = *((const device uchar2*)(Vp + (ulong)({j_expr}) * 64u) + lane); "
+                f"const half vsc = Vsp[(ulong)({j_expr}) * 4u + (lane >> 3)]; "
+                "tg_k[r * 32u + lane] = half4(half(int(kp2.x & 0xFu) - 8) * ksc, half(int(kp2.x >> 4) - 8) * ksc, half(int(kp2.y & 0xFu) - 8) * ksc, half(int(kp2.y >> 4) - 8) * ksc); "
+                "tg_v[r * 32u + lane] = half4(half(int(vp2.x & 0xFu) - 8) * vsc, half(int(vp2.x >> 4) - 8) * vsc, half(int(vp2.y & 0xFu) - 8) * vsc, half(int(vp2.y >> 4) - 8) * vsc);"
+            )
+    elif kv_mode == "fp8":
+        def load_kv_expr(j_expr: str) -> str:
+            return (
+                f"const uchar4 ku = *((const device uchar4*)(Kp + (ulong)({j_expr}) * 128u) + lane); "
+                f"const uchar4 vu = *((const device uchar4*)(Vp + (ulong)({j_expr}) * 128u) + lane); "
+                "tg_k[r * 32u + lane] = half4(FP8_E4M3_LUT[ku.x], FP8_E4M3_LUT[ku.y], FP8_E4M3_LUT[ku.z], FP8_E4M3_LUT[ku.w]); "
+                "tg_v[r * 32u + lane] = half4(FP8_E4M3_LUT[vu.x], FP8_E4M3_LUT[vu.y], FP8_E4M3_LUT[vu.z], FP8_E4M3_LUT[vu.w]);"
+            )
+    else:
+        def load_kv_expr(j_expr: str) -> str:
+            return (
+                f"tg_k[r * 32u + lane] = *((const device half4*)(Kp + (ulong)({j_expr}) * 128u) + lane); "
+                f"tg_v[r * 32u + lane] = *((const device half4*)(Vp + (ulong)({j_expr}) * 128u) + lane);"
+            )
+
+    header = "#define LOG2E 1.4426950408889634f\n"
+    if kv_mode == "fp8":
+        header += _FP8_E4M3_HEADER
+    elif kv_mode == "q4":
+        header += _H128_HEADER
+    return _build_gqa_fused_sdpa_kernel(
+        name=f"ink_gqa_fused_sdpa_{kv_mode}_tc{t_cap}_tr{int(tree_mode)}_sp{int(split_k)}",
+        in_names=in_names,
+        header=header,
+        kv_decls=kv_decls,
+        load_kv_expr=load_kv_expr,
+        q_rot="qv[g] = h128_vec(qv[g], lane);" if kv_mode == "q4" else "",
+        q_rot_k="qv[k_t][g] = h128_vec(qv[k_t][g], lane);" if kv_mode == "q4" else "",
+        unrot_expr="h128_vec(a_out, lane)" if kv_mode == "q4" else "a_out",
+        tree_mode=tree_mode,
+        t_cap=t_cap,
+        split_k=split_k,
+    )
+
+
+@lru_cache(maxsize=128)
+def _make_gqa_fused_sdpa_lm_kernel(
+    k_bits: int,
+    v_bits: int,
+    tree_mode: bool = False,
+    t_cap: int = 4,
+    split_k: bool = False,
+):
+    """GQA+T fused Flash-Decoding kernel for asymmetric RHT-128 Lloyd-Max K/V buffers."""
+    assert k_bits in (2, 3, 4) and v_bits in (2, 3, 4)
+    in_names = ["q", "K_buf", "K_sc", "V_buf", "V_sc", "rel_st", "rel_proj_t"]
+    if not split_k:
+        in_names.extend(["q_in", "sink_w"])
+    in_names.append("meta")
+    if tree_mode:
+        in_names.extend(["tree_depth", "tree_mask"])
+
+    k_bytes = 16 * k_bits
+    v_bytes = 16 * v_bits
+    kv_decls = (
+        f"const device uchar* Kp = K_buf + (ulong)kvh * kv_cap * {k_bytes}u;\n"
+        f"    const device half* Ksp = K_sc + (ulong)kvh * kv_cap;\n"
+        f"    const device uchar* Vp = V_buf + (ulong)kvh * kv_cap * {v_bytes}u;\n"
+        f"    const device half* Vsp = V_sc + (ulong)kvh * kv_cap;"
+    )
+
+    def load_kv_expr(j_expr: str) -> str:
+        return (
+            f"const uint j_lm = ({j_expr}); "
+            f"tg_k[r * 32u + lane] = lm_deq4_b{k_bits}(Kp + (ulong)j_lm * {k_bytes}u, lane, Ksp[j_lm]); "
+            f"tg_v[r * 32u + lane] = lm_deq4_b{v_bits}(Vp + (ulong)j_lm * {v_bytes}u, lane, Vsp[j_lm]);"
+        )
+
+    return _build_gqa_fused_sdpa_kernel(
+        name=f"ink_gqa_fused_sdpa_lm_k{k_bits}_v{v_bits}_tc{t_cap}_tr{int(tree_mode)}_sp{int(split_k)}",
+        in_names=in_names,
+        header="#define LOG2E 1.4426950408889634f\n" + _LM_KV_HEADER,
+        kv_decls=kv_decls,
+        load_kv_expr=load_kv_expr,
+        q_rot="qv[g] = rht128_vec(qv[g], lane);",
+        q_rot_k="qv[k_t][g] = rht128_vec(qv[k_t][g], lane);",
+        unrot_expr="irht128_vec(a_out, lane)",
+        tree_mode=tree_mode,
+        t_cap=t_cap,
+        split_k=split_k,
+    )
+
+
+@lru_cache(maxsize=4)
+def _make_gqa_splitk_reduce_kernel(apply_h128: bool = False, apply_rht_inv: bool = False):
+    """Pass-2 Split-K merge + inline sink logit (+ optional H128 / RHT128 inverse) for fused GQA Flash-Decoding."""
+    assert not (apply_h128 and apply_rht_inv)
+    header = "#define LOG2E 1.4426950408889634f\n" + (_H128_HEADER if (apply_h128 or apply_rht_inv) else "")
+    unrot = "irht128_vec(a_out, lane)" if apply_rht_inv else ("h128_vec(a_out, lane)" if apply_h128 else "a_out")
     src = f"""
     const uint ht = threadgroup_position_in_grid.y;
     const uint T = meta[0];
@@ -5247,7 +5621,7 @@ def _make_gqa_splitk_reduce_kernel(apply_h128: bool = False):
     }}
     """
     return mx.fast.metal_kernel(
-        name=f"ink_gqa_splitk_reduce_h{int(apply_h128)}",
+        name=f"ink_gqa_splitk_reduce_h{int(apply_h128)}_r{int(apply_rht_inv)}",
         input_names=["part_m", "part_l", "part_o", "q_in", "sink_w", "meta"],
         output_names=["out"],
         header=header,
@@ -5257,7 +5631,7 @@ def _make_gqa_splitk_reduce_kernel(apply_h128: bool = False):
 
 def gqa_relpos_sinks_sdpa_fast(
     q: mx.array,
-    KV_buf: mx.array,
+    KV_buf: mx.array | None,
     rel_st: mx.array,
     rel_proj_t_f16: mx.array,
     q_in: mx.array,
@@ -5272,19 +5646,39 @@ def gqa_relpos_sinks_sdpa_fast(
     tree_mask: mx.array | None = None,
     kv_fp8: bool = False,
     kv_q4_scales: mx.array | None = None,
+    kv_lm_spec: tuple[mx.array, mx.array, mx.array, mx.array, int, int] | None = None,
 ) -> mx.array:
     tree_mode = tree_depth is not None and tree_mask is not None
-    kv_q4 = kv_q4_scales is not None
-    if kv_q4 and tree_mode and T > 8:
-        raise ValueError("Q4 attention trees support at most eight tokens")
-    if not tree_mode and (T >= 32 or (kv_q4 and T > 8)):
+    kv_lm = kv_lm_spec is not None
+    kv_q4 = (not kv_lm) and (kv_q4_scales is not None)
+    if (kv_q4 or kv_lm) and tree_mode and T > 8:
+        raise ValueError("Quantized attention trees support at most eight tokens")
+    if not tree_mode and (T >= 32 or ((kv_q4 or kv_lm) and T > 8)):
         sinks = (q_in.reshape(T, 2304).astype(mx.float16) @ sink_w_f16.reshape(24, 2304).T).astype(mx.float32)
         nqb = (T + 31) // 32
+        meta = _u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding), nqb)
+        if kv_lm:
+            K_buf, K_sc, V_buf, V_sc, k_bits, v_bits = kv_lm_spec
+            q_in_kern = rht128_rows_f32(q)
+            ins = [
+                q_in_kern.reshape(-1),
+                K_buf.reshape(-1), K_sc.reshape(-1),
+                V_buf.reshape(-1), V_sc.reshape(-1),
+                rel_st.reshape(-1), rel_proj_t_f16.reshape(-1), sinks.reshape(-1), meta,
+            ]
+            out = _make_gqa_relpos_flash_sdpa_lm_kernel(k_bits, v_bits)(
+                inputs=ins,
+                grid=(128, 24 * nqb, 1),
+                threadgroup=(128, 1, 1),
+                output_shapes=[(T, 3072)],
+                output_dtypes=[mx.float32],
+            )[0]
+            return irht128_rows_f32(out.reshape(T, 24, 128)).reshape(T, 3072)
         q_in_kern = h128_rows_f32(q) if kv_q4 else q
         ins = [q_in_kern.reshape(-1), KV_buf.reshape(-1)]
         if kv_q4:
             ins.append(kv_q4_scales.reshape(-1))
-        ins.extend([rel_st.reshape(-1), rel_proj_t_f16.reshape(-1), sinks.reshape(-1), _u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding), nqb)])
+        ins.extend([rel_st.reshape(-1), rel_proj_t_f16.reshape(-1), sinks.reshape(-1), meta])
         out = _make_gqa_relpos_flash_sdpa_kernel(kv_fp8=(kv_fp8 and not kv_q4), kv_q4=kv_q4)(
             inputs=ins,
             grid=(128, 24 * nqb, 1),
@@ -5300,7 +5694,8 @@ def gqa_relpos_sinks_sdpa_fast(
     env_fused = env_fused_raw != "0"
     t8_span_min = 2048 if m4 else 8192
     use_fused = (
-        kv_q4
+        kv_lm
+        or kv_q4
         or (force_fused and 1 <= T <= 8)
         or (
             env_fused
@@ -5312,7 +5707,6 @@ def gqa_relpos_sinks_sdpa_fast(
         )
     )
     if use_fused:
-        kv_mode = "q4" if kv_q4 else ("fp8" if kv_fp8 else "fp16")
         t_cap = 1 if T == 1 else (4 if T <= 4 else 8)
         if span < 256:
             n_splits = 1
@@ -5327,11 +5721,22 @@ def gqa_relpos_sinks_sdpa_fast(
         else:
             n_splits = 64
         split_k = n_splits > 1
-        kern = _make_gqa_fused_sdpa_kernel(tree_mode=tree_mode, kv_mode=kv_mode, t_cap=t_cap, split_k=split_k)
-        ins = [q.reshape(-1), KV_buf.reshape(-1)]
-        if kv_q4:
-            ins.append(kv_q4_scales.reshape(-1))
-        ins.extend([rel_st.reshape(-1), rel_proj_t_f16.reshape(-1)])
+        if kv_lm:
+            K_buf, K_sc, V_buf, V_sc, k_bits, v_bits = kv_lm_spec
+            kern = _make_gqa_fused_sdpa_lm_kernel(k_bits, v_bits, tree_mode=tree_mode, t_cap=t_cap, split_k=split_k)
+            ins = [
+                q.reshape(-1),
+                K_buf.reshape(-1), K_sc.reshape(-1),
+                V_buf.reshape(-1), V_sc.reshape(-1),
+                rel_st.reshape(-1), rel_proj_t_f16.reshape(-1),
+            ]
+        else:
+            kv_mode = "q4" if kv_q4 else ("fp8" if kv_fp8 else "fp16")
+            kern = _make_gqa_fused_sdpa_kernel(tree_mode=tree_mode, kv_mode=kv_mode, t_cap=t_cap, split_k=split_k)
+            ins = [q.reshape(-1), KV_buf.reshape(-1)]
+            if kv_q4:
+                ins.append(kv_q4_scales.reshape(-1))
+            ins.extend([rel_st.reshape(-1), rel_proj_t_f16.reshape(-1)])
         if not split_k:
             ins.extend([q_in.reshape(-1), sink_w_f16.reshape(-1), _u32(T, kv_len, kv_start, q_pos0, kv_cap, int(is_sliding))])
             if tree_mode:
@@ -5353,7 +5758,7 @@ def gqa_relpos_sinks_sdpa_fast(
             output_shapes=[(n_splits, T, 24), (n_splits, T, 24), (n_splits, T, 24, 128)],
             output_dtypes=[mx.float32, mx.float32, mx.float32],
         )
-        return _make_gqa_splitk_reduce_kernel(apply_h128=kv_q4)(
+        return _make_gqa_splitk_reduce_kernel(apply_h128=kv_q4, apply_rht_inv=kv_lm)(
             inputs=[pm.reshape(-1), pl.reshape(-1), po.reshape(-1), q_in.reshape(-1), sink_w_f16.reshape(-1), _u32(T, n_splits)],
             grid=(128, 24 * T, 1),
             threadgroup=(128, 1, 1),

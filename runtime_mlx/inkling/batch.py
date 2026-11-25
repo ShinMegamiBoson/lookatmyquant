@@ -13,6 +13,7 @@ Reuses 100% of `Inkling2LoopPackedMLX`'s packed Metal dense/MoE/`lm_head` kernel
 from __future__ import annotations
 
 import hashlib
+import os
 import queue
 import threading
 import time
@@ -68,6 +69,11 @@ from .model import (
     _msg_3x_split_h_compiled,
     rms_norm,
 )
+from .nested_kv_kernels import (
+    gqa_paged_nested_coarse_score,
+    gqa_paged_nested_sdpa_fast,
+    kv_h128_nested4_quantize,
+)
 
 # Keep 18 sliding blocks (1,152 tokens) per active sequence so W=1024 + partial tail + small K fits with zero copy.
 _MAX_SLIDING_BLOCKS = 18
@@ -91,6 +97,15 @@ class _CachedBlockNode:
     lru_tick: int = 0
 
 
+def _resolve_nested_opt_int(val: int | None, env_name: str) -> int | None:
+    if val is not None:
+        return max(0, int(val))
+    raw = os.environ.get(env_name, "").strip().lower()
+    if not raw or raw in ("none", "off", "disabled"):
+        return None
+    return max(0, int(raw))
+
+
 class PagedInklingPool:
     """Paged 64-token KV block allocator with zero-copy prefix sharing and contiguous conv pools for Inkling-2-Mini."""
 
@@ -104,14 +119,32 @@ class PagedInklingPool:
         max_sliding_blocks: int = 2048,
         max_conv_slots: int = 128,
         enable_prefix_cache: bool = True,
+        nested_hot_blocks: int | None = None,
+        nested_warm_blocks: int | None = None,
+        nested_spill_to_host: bool | None = None,
+        nested_coarse_topk: int | None = None,
     ):
         self.cfg = cfg
         self.block_size = PAGED_BLOCK_SIZE
-        self.global_kv_mode = cfg.global_kv_mode  # "fp16" | "fp8" | "q4"
+        self.global_kv_mode = cfg.global_kv_mode  # "fp16" | "fp8" | "q4" | "nested"
+        if self.global_kv_mode not in ("fp16", "fp8", "q4", "nested"):
+            raise ValueError(f"PagedInklingPool supports fp16, fp8, q4, or nested; got {self.global_kv_mode!r}")
         self.share_loop_kv = getattr(cfg, "shared_loop_kv", False) and (cfg.loop_passes > 1)
         self.enable_prefix_cache = enable_prefix_cache
         self.max_global_blocks = max_global_blocks
         self.max_sliding_blocks = max_sliding_blocks
+        self.nested_hot_blocks = _resolve_nested_opt_int(nested_hot_blocks, "LAMQ_NESTED_HOT_BLOCKS")
+        self.nested_warm_blocks = _resolve_nested_opt_int(nested_warm_blocks, "LAMQ_NESTED_WARM_BLOCKS")
+        self.nested_spill_to_host = (
+            (os.environ.get("LAMQ_NESTED_SPILL_HOST", "0").strip().lower() in ("1", "true", "yes"))
+            if nested_spill_to_host is None
+            else bool(nested_spill_to_host)
+        )
+        self.nested_coarse_topk = (
+            max(0, int(os.environ.get("LAMQ_NESTED_COARSE_TOPK", "0") or 0))
+            if nested_coarse_topk is None
+            else max(0, int(nested_coarse_topk))
+        )
 
         # Contiguous GPU conv-state pools indexed by `conv_slot` (eliminates O(48*4*B) Python stack/slice overhead!)
         self.max_conv_slots = max(16, int(max_conv_slots))
@@ -174,9 +207,31 @@ class PagedInklingPool:
         self.n_g_blocks = 0
         self.g_pools: list[mx.array] = []
         self.g_scales: list[mx.array | None] = []
+        self.g_base_pools: list[mx.array] = []
+        self.g_nested_scales: list[mx.array] = []
+        self.n_p2_blocks = 0
+        self.n_p3_blocks = 0
+        self.max_p2_blocks = self.max_global_blocks + max(64, self.nested_coarse_topk)
+        self.max_p3_blocks = self.max_global_blocks + max(64, self.nested_coarse_topk)
+        self.g_p2_pools: list[mx.array] = []
+        self.g_p3_pools: list[mx.array] = []
+        self.p2_free: list[int] = []
+        self.p3_free: list[int] = []
+        self.g_block_p2 = np.zeros((0,), dtype=np.int32)
+        self.g_block_p3 = np.zeros((0,), dtype=np.int32)
+        self._block_p2_mx: mx.array | None = None
+        self._block_p3_mx: mx.array | None = None
+        self._p2_dirty = True
+        self._p3_dirty = True
+        self._host_p2: dict[int, list[np.ndarray]] = {}
+        self._host_p3: dict[int, list[np.ndarray]] = {}
+        self._last_nested_promotions: dict[int, list[int]] = {}
         self.g_free: list[int] = []
         self.g_ref: list[int] = []
         self._grow_global(init_global_blocks)
+        if self.global_kv_mode == "nested":
+            self._grow_p2(init_global_blocks)
+            self._grow_p3(init_global_blocks)
 
         self.n_s_blocks = 0
         self.s_pools: list[mx.array] = []
@@ -195,8 +250,46 @@ class PagedInklingPool:
         mx.eval(
             *self.g_pools,
             *[s for s in self.g_scales if s is not None],
+            *self.g_base_pools,
+            *self.g_nested_scales,
+            *self.g_p2_pools,
+            *self.g_p3_pools,
             *self.s_pools,
             *[a for row in self.conv_pools for a in row],
+        )
+
+    def _grow_plane_pool(
+        self,
+        pools: list[mx.array],
+        cur_n: int,
+        max_n: int,
+        free_list: list[int],
+        target_blocks: int,
+    ) -> int:
+        target = min(max_n, max(target_blocks, cur_n))
+        if target <= cur_n:
+            return cur_n
+        new_toks = target * self.block_size
+        old_toks = cur_n * self.block_size
+        if cur_n == 0:
+            pools[:] = [mx.zeros((new_toks, 2, 8, 4), dtype=mx.uint32) for _ in range(self.n_global_pools)]
+        else:
+            for i in range(self.n_global_pools):
+                buf = mx.zeros((new_toks, 2, 8, 4), dtype=mx.uint32)
+                buf[:old_toks] = pools[i]
+                pools[i] = buf
+        mx.eval(*pools)
+        free_list.extend(range(cur_n, target))
+        return target
+
+    def _grow_p2(self, target_blocks: int) -> None:
+        self.n_p2_blocks = self._grow_plane_pool(
+            self.g_p2_pools, self.n_p2_blocks, self.max_p2_blocks, self.p2_free, target_blocks,
+        )
+
+    def _grow_p3(self, target_blocks: int) -> None:
+        self.n_p3_blocks = self._grow_plane_pool(
+            self.g_p3_pools, self.n_p3_blocks, self.max_p3_blocks, self.p3_free, target_blocks,
         )
 
     def _grow_global(self, target_blocks: int) -> None:
@@ -206,29 +299,48 @@ class PagedInklingPool:
         old_n = self.n_g_blocks
         new_toks = target * self.block_size
         old_toks = old_n * self.block_size
-        if self.global_kv_mode == "q4":
-            dtype, dim = mx.uint8, 64
-        elif self.global_kv_mode == "fp8":
-            dtype, dim = mx.uint8, 128
+        if self.global_kv_mode == "nested":
+            if old_n == 0:
+                self.g_base_pools = [mx.zeros((new_toks, 2, 8, 2, 4), dtype=mx.uint32) for _ in range(self.n_global_pools)]
+                self.g_nested_scales = [mx.zeros((new_toks, 2, 8), dtype=mx.float16) for _ in range(self.n_global_pools)]
+            else:
+                for i in range(self.n_global_pools):
+                    bb = mx.zeros((new_toks, 2, 8, 2, 4), dtype=mx.uint32)
+                    bb[:old_toks] = self.g_base_pools[i]
+                    self.g_base_pools[i] = bb
+                    sc = mx.zeros((new_toks, 2, 8), dtype=mx.float16)
+                    sc[:old_toks] = self.g_nested_scales[i]
+                    self.g_nested_scales[i] = sc
+            mx.eval(*self.g_base_pools, *self.g_nested_scales)
+            ext = np.full((target - old_n,), -1, dtype=np.int32)
+            self.g_block_p2 = np.concatenate([self.g_block_p2, ext]) if old_n > 0 else ext.copy()
+            self.g_block_p3 = np.concatenate([self.g_block_p3, ext]) if old_n > 0 else ext.copy()
+            self._p2_dirty = True
+            self._p3_dirty = True
         else:
-            dtype, dim = mx.float16, 128
-        if old_n == 0:
-            self.g_pools = [mx.zeros((new_toks, 2, 8, dim), dtype=dtype) for _ in range(self.n_global_pools)]
-            self.g_scales = (
-                [mx.zeros((new_toks, 2, 8, 4), dtype=mx.float16) for _ in range(self.n_global_pools)]
-                if self.global_kv_mode == "q4"
-                else [None] * self.n_global_pools
-            )
-        else:
-            for i in range(self.n_global_pools):
-                buf = mx.zeros((new_toks, 2, 8, dim), dtype=dtype)
-                buf[:old_toks] = self.g_pools[i]
-                self.g_pools[i] = buf
-                if self.global_kv_mode == "q4":
-                    sc = mx.zeros((new_toks, 2, 8, 4), dtype=mx.float16)
-                    sc[:old_toks] = self.g_scales[i]
-                    self.g_scales[i] = sc
-        mx.eval(*self.g_pools, *[s for s in self.g_scales if s is not None])
+            if self.global_kv_mode == "q4":
+                dtype, dim = mx.uint8, 64
+            elif self.global_kv_mode == "fp8":
+                dtype, dim = mx.uint8, 128
+            else:
+                dtype, dim = mx.float16, 128
+            if old_n == 0:
+                self.g_pools = [mx.zeros((new_toks, 2, 8, dim), dtype=dtype) for _ in range(self.n_global_pools)]
+                self.g_scales = (
+                    [mx.zeros((new_toks, 2, 8, 4), dtype=mx.float16) for _ in range(self.n_global_pools)]
+                    if self.global_kv_mode == "q4"
+                    else [None] * self.n_global_pools
+                )
+            else:
+                for i in range(self.n_global_pools):
+                    buf = mx.zeros((new_toks, 2, 8, dim), dtype=dtype)
+                    buf[:old_toks] = self.g_pools[i]
+                    self.g_pools[i] = buf
+                    if self.global_kv_mode == "q4":
+                        sc = mx.zeros((new_toks, 2, 8, 4), dtype=mx.float16)
+                        sc[:old_toks] = self.g_scales[i]
+                        self.g_scales[i] = sc
+            mx.eval(*self.g_pools, *[s for s in self.g_scales if s is not None])
         self.g_free.extend(range(old_n, target))
         self.g_ref.extend([0] * (target - old_n))
         self.n_g_blocks = target
@@ -272,9 +384,42 @@ class PagedInklingPool:
             parent.children.discard(best_h)
         self._g_to_node.pop(node.g_blk, None)
         self._s_to_node.pop(node.s_blk, None)
-        self.g_free.append(node.g_blk)
+        self._free_global_block_slot(node.g_blk)
         self.s_free.append(node.s_blk)
         return True
+
+    def _free_global_block_slot(self, blk: int) -> None:
+        if self.global_kv_mode == "nested":
+            p2_blk = int(self.g_block_p2[blk])
+            if p2_blk >= 0:
+                self.g_block_p2[blk] = -1
+                self.p2_free.append(p2_blk)
+                self._p2_dirty = True
+            p3_blk = int(self.g_block_p3[blk])
+            if p3_blk >= 0:
+                self.g_block_p3[blk] = -1
+                self.p3_free.append(p3_blk)
+                self._p3_dirty = True
+            self._host_p2.pop(blk, None)
+            self._host_p3.pop(blk, None)
+        self.g_free.append(blk)
+
+    def _alloc_plane_slot(self, which: str, *, allow_evict: bool = True) -> int:
+        free_list = self.p2_free if which == "p2" else self.p3_free
+        while not free_list:
+            cur_n = self.n_p2_blocks if which == "p2" else self.n_p3_blocks
+            max_n = self.max_p2_blocks if which == "p2" else self.max_p3_blocks
+            if cur_n < max_n:
+                nxt = min(max_n, max(cur_n * 2, cur_n + 64, 64))
+                if which == "p2":
+                    self._grow_p2(nxt)
+                else:
+                    self._grow_p3(nxt)
+            elif allow_evict and self._evict_one_prefix_leaf(need_global=True):
+                continue
+            else:
+                raise MemoryError(f"PagedInklingPool out of nested {which} blocks")
+        return free_list.pop()
 
     def alloc_global_block(self) -> int:
         if not self.g_free:
@@ -285,6 +430,20 @@ class PagedInklingPool:
                     raise MemoryError("PagedInklingPool out of global KV blocks")
         blk = self.g_free.pop()
         self.g_ref[blk] = 1
+        if self.global_kv_mode == "nested":
+            try:
+                p2_blk = self._alloc_plane_slot("p2", allow_evict=True)
+                p3_blk = self._alloc_plane_slot("p3", allow_evict=True)
+            except Exception:
+                self.g_ref[blk] = 0
+                self._free_global_block_slot(blk)
+                raise
+            self.g_block_p2[blk] = p2_blk
+            self.g_block_p3[blk] = p3_blk
+            self._p2_dirty = True
+            self._p3_dirty = True
+            self._host_p2.pop(blk, None)
+            self._host_p3.pop(blk, None)
         return blk
 
     def alloc_sliding_block(self) -> int:
@@ -339,7 +498,166 @@ class PagedInklingPool:
         self.g_ref[blk] -= 1
         assert self.g_ref[blk] >= 0
         if self.g_ref[blk] == 0 and blk not in self._g_to_node:
-            self.g_free.append(blk)
+            self._free_global_block_slot(blk)
+
+    def free_global_block(self, blk: int) -> None:
+        self.release_global_block(blk)
+
+    def ensure_block_4bit(self, g_blk: int) -> None:
+        """Ensure `g_blk` has resident `p2` and `p3` slots before writing new tokens."""
+        if self.global_kv_mode != "nested":
+            return
+        bs = self.block_size
+        if int(self.g_block_p2[g_blk]) < 0:
+            p2_blk = self._alloc_plane_slot("p2", allow_evict=False)
+            self.g_block_p2[g_blk] = p2_blk
+            self._p2_dirty = True
+            host_p2 = self._host_p2.pop(g_blk, None)
+            if host_p2 is not None:
+                for i, arr in enumerate(host_p2):
+                    self.g_p2_pools[i][p2_blk * bs : (p2_blk + 1) * bs] = mx.array(arr)
+        if int(self.g_block_p3[g_blk]) < 0:
+            p3_blk = self._alloc_plane_slot("p3", allow_evict=False)
+            self.g_block_p3[g_blk] = p3_blk
+            self._p3_dirty = True
+            host_p3 = self._host_p3.pop(g_blk, None)
+            if host_p3 is not None:
+                for i, arr in enumerate(host_p3):
+                    self.g_p3_pools[i][p3_blk * bs : (p3_blk + 1) * bs] = mx.array(arr)
+
+    def _sync_nested_tables(self) -> tuple[mx.array, mx.array]:
+        if self._p2_dirty or self._block_p2_mx is None:
+            self._block_p2_mx = mx.array(self.g_block_p2)
+            self._p2_dirty = False
+        if self._p3_dirty or self._block_p3_mx is None:
+            self._block_p3_mx = mx.array(self.g_block_p3)
+            self._p3_dirty = False
+        return self._block_p2_mx, self._block_p3_mx
+
+    def age_block_planes(
+        self,
+        blocks: Sequence[int],
+        hot_blocks: int,
+        warm_blocks: int,
+        *,
+        preserve_sink: bool = True,
+    ) -> dict[str, int]:
+        """Zero-recompute 4->3->2 aging across `blocks`: keeps sink + hot tail at 4b, warm middle at 3b, older at 2b."""
+        if self.global_kv_mode != "nested" or not blocks:
+            return {"dropped_p3": 0, "dropped_p2": 0, "skipped_shared": 0}
+        n = len(blocks)
+        hot = max(0, int(hot_blocks))
+        warm = max(0, int(warm_blocks))
+        keep_sink = bool(preserve_sink) and (n > hot + 1)
+        hot_start = max(0, n - hot)
+        warm_start = max(1 if keep_sink else 0, hot_start - warm)
+
+        drop_p3: list[tuple[int, int]] = []
+        drop_p2: list[tuple[int, int]] = []
+        skipped_shared = 0
+        for idx, raw_gb in enumerate(blocks):
+            gb = int(raw_gb)
+            if (keep_sink and idx == 0) or idx >= hot_start:
+                continue
+            if self.g_ref[gb] > 1:
+                skipped_shared += 1
+                continue
+            p3_blk = int(self.g_block_p3[gb])
+            if p3_blk >= 0:
+                drop_p3.append((gb, p3_blk))
+            if idx < warm_start:
+                p2_blk = int(self.g_block_p2[gb])
+                if p2_blk >= 0:
+                    drop_p2.append((gb, p2_blk))
+
+        if self.nested_spill_to_host and (drop_p3 or drop_p2):
+            bs = self.block_size
+            to_eval: list[mx.array] = []
+            if drop_p3:
+                to_eval.extend(self.g_p3_pools)
+            if drop_p2:
+                to_eval.extend(self.g_p2_pools)
+            if to_eval:
+                mx.eval(*to_eval)
+            for gb, p3_blk in drop_p3:
+                lo, hi = p3_blk * bs, (p3_blk + 1) * bs
+                self._host_p3[gb] = [np.array(p[lo:hi], dtype=np.uint32, copy=True) for p in self.g_p3_pools]
+            for gb, p2_blk in drop_p2:
+                lo, hi = p2_blk * bs, (p2_blk + 1) * bs
+                self._host_p2[gb] = [np.array(p[lo:hi], dtype=np.uint32, copy=True) for p in self.g_p2_pools]
+
+        for gb, p3_blk in drop_p3:
+            self.g_block_p3[gb] = -1
+            self.p3_free.append(p3_blk)
+            self._p3_dirty = True
+        for gb, p2_blk in drop_p2:
+            self.g_block_p2[gb] = -1
+            self.p2_free.append(p2_blk)
+            self._p2_dirty = True
+        return {"dropped_p3": len(drop_p3), "dropped_p2": len(drop_p2), "skipped_shared": skipped_shared}
+
+    def nested_memory_report(self) -> dict[str, Any]:
+        """Report exact GPU/host byte counts, precision tier counts, and effective bits/value."""
+        if self.global_kv_mode != "nested":
+            gpu_bytes = sum(a.nbytes for a in self.g_pools) + sum(s.nbytes for s in self.g_scales if s is not None)
+            bpv = 16.0 if self.global_kv_mode == "fp16" else (8.0 if self.global_kv_mode == "fp8" else 4.25)
+            return {
+                "mode": self.global_kv_mode,
+                "n_global_pools": self.n_global_pools,
+                "n_g_blocks": self.n_g_blocks,
+                "active_g_blocks": self.n_g_blocks - len(self.g_free),
+                "gpu_allocated_bytes": gpu_bytes,
+                "effective_bits_per_value": bpv,
+            }
+        n_pools = self.n_global_pools
+        free_set = set(self.g_free)
+        active_blks = [b for b in range(self.n_g_blocks) if b not in free_set]
+        n_active = len(active_blks)
+        n4 = sum(1 for b in active_blks if int(self.g_block_p2[b]) >= 0 and int(self.g_block_p3[b]) >= 0)
+        n3 = sum(1 for b in active_blks if int(self.g_block_p2[b]) >= 0 and int(self.g_block_p3[b]) < 0)
+        n2 = sum(1 for b in active_blks if int(self.g_block_p2[b]) < 0 and int(self.g_block_p3[b]) < 0)
+
+        # Per block per pool: base=32768 B (2.0 b/v), scale=2048 B (0.125 b/v), p2=16384 B (1.0 b/v), p3=16384 B (1.0 b/v)
+        base_alloc = sum(a.nbytes for a in self.g_base_pools)
+        scale_alloc = sum(a.nbytes for a in self.g_nested_scales)
+        p2_alloc = sum(a.nbytes for a in self.g_p2_pools)
+        p3_alloc = sum(a.nbytes for a in self.g_p3_pools)
+
+        base_active = n_active * n_pools * 32768
+        scale_active = n_active * n_pools * 2048
+        p2_active = (n4 + n3) * n_pools * 16384
+        p3_active = n4 * n_pools * 16384
+        gpu_alloc = base_alloc + scale_alloc + p2_alloc + p3_alloc
+        gpu_active = base_active + scale_active + p2_active + p3_active
+        host_bytes = (
+            sum(arr.nbytes for lst in self._host_p2.values() for arr in lst)
+            + sum(arr.nbytes for lst in self._host_p3.values() for arr in lst)
+        )
+        total_vals = n_active * n_pools * self.block_size * 2 * 8 * 128
+        avg_bpv = (gpu_active * 8.0 / total_vals) if total_vals > 0 else 0.0
+        return {
+            "mode": self.global_kv_mode,
+            "n_global_pools": n_pools,
+            "n_g_blocks": self.n_g_blocks,
+            "active_g_blocks": n_active,
+            "blocks_4bit": n4,
+            "blocks_3bit": n3,
+            "blocks_2bit": n2,
+            "base_bytes": base_alloc,
+            "base_active_bytes": base_active,
+            "scale_bytes": scale_alloc,
+            "scale_active_bytes": scale_active,
+            "p2_allocated_bytes": p2_alloc,
+            "p2_active_bytes": p2_active,
+            "p3_allocated_bytes": p3_alloc,
+            "p3_active_bytes": p3_active,
+            "gpu_allocated_bytes": gpu_alloc,
+            "gpu_active_bytes": gpu_active,
+            "host_spilled_bytes": host_bytes,
+            "effective_bits_per_value": avg_bpv,
+            "p2_free_blocks": len(self.p2_free),
+            "p3_free_blocks": len(self.p3_free),
+        }
 
     def release_sliding_block(self, blk: int) -> None:
         self.s_ref[blk] -= 1
@@ -456,6 +774,8 @@ class PagedInklingPool:
                 meta.B, meta.K, meta.s_max_span, True, kv_mode="fp16",
             )
         mode = self.global_kv_mode
+        if mode == "nested":
+            return self._write_and_attend_nested(pidx, q, kv_f16, rel_st, rel_proj_t_f16, q_in, sink_w_f16, meta)
         if mode == "fp16":
             self.g_pools[pidx][meta.g_write_idx] = kv_f16
             kv_sc = None
@@ -471,6 +791,106 @@ class PagedInklingPool:
             q, self.g_pools[pidx], rel_st, rel_proj_t_f16, q_in, sink_w_f16,
             meta.g_bt, meta.g_lens, meta.q_pos0, meta.g_starts,
             meta.B, meta.K, meta.g_max_span, False, kv_mode=mode, kv_q4_scales=kv_sc,
+        )
+
+    def _write_and_attend_nested(
+        self,
+        pidx: int,
+        q: mx.array,
+        kv_f16: mx.array,
+        rel_st: mx.array,
+        rel_proj_t_f16: mx.array,
+        q_in: mx.array,
+        sink_w_f16: mx.array,
+        meta: "_BatchStepMeta",
+    ) -> mx.array:
+        bs = self.block_size
+        base_u32, sc_f16, p2_u32, p3_u32 = kv_h128_nested4_quantize(kv_f16)
+        self.g_base_pools[pidx][meta.g_write_idx] = base_u32
+        self.g_nested_scales[pidx][meta.g_write_idx] = sc_f16
+
+        if meta.g_p2_write_idx is not None and meta.g_p3_write_idx is not None:
+            p2_w, p3_w = meta.g_p2_write_idx, meta.g_p3_write_idx
+        else:
+            gw = np.asarray(meta.g_write_idx, dtype=np.int64)
+            for gb in np.unique(gw // bs):
+                self.ensure_block_4bit(int(gb))
+            p2_w = mx.array(self.g_block_p2[gw // bs] * bs + (gw % bs), dtype=mx.int32)
+            p3_w = mx.array(self.g_block_p3[gw // bs] * bs + (gw % bs), dtype=mx.int32)
+        self.g_p2_pools[pidx][p2_w] = p2_u32
+        self.g_p3_pools[pidx][p3_w] = p3_u32
+
+        if self.nested_coarse_topk > 0 and self.nested_spill_to_host and self._host_p2:
+            scores = gqa_paged_nested_coarse_score(
+                q, self.g_base_pools[pidx], self.g_nested_scales[pidx],
+                rel_st, rel_proj_t_f16, meta.g_bt, meta.g_lens, meta.q_pos0, meta.g_starts,
+                meta.B, meta.K, reduce_q=True,
+            )
+            blk_scores_np = np.asarray(mx.max(scores, axis=1))
+            bt_np = np.asarray(meta.g_bt)
+            lens_np = np.asarray(meta.g_lens)
+            promote_set: set[int] = set()
+            for b in range(meta.B):
+                nb = (int(lens_np[b]) + bs - 1) // bs
+                cands = []
+                seen_b: set[int] = set()
+                for bi in range(nb):
+                    gb = int(bt_np[b, bi])
+                    if gb in seen_b:
+                        continue
+                    seen_b.add(gb)
+                    if int(self.g_block_p2[gb]) < 0 and gb in self._host_p2:
+                        cands.append((float(blk_scores_np[b, bi]), gb))
+                if cands:
+                    cands.sort(key=lambda x: x[0], reverse=True)
+                    for _, gb in cands[: self.nested_coarse_topk]:
+                        promote_set.add(gb)
+            if promote_set:
+                promote_blks = sorted(promote_set)
+                scratch_p2: list[int] = []
+                scratch_p3: list[int] = []
+                tmp_p2 = np.array(self.g_block_p2, copy=True)
+                tmp_p3 = np.array(self.g_block_p3, copy=True)
+                p2_idxs: list[np.ndarray] = []
+                p2_vals: list[np.ndarray] = []
+                p3_idxs: list[np.ndarray] = []
+                p3_vals: list[np.ndarray] = []
+                try:
+                    for gb in promote_blks:
+                        sp2 = self._alloc_plane_slot("p2", allow_evict=False)
+                        scratch_p2.append(sp2)
+                        tmp_p2[gb] = sp2
+                        p2_idxs.append(np.arange(sp2 * bs, (sp2 + 1) * bs, dtype=np.int32))
+                        p2_vals.append(self._host_p2[gb][pidx])
+                        if gb in self._host_p3:
+                            sp3 = self._alloc_plane_slot("p3", allow_evict=False)
+                            scratch_p3.append(sp3)
+                            tmp_p3[gb] = sp3
+                            p3_idxs.append(np.arange(sp3 * bs, (sp3 + 1) * bs, dtype=np.int32))
+                            p3_vals.append(self._host_p3[gb][pidx])
+                    self.g_p2_pools[pidx][mx.array(np.concatenate(p2_idxs))] = mx.array(np.concatenate(p2_vals, axis=0))
+                    if p3_idxs:
+                        self.g_p3_pools[pidx][mx.array(np.concatenate(p3_idxs))] = mx.array(np.concatenate(p3_vals, axis=0))
+                    self._last_nested_promotions[pidx] = promote_blks
+                    return gqa_paged_nested_sdpa_fast(
+                        q, self.g_base_pools[pidx], self.g_nested_scales[pidx],
+                        self.g_p2_pools[pidx], self.g_p3_pools[pidx],
+                        rel_st, rel_proj_t_f16, q_in, sink_w_f16,
+                        meta.g_bt, mx.array(tmp_p2), mx.array(tmp_p3),
+                        meta.g_lens, meta.q_pos0, meta.g_starts, meta.B, meta.K, meta.g_max_span, False,
+                    )
+                finally:
+                    self.p2_free.extend(scratch_p2)
+                    self.p3_free.extend(scratch_p3)
+
+        self._last_nested_promotions[pidx] = []
+        bp2_mx, bp3_mx = self._sync_nested_tables()
+        return gqa_paged_nested_sdpa_fast(
+            q, self.g_base_pools[pidx], self.g_nested_scales[pidx],
+            self.g_p2_pools[pidx], self.g_p3_pools[pidx],
+            rel_st, rel_proj_t_f16, q_in, sink_w_f16,
+            meta.g_bt, bp2_mx, bp3_mx,
+            meta.g_lens, meta.q_pos0, meta.g_starts, meta.B, meta.K, meta.g_max_span, False,
         )
 
 
@@ -490,6 +910,8 @@ class _BatchStepMeta:
     s_starts: mx.array
     g_max_span: int
     s_max_span: int
+    g_p2_write_idx: mx.array | None = None
+    g_p3_write_idx: mx.array | None = None
 
 
 class BatchSequence:
@@ -610,6 +1032,10 @@ class BatchSequence:
             self.pool.release_sliding_block(old_sb)
             self.sliding_start += bs
 
+        if self.pool.global_kv_mode == "nested" and self.pool.nested_hot_blocks is not None and full_blocks > 0:
+            warm = self.pool.nested_warm_blocks if self.pool.nested_warm_blocks is not None else 0
+            self.pool.age_block_planes(self.g_blocks[:full_blocks], self.pool.nested_hot_blocks, warm)
+
     def rollback_spec(self, k_accept: int, K: int) -> None:
         """Roll back KV block tail and 4-tap conv states after verifying `K` tokens and accepting `k_accept` (`1..K`)."""
         drop = K - k_accept
@@ -669,6 +1095,9 @@ def _prepare_batch_meta(pool: PagedInklingPool, seqs: list[BatchSequence], K: in
     s_starts_np = np.zeros((B,), dtype=np.uint32)
     g_write_np = np.zeros((B * K,), dtype=np.int32)
     s_write_np = np.zeros((B * K,), dtype=np.int32)
+    is_nested = pool.global_kv_mode == "nested"
+    g_p2_write_np = np.zeros((B * K,), dtype=np.int32) if is_nested else None
+    g_p3_write_np = np.zeros((B * K,), dtype=np.int32) if is_nested else None
 
     g_max_span = 0
     s_max_span = 0
@@ -688,7 +1117,13 @@ def _prepare_batch_meta(pool: PagedInklingPool, seqs: list[BatchSequence], K: in
             sp = (s.seq_len - s.sliding_start) + lt
             t = b * K + lt
             q_pos_tok_np[t] = gp
-            g_write_np[t] = s.g_blocks[gp // bs] * bs + (gp % bs)
+            gb = s.g_blocks[gp // bs]
+            goff = gp % bs
+            g_write_np[t] = gb * bs + goff
+            if is_nested:
+                pool.ensure_block_4bit(gb)
+                g_p2_write_np[t] = int(pool.g_block_p2[gb]) * bs + goff
+                g_p3_write_np[t] = int(pool.g_block_p3[gb]) * bs + goff
             s_write_np[t] = s.s_blocks[sp // bs] * bs + (sp % bs)
 
     return _BatchStepMeta(
@@ -706,6 +1141,8 @@ def _prepare_batch_meta(pool: PagedInklingPool, seqs: list[BatchSequence], K: in
         s_starts=mx.array(s_starts_np),
         g_max_span=g_max_span,
         s_max_span=s_max_span,
+        g_p2_write_idx=mx.array(g_p2_write_np) if is_nested else None,
+        g_p3_write_idx=mx.array(g_p3_write_np) if is_nested else None,
     )
 
 
@@ -1411,7 +1848,11 @@ class ContinuousBatchScheduler:
         dev_lim = int(mx.device_info().get("max_recommended_working_set_size", 0) or 0)
         headroom = max(4 << 30, int((dev_lim - mx.get_active_memory()) * 0.55)) if dev_lim > 0 else (16 << 30)
         n_g_pools = 4 if (getattr(model.cfg, "shared_loop_kv", False) and model.cfg.loop_passes > 1) else 8
-        b_per_tok = 4096 if model.cfg.global_kv_mode == "fp16" else (2048 if model.cfg.global_kv_mode == "fp8" else 2176)
+        b_per_tok = (
+            4096 if model.cfg.global_kv_mode == "fp16"
+            else (2048 if model.cfg.global_kv_mode == "fp8"
+                  else (1056 if model.cfg.global_kv_mode == "nested" else 2176))
+        )
         max_g_blks = max(4096, min(65536, headroom // (PAGED_BLOCK_SIZE * n_g_pools * b_per_tok)))
         max_s_blks = max(2048, self.max_batch * 24)
         self.pool = PagedInklingPool(

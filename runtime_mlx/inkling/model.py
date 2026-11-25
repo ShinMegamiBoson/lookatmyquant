@@ -32,6 +32,7 @@ from .fast_kernels import (
     _is_m4,
     fp8_e4m3_quantize_f16_to_u8,
     kv_h128_q4_quantize,
+    kv_rht128_lm_quantize,
     block_attn_res_fused,
     block_attn_res_norm_rht_fast,
     build_fast_luts,
@@ -80,6 +81,76 @@ FMT_PARAMS = {
 }
 
 
+GLOBAL_KV_MODES = ("fp16", "fp8", "q4", "lm4", "lm4_3", "lm4_2", "lm3", "lm3_2", "lm2", "nested")
+_LM_MODE_BITS: dict[str, tuple[int, int]] = {
+    "lm4": (4, 4),
+    "lm4_3": (4, 3),
+    "lm4_2": (4, 2),
+    "lm3": (3, 3),
+    "lm3_2": (3, 2),
+    "lm2": (2, 2),
+}
+
+
+def parse_global_kv_plan(spec: str | dict[int, tuple[int, int]] | None) -> dict[int, tuple[int, int]] | None:
+    """Parse `LAMQ_GLOBAL_KV_PLAN` (e.g. `'5:4,3;11:4,2;17:4,2;23:4,3'`) into `{layer_or_slot: (k_bits, v_bits)}`."""
+    if spec is None:
+        return None
+    out: dict[int, tuple[int, int]] = {}
+    if isinstance(spec, dict):
+        for raw_k, raw_v in spec.items():
+            idx = int(raw_k)
+            if not isinstance(raw_v, (tuple, list)) or len(raw_v) != 2:
+                raise ValueError(f"global_kv_plan entry {raw_k!r} must be (k_bits, v_bits), got {raw_v!r}")
+            kb, vb = int(raw_v[0]), int(raw_v[1])
+            if kb not in (2, 3, 4) or vb not in (2, 3, 4):
+                raise ValueError(f"global_kv_plan bits must be in (2, 3, 4), got {(kb, vb)!r}")
+            out[idx] = (kb, vb)
+        return dict(sorted(out.items())) if out else None
+    text = str(spec).strip()
+    if not text:
+        return None
+    for item in text.split(";"):
+        part = item.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            raise ValueError(f"Invalid LAMQ_GLOBAL_KV_PLAN entry {part!r}; expected 'idx:k,v' or 'idx:b'")
+        key_s, bits_s = part.split(":", 1)
+        idx = int(key_s.strip())
+        if idx < 0:
+            raise ValueError(f"Negative layer/slot index in LAMQ_GLOBAL_KV_PLAN: {idx}")
+        b_parts = [p.strip() for p in bits_s.split(",")]
+        if len(b_parts) == 1:
+            kb = vb = int(b_parts[0])
+        elif len(b_parts) == 2:
+            kb, vb = int(b_parts[0]), int(b_parts[1])
+        else:
+            raise ValueError(f"Invalid bit spec {bits_s!r} in LAMQ_GLOBAL_KV_PLAN")
+        if kb not in (2, 3, 4) or vb not in (2, 3, 4):
+            raise ValueError(f"LAMQ_GLOBAL_KV_PLAN bits must be in (2, 3, 4), got {(kb, vb)!r}")
+        out[idx] = (kb, vb)
+    return dict(sorted(out.items())) if out else None
+
+
+def _resolve_slot_kv_bits(
+    cfg: "Inkling2Config",
+    layer_idx: int,
+    slot: int,
+    is_sliding: bool,
+) -> tuple[int, int] | None:
+    """Resolve `(k_bits, v_bits)` for RHT-128 Lloyd-Max global KV slots, or `None` for fp16/fp8/q4."""
+    if is_sliding:
+        return None
+    plan = cfg.global_kv_plan
+    if plan is not None:
+        if slot in plan:
+            return plan[slot]
+        if layer_idx in plan:
+            return plan[layer_idx]
+    return _LM_MODE_BITS.get(cfg.global_kv_mode)
+
+
 @dataclass
 class Inkling2Config:
     hidden_size: int = 2304
@@ -117,10 +188,15 @@ class Inkling2Config:
     moe_ratio_thr: float = 0.0
     moe_renorm: bool = False
     global_kv_mode: str = "fp16"
+    global_kv_plan: dict[int, tuple[int, int]] | None = None
+    shared_loop_kv: bool = False
 
     def __post_init__(self):
-        if self.global_kv_mode not in ("fp16", "fp8", "q4"):
-            raise ValueError("LAMQ_GLOBAL_KV must be fp16, fp8, or q4")
+        self.global_kv_mode = str(self.global_kv_mode).strip().lower()
+        if self.global_kv_mode not in GLOBAL_KV_MODES:
+            raise ValueError(f"LAMQ_GLOBAL_KV must be one of {GLOBAL_KV_MODES}, got {self.global_kv_mode!r}")
+        if self.global_kv_plan is not None:
+            self.global_kv_plan = parse_global_kv_plan(self.global_kv_plan)
 
     @classmethod
     def from_json(cls, path: Path) -> "Inkling2Config":
@@ -159,6 +235,8 @@ class Inkling2Config:
             loop_passes=lc.get("num_passes", 3),
             loop_gate_rank=lc.get("gate_rank", 64),
             global_kv_mode=os.environ.get("LAMQ_GLOBAL_KV", "fp16"),
+            global_kv_plan=parse_global_kv_plan(os.environ.get("LAMQ_GLOBAL_KV_PLAN")),
+            shared_loop_kv=os.environ.get("LAMQ_SHARED_LOOP_KV", "0").strip().lower() in ("1", "true", "yes"),
         )
 
     @property
@@ -293,10 +371,16 @@ class Inkling2Cache:
         # Generic fallback KV
         self.keys: list[mx.array | None] = [None] * n_slots
         self.values: list[mx.array | None] = [None] * n_slots
-        # Fast pre-allocated unified FP16 / FP8-E4M3 global KV (`[2, 8, cap, 128]`)
+        # Fast pre-allocated unified FP16 / FP8-E4M3 / H128-Q4 / RHT128-LM global KV
         self.kv_f16: list[mx.array | None] = [None] * n_slots
         self.kv_u8: list[mx.array | None] = [None] * n_slots
         self.kv_q4_sc: list[mx.array | None] = [None] * n_slots
+        self.kv_k_u8: list[mx.array | None] = [None] * n_slots
+        self.kv_v_u8: list[mx.array | None] = [None] * n_slots
+        self.kv_k_sc: list[mx.array | None] = [None] * n_slots
+        self.kv_v_sc: list[mx.array | None] = [None] * n_slots
+        self.kv_k_bits: list[int] = [0] * n_slots
+        self.kv_v_bits: list[int] = [0] * n_slots
         self.kv_len: list[int] = [0] * n_slots
         self.kv_start: list[int] = [0] * n_slots
         self.kv_cap: list[int] = [0] * n_slots
@@ -330,6 +414,12 @@ class Inkling2Cache:
         new.kv_f16 = [cp(a) for a in self.kv_f16]
         new.kv_u8 = [cp(a) for a in self.kv_u8]
         new.kv_q4_sc = [cp(a) for a in self.kv_q4_sc]
+        new.kv_k_u8 = [cp(a) for a in self.kv_k_u8]
+        new.kv_v_u8 = [cp(a) for a in self.kv_v_u8]
+        new.kv_k_sc = [cp(a) for a in self.kv_k_sc]
+        new.kv_v_sc = [cp(a) for a in self.kv_v_sc]
+        new.kv_k_bits = list(self.kv_k_bits)
+        new.kv_v_bits = list(self.kv_v_bits)
         new.kv_len, new.kv_start, new.kv_cap = list(self.kv_len), list(self.kv_start), list(self.kv_cap)
         new.kv_is_sliding = list(self.kv_is_sliding)
         new.conv_states = [[cp(a) for a in row] for row in self.conv_states]
@@ -431,6 +521,11 @@ class Inkling2Cache:
                     if buffer is not None:
                         gathered = buffer[:, :, base : base + block_len, :][:, :, idx_mx, :]
                         buffer[:, :, base : base + k_accept, :] = gathered
+                for buffers in (self.kv_k_u8, self.kv_v_u8, self.kv_k_sc, self.kv_v_sc):
+                    buffer = buffers[slot]
+                    if buffer is not None:
+                        gathered = buffer[:, base : base + block_len, :][:, idx_mx, :]
+                        buffer[:, base : base + k_accept, :] = gathered
                 new_len = base + k_accept
                 self.kv_len[slot] = new_len
                 self._compact_sliding_slot(slot, new_len)
@@ -479,13 +574,93 @@ class Inkling2Cache:
             self._spec_conv_pair[slot][conv_idx] = (prev, x_btc)
         self.conv_states[slot][conv_idx] = new_prev
 
-    def update_kv_f16(self, slot: int, kv_f16: mx.array, is_sliding: bool) -> tuple[mx.array, int, int, int, bool, mx.array | None]:
-        """Pre-allocated unified FP16 (sliding) or FP8 / H128-Q4 (global) KV append."""
+    def lm_spec(self, slot: int) -> tuple[mx.array, mx.array, mx.array, mx.array, int, int] | None:
+        """Return `(K_buf, K_sc, V_buf, V_sc, k_bits, v_bits)` for an RHT-128 Lloyd-Max KV slot, else `None`."""
+        if self.kv_k_u8[slot] is None:
+            return None
+        return (
+            self.kv_k_u8[slot],
+            self.kv_k_sc[slot],
+            self.kv_v_u8[slot],
+            self.kv_v_sc[slot],
+            self.kv_k_bits[slot],
+            self.kv_v_bits[slot],
+        )
+
+    def kv_bytes(self) -> int:
+        """Exact allocated KV buffer bytes across all active slots (deduplicating aliased arrays)."""
+        seen: set[int] = set()
+        total = 0
+        for buffers in (
+            self.kv_f16,
+            self.kv_u8,
+            self.kv_q4_sc,
+            self.kv_k_u8,
+            self.kv_v_u8,
+            self.kv_k_sc,
+            self.kv_v_sc,
+            self.keys,
+            self.values,
+        ):
+            for buf in buffers:
+                if buf is not None and id(buf) not in seen:
+                    seen.add(id(buf))
+                    total += int(buf.nbytes)
+        return total
+
+    def update_kv_f16(
+        self,
+        slot: int,
+        kv_f16: mx.array,
+        is_sliding: bool,
+        *,
+        commit: bool = True,
+        layer_idx: int | None = None,
+        lm_bits: tuple[int, int] | None = None,
+    ) -> tuple[mx.array | None, int, int, int, bool, mx.array | None]:
+        """Pre-allocated unified FP16 (sliding) or FP8 / H128-Q4 / RHT128-LM (global) KV append.
+
+        When `commit=False` (used by `shared_loop_kv` on early loop passes), writes the current
+        step's `[cur : cur + T]` K/V transiently into `slot` without advancing `kv_len[slot]`,
+        so later loop passes overwrite the same tail slice and the final pass commits it.
+        """
         T = int(kv_f16.shape[2])
         cur = self.kv_len[slot]
         self.kv_is_sliding[slot] = is_sliding
+        if lm_bits is not None:
+            bits = None if (is_sliding or not self._fast) else lm_bits
+        elif self._fast:
+            eff_layer = slot if layer_idx is None else layer_idx
+            bits = _resolve_slot_kv_bits(self.cfg, eff_layer, slot, is_sliding)
+        else:
+            bits = None
+        if bits is not None:
+            k_bits, v_bits = int(bits[0]), int(bits[1])
+            k_u8, k_sc = kv_rht128_lm_quantize(kv_f16[0], k_bits)
+            v_u8, v_sc = kv_rht128_lm_quantize(kv_f16[1], v_bits)
+            need = cur + T
+            for new, buffers in (
+                (k_u8, self.kv_k_u8),
+                (k_sc, self.kv_k_sc),
+                (v_u8, self.kv_v_u8),
+                (v_sc, self.kv_v_sc),
+            ):
+                buffer = buffers[slot]
+                if buffer is None or need > buffer.shape[1] or buffer.shape[-1] != new.shape[-1]:
+                    capacity = ((need + 255) // 256) * 256
+                    larger = mx.zeros((new.shape[0], capacity, new.shape[-1]), dtype=new.dtype)
+                    if buffer is not None and cur > 0 and buffer.shape[-1] == new.shape[-1]:
+                        larger[:, :cur, :] = buffer[:, :cur, :]
+                    buffer = buffers[slot] = larger
+                buffer[:, cur:need, :] = new
+            self.kv_k_bits[slot] = k_bits
+            self.kv_v_bits[slot] = v_bits
+            self.kv_cap[slot] = self.kv_k_u8[slot].shape[1]
+            if commit:
+                self.kv_len[slot] = need
+            return None, need, self.kv_start[slot], self.kv_cap[slot], False, None
         mode = "fp16" if (is_sliding or not self._fast) else self.cfg.global_kv_mode
-        if mode != "fp16":
+        if mode in ("fp8", "q4"):
             if mode == "q4":
                 quantized, scales = kv_h128_q4_quantize(kv_f16)
             else:
@@ -504,8 +679,11 @@ class Inkling2Cache:
                     buffer = buffers[slot] = larger
                 buffer[:, :, cur:need, :] = new
             self.kv_cap[slot] = self.kv_u8[slot].shape[2]
-            self.kv_len[slot] = need
+            if commit:
+                self.kv_len[slot] = need
             return self.kv_u8[slot], need, self.kv_start[slot], self.kv_cap[slot], mode == "fp8", self.kv_q4_sc[slot]
+        if mode == "nested":
+            raise NotImplementedError("global_kv_mode='nested' requires nested KV support or a global_kv_plan override")
         W = self.cfg.sliding_window_size
         if is_sliding and not self._spec_recording and cur + T > self.kv_cap[slot] and cur > W:
             shift = cur - W
@@ -527,15 +705,26 @@ class Inkling2Cache:
             self.kv_cap[slot] = new_cap
         KV_buf = self.kv_f16[slot]
         KV_buf[:, :, cur:need, :] = kv_f16
-        self.kv_len[slot] = need
+        if commit:
+            self.kv_len[slot] = need
         return KV_buf, need, self.kv_start[slot], self.kv_cap[slot], False, None
 
-    def update_kv(self, slot: int, k: mx.array, v: mx.array, is_sliding: bool) -> tuple[mx.array, mx.array]:
+    def update_kv(
+        self,
+        slot: int,
+        k: mx.array,
+        v: mx.array,
+        is_sliding: bool,
+        *,
+        commit: bool = True,
+    ) -> tuple[mx.array, mx.array]:
         if self.keys[slot] is None:
             K, V = k, v
         else:
             K = mx.concatenate([self.keys[slot], k], axis=2)
             V = mx.concatenate([self.values[slot], v], axis=2)
+        if not commit:
+            return K, V
         if self._spec_recording:
             self._spec_kv_full[slot] = (K, V, is_sliding)
         if is_sliding and K.shape[2] > self.cfg.sliding_window_size:
@@ -566,7 +755,15 @@ class Inkling2Cache:
     def state(self) -> list[mx.array]:
         out: list[mx.array] = []
         if self._fast:
-            for buffers in (self.kv_f16, self.kv_u8, self.kv_q4_sc):
+            for buffers in (
+                self.kv_f16,
+                self.kv_u8,
+                self.kv_q4_sc,
+                self.kv_k_u8,
+                self.kv_v_u8,
+                self.kv_k_sc,
+                self.kv_v_sc,
+            ):
                 out.extend(kv for kv in buffers if kv is not None)
         else:
             for k, v in zip(self.keys, self.values):
@@ -1557,6 +1754,8 @@ class PackedDecoderLayer:
         tree_spec: dict | None = None,
         qkv_w_cached: mx.array | None = None,
         o_w_cached: mx.array | None = None,
+        kv_slot: int | None = None,
+        kv_commit: bool = True,
     ) -> mx.array:
         """Ultra-fast fused Metal path for Inkling-2-Mini (B=1, h shape `[T, 2304]`)."""
         cfg = self.cfg
@@ -1659,13 +1858,18 @@ class PackedDecoderLayer:
             cache.set_conv_after(cache_slot, 0, kp, k_raw.reshape(1, T, 1024), new_kp)
             cache.set_conv_after(cache_slot, 1, vp, v_raw.reshape(1, T, 1024), new_vp)
 
-        KV_buf, kv_len, kv_start, kv_cap, kv_is_fp8, kv_q4_sc = cache.update_kv_f16(cache_slot, kv_f16, self.is_sliding)
+        use_kv_slot = cache_slot if kv_slot is None else kv_slot
+        KV_buf, kv_len, kv_start, kv_cap, kv_is_fp8, kv_q4_sc = cache.update_kv_f16(
+            use_kv_slot, kv_f16, self.is_sliding, commit=kv_commit, layer_idx=self.layer_idx,
+        )
+        kv_lm_spec = None if KV_buf is not None else cache.lm_spec(use_kv_slot)
 
         # 4. Fused Sinks + GQA+RelPos Flash-Decoding / FlashAttention-2 SDPA (1 launch!)
         attn_out = gqa_relpos_sinks_sdpa_fast(
             q, KV_buf, rel_st, self.rel_proj_t_f16, q_in, self.sink_w_f16,
             T, kv_len, kv_start, q_pos0, kv_cap, self.is_sliding,
-            tree_depth=tree_depth, tree_mask=tree_mask, kv_fp8=kv_is_fp8, kv_q4_scales=kv_q4_sc,
+            tree_depth=tree_depth, tree_mask=tree_mask,
+            kv_fp8=kv_is_fp8, kv_q4_scales=kv_q4_sc, kv_lm_spec=kv_lm_spec,
         )
 
         # 5. Fused Gate*Attn + RHT-3072 -> O projection -> Post-Attn ShortConv4 (+ Residual)
@@ -1704,6 +1908,8 @@ class PackedDecoderLayer:
         cache: Inkling2Cache,
         cache_slot: int,
         messages: tuple[mx.array, mx.array, mx.array, mx.array] | None = None,
+        kv_slot: int | None = None,
+        kv_commit: bool = True,
     ) -> mx.array:
         cfg = self.cfg
         B, T, H = hidden_states.shape
@@ -1750,7 +1956,9 @@ class PackedDecoderLayer:
         k = l2_clip(k_raw.reshape(B, T, cfg.num_key_value_heads, cfg.head_dim), cfg.qk_l2_clip_threshold).transpose(0, 2, 1, 3)
         v = unweighted_rms_norm(v_raw.reshape(B, T, cfg.num_key_value_heads, cfg.head_dim), cfg.rms_norm_eps).transpose(0, 2, 1, 3)
 
-        K_all, V_all = cache.update_kv(cache_slot, k, v, self.is_sliding)
+        K_all, V_all = cache.update_kv(
+            cache_slot if kv_slot is None else kv_slot, k, v, self.is_sliding, commit=kv_commit,
+        )
         kv_len = K_all.shape[2]
 
         rel_st = self.rel_lin(q_in).reshape(B, T, cfg.num_attention_heads, cfg.d_rel)
@@ -1871,6 +2079,9 @@ class Inkling2LoopPackedMLX:
         # For T >= 16, reuse dequantized FP16 QKV & O weights across the 3 loop passes of L6..17
         cache_loop_w = (T >= 16) and (cfg.loop_passes > 1)
         loop_w_cache: dict[int, tuple[mx.array, mx.array]] = {}
+        num_loop = cfg.loop_end - cfg.loop_start
+        share_loop_kv = cfg.shared_loop_kv and (cfg.loop_passes > 1)
+        final_loop_offset = cfg.num_hidden_layers + (cfg.loop_passes - 2) * num_loop - cfg.loop_start
 
         # 2. Pass 0 over loop layers (L6..17)
         for i in range(cfg.loop_start, cfg.loop_end):
@@ -1883,7 +2094,12 @@ class Inkling2LoopPackedMLX:
                 loop_w_cache[i] = (wq_c, wo_c)
             else:
                 wq_c = wo_c = None
-            new_h = L.forward_fast(h, blocks_cat, n_blocks, q_pos0, T, cache, i, messages=None, tree_spec=tree_spec, qkv_w_cached=wq_c, o_w_cached=wo_c)
+            sh = share_loop_kv and (not L.is_sliding)
+            new_h = L.forward_fast(
+                h, blocks_cat, n_blocks, q_pos0, T, cache, i, messages=None, tree_spec=tree_spec,
+                qkv_w_cached=wq_c, o_w_cached=wo_c,
+                kv_slot=(i + final_loop_offset) if sh else None, kv_commit=not sh,
+            )
             if L.is_block_boundary:
                 blocks_cat = h[None, :, :] if n_blocks == 0 else mx.concatenate([blocks_cat, h[None, :, :]], axis=0)
                 n_blocks += 1
@@ -1893,7 +2109,6 @@ class Inkling2LoopPackedMLX:
                 mx.async_eval(h)
 
         # 3. Passes 1..loop_passes-1 over loop layers with cross-pass messages
-        num_loop = cfg.loop_end - cfg.loop_start
         for loop_idx in range(1, cfg.loop_passes):
             prev_n = n_blocks - (num_pre + 1)
             prev_blocks = blocks_cat[num_pre + 1 :] if prev_n > 0 else None
@@ -1902,13 +2117,19 @@ class Inkling2LoopPackedMLX:
             blocks_cat = pre_loop_blocks
             n_blocks = num_pre
             cache_offset = cfg.num_hidden_layers + (loop_idx - 1) * num_loop - cfg.loop_start
+            is_last_pass = loop_idx == (cfg.loop_passes - 1)
             for loop_layer_idx, i in enumerate(range(cfg.loop_start, cfg.loop_end)):
                 if visit in tap_set:
                     captured[visit] = h
                 L = self.layers[i]
                 msgs = block_attn_res_fused(self.message_in_q[loop_layer_idx], prev_blocks, prev_n, prev_h)  # [4, T, 2304]
                 wq_c, wo_c = loop_w_cache[i] if cache_loop_w else (None, None)
-                new_h = L.forward_fast(h, blocks_cat, n_blocks, q_pos0, T, cache, i + cache_offset, messages=msgs, tree_spec=tree_spec, qkv_w_cached=wq_c, o_w_cached=wo_c)
+                sh = share_loop_kv and (not L.is_sliding) and (not is_last_pass)
+                new_h = L.forward_fast(
+                    h, blocks_cat, n_blocks, q_pos0, T, cache, i + cache_offset, messages=msgs, tree_spec=tree_spec,
+                    qkv_w_cached=wq_c, o_w_cached=wo_c,
+                    kv_slot=(i + final_loop_offset) if sh else None, kv_commit=not sh,
+                )
                 if L.is_block_boundary:
                     blocks_cat = h[None, :, :] if n_blocks == 0 else mx.concatenate([blocks_cat, h[None, :, :]], axis=0)
                     n_blocks += 1
@@ -2001,29 +2222,40 @@ class Inkling2LoopPackedMLX:
         pre_loop_blocks = list(block_states)
         num_pre = len(pre_loop_blocks)
 
+        num_loop = cfg.loop_end - cfg.loop_start
+        share_loop_kv = cfg.shared_loop_kv and (cfg.loop_passes > 1)
+        final_loop_offset = cfg.num_hidden_layers + (cfg.loop_passes - 2) * num_loop - cfg.loop_start
         for i in range(cfg.loop_start, cfg.loop_end):
             if visit in tap_set:
                 captured[visit] = h[0].astype(mx.float32)
             L = self.layers[i]
-            new_h = L(h, block_states, position_ids, cache, i, messages=None)
+            sh = share_loop_kv and (not L.is_sliding)
+            new_h = L(
+                h, block_states, position_ids, cache, i, messages=None,
+                kv_slot=(i + final_loop_offset) if sh else None, kv_commit=not sh,
+            )
             if L.is_block_boundary:
                 block_states = block_states + [h.astype(mx.float32)]
             h = new_h
             visit += 1
 
-        num_loop = cfg.loop_end - cfg.loop_start
         for loop_idx in range(1, cfg.loop_passes):
             prev_blocks = block_states[num_pre + 1 :]
             prev_h = h
             h = pre_loop_h
             block_states = list(pre_loop_blocks)
             cache_offset = cfg.num_hidden_layers + (loop_idx - 1) * num_loop - cfg.loop_start
+            is_last_pass = loop_idx == (cfg.loop_passes - 1)
             for loop_layer_idx, i in enumerate(range(cfg.loop_start, cfg.loop_end)):
                 if visit in tap_set:
                     captured[visit] = h[0].astype(mx.float32)
                 L = self.layers[i]
                 msgs = block_attn_res(self.message_in_q[loop_layer_idx], prev_blocks, prev_h)
-                new_h = L(h, block_states, position_ids, cache, i + cache_offset, messages=msgs)
+                sh = share_loop_kv and (not L.is_sliding) and (not is_last_pass)
+                new_h = L(
+                    h, block_states, position_ids, cache, i + cache_offset, messages=msgs,
+                    kv_slot=(i + final_loop_offset) if sh else None, kv_commit=not sh,
+                )
                 if L.is_block_boundary:
                     block_states = block_states + [h.astype(mx.float32)]
                 h = new_h

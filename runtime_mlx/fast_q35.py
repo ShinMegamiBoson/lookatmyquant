@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -951,7 +952,7 @@ def _set(root, path, module):
     setattr(root, parts[-1], module)
 
 
-def load(path, kind=None, verify=True, fuse=None):
+def load(path, kind=None, verify=True, fuse=None, kv_mode=None):
     """The packed file as an mlx_lm model whose coded matrices run through this module, and its tokenizer.
     fuse=False keeps mlx_lm's own steps between the products (the check that the fused steps equal them)."""
     from compiler_artifact import read_artifact
@@ -1003,6 +1004,14 @@ def load(path, kind=None, verify=True, fuse=None):
             for a, b in zip(fast, fast[1:]):
                 a._next[0] = b
             tm.layers = fast
+    resolved_kv = (os.environ.get("LAMQ_Q35_KV", "fp16") if kv_mode is None else kv_mode).strip()
+    if resolved_kv.lower() not in ("fp16", "none", ""):
+        sink_tokens = int(os.environ.get("LAMQ_Q35_KV_SINK", "4"))
+        try:
+            from .kv_q35 import install_kv_quant
+        except ImportError:
+            from kv_q35 import install_kv_quant
+        install_kv_quant(model, resolved_kv, sink_tokens=sink_tokens)
     model.eval()
     mx.eval(model.parameters())
     return model, load_tokenizer(path)

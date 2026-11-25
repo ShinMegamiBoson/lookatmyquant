@@ -39,8 +39,14 @@ CACHE_FORMAT_VERSION = 1
 MAX_DELTA_CHAIN = 4
 
 
+def _format_kv_plan_tag(plan: Any) -> str:
+    if not plan:
+        return ""
+    return ";".join(f"{int(k)}:{int(v[0])},{int(v[1])}" for k, v in sorted(plan.items(), key=lambda kv: int(kv[0])))
+
+
 def _model_fingerprint(model: Any, drafter: Any = None) -> str:
-    """Stable key scoping saved KV snapshots to a specific model directory, KV mode, and drafter."""
+    """Stable key scoping saved KV snapshots to a specific model directory, KV mode/plan, and drafter."""
     h = hashlib.sha256()
     p = getattr(model, "packed_dir", None)
     if p is not None:
@@ -52,8 +58,14 @@ def _model_fingerprint(model: Any, drafter: Any = None) -> str:
     else:
         cfg = getattr(model, "cfg", None)
         h.update(repr(cfg).encode())
-    kv_mode = getattr(getattr(model, "cfg", None), "global_kv_mode", "fp16")
-    h.update(f"|kv={kv_mode}|draft={drafter is not None}".encode())
+    cfg = getattr(model, "cfg", None)
+    kv_mode = getattr(cfg, "global_kv_mode", "fp16")
+    kv_plan = getattr(cfg, "global_kv_plan", None)
+    plan_str = _format_kv_plan_tag(kv_plan)
+    plan_tag = f"|kvplan={plan_str}" if plan_str else ""
+    sh_kv = bool(getattr(cfg, "shared_loop_kv", False))
+    sh_tag = "|shkv=1" if sh_kv else ""
+    h.update(f"|kv={kv_mode}{plan_tag}{sh_tag}|draft={drafter is not None}".encode())
     return h.hexdigest()[:24]
 
 
@@ -106,6 +118,14 @@ def _serialize_mlx_snapshot(
                     tensors[f"kv_u8.{s}"] = mx.contiguous(cache.kv_u8[s][:, :, prev:cur, :])
                 if cache.kv_q4_sc[s] is not None:
                     tensors[f"kv_q4_sc.{s}"] = mx.contiguous(cache.kv_q4_sc[s][:, :, prev:cur, :])
+                for key_prefix, arr_list in (
+                    ("kv_k_u8", getattr(cache, "kv_k_u8", None)),
+                    ("kv_v_u8", getattr(cache, "kv_v_u8", None)),
+                    ("kv_k_sc", getattr(cache, "kv_k_sc", None)),
+                    ("kv_v_sc", getattr(cache, "kv_v_sc", None)),
+                ):
+                    if arr_list is not None and arr_list[s] is not None:
+                        tensors[f"{key_prefix}.{s}"] = mx.contiguous(arr_list[s][:, prev:cur, :])
     else:
         for s in range(n_slots):
             if cache.keys[s] is not None and cache.values[s] is not None:
@@ -152,14 +172,20 @@ def _serialize_mlx_snapshot(
             "delta_starts": d_starts,
         }
 
+    cfg = getattr(cache, "cfg", None)
+    kv_plan = getattr(cfg, "global_kv_plan", None)
     meta = {
         "fast": fast,
         "n_slots": n_slots,
         "seq_len": int(cache.seq_len),
+        "global_kv_mode": getattr(cfg, "global_kv_mode", "fp16"),
+        "global_kv_plan": _format_kv_plan_tag(kv_plan) or None,
         "kv_len": [int(x) for x in cache.kv_len] if fast else [int(k.shape[2]) if k is not None else 0 for k in cache.keys],
         "kv_start": [int(x) for x in cache.kv_start],
         "kv_cap": [int(x) for x in cache.kv_cap],
         "kv_is_sliding": [bool(x) for x in cache.kv_is_sliding],
+        "kv_k_bits": [int(x) for x in getattr(cache, "kv_k_bits", [0] * n_slots)] if fast else None,
+        "kv_v_bits": [int(x) for x in getattr(cache, "kv_v_bits", [0] * n_slots)] if fast else None,
         "delta_starts": delta_starts,
         "drafter": drafter_meta,
     }
@@ -191,13 +217,25 @@ def _restore_mlx_chain(model: Any, chain: list[tuple[dict, Path]]) -> tuple[Any,
                 continue
             cap = max(int(cache.kv_cap[s]), ((cur + 255) // 256) * 256)
             cache.kv_cap[s] = cap
-            for key_prefix, target_list in (("kv_f16", cache.kv_f16), ("kv_u8", cache.kv_u8), ("kv_q4_sc", cache.kv_q4_sc)):
+            for key_prefix, target_list, seq_axis in (
+                ("kv_f16", cache.kv_f16, 2),
+                ("kv_u8", cache.kv_u8, 2),
+                ("kv_q4_sc", cache.kv_q4_sc, 2),
+                ("kv_k_u8", cache.kv_k_u8, 1),
+                ("kv_v_u8", cache.kv_v_u8, 1),
+                ("kv_k_sc", cache.kv_k_sc, 1),
+                ("kv_v_sc", cache.kv_v_sc, 1),
+            ):
                 tk = f"{key_prefix}.{s}"
                 if is_sw:
                     arr = leaf_tensors.get(tk)
                     if arr is not None:
-                        buf = mx.zeros((*arr.shape[:2], cap, arr.shape[-1]), dtype=arr.dtype)
-                        buf[:, :, : arr.shape[2], :] = arr
+                        if seq_axis == 2:
+                            buf = mx.zeros((*arr.shape[:2], cap, arr.shape[-1]), dtype=arr.dtype)
+                            buf[:, :, : arr.shape[2], :] = arr
+                        else:
+                            buf = mx.zeros((arr.shape[0], cap, arr.shape[-1]), dtype=arr.dtype)
+                            buf[:, : arr.shape[1], :] = arr
                         target_list[s] = buf
                 else:
                     # Assemble from base + deltas
@@ -209,10 +247,23 @@ def _restore_mlx_chain(model: Any, chain: list[tuple[dict, Path]]) -> tuple[Any,
                             sample = arr
                             parts.append((int(m_step["delta_starts"][s]), arr))
                     if sample is not None:
-                        buf = mx.zeros((*sample.shape[:2], cap, sample.shape[-1]), dtype=sample.dtype)
-                        for start, arr in parts:
-                            buf[:, :, start : start + arr.shape[2], :] = arr
+                        if seq_axis == 2:
+                            buf = mx.zeros((*sample.shape[:2], cap, sample.shape[-1]), dtype=sample.dtype)
+                            for start, arr in parts:
+                                buf[:, :, start : start + arr.shape[2], :] = arr
+                        else:
+                            buf = mx.zeros((sample.shape[0], cap, sample.shape[-1]), dtype=sample.dtype)
+                            for start, arr in parts:
+                                buf[:, start : start + arr.shape[1], :] = arr
                         target_list[s] = buf
+        if leaf_meta.get("kv_k_bits") is not None:
+            cache.kv_k_bits = [int(x) for x in leaf_meta["kv_k_bits"]]
+        else:
+            cache.kv_k_bits = [int(b.shape[-1]) // 16 if b is not None else 0 for b in cache.kv_k_u8]
+        if leaf_meta.get("kv_v_bits") is not None:
+            cache.kv_v_bits = [int(x) for x in leaf_meta["kv_v_bits"]]
+        else:
+            cache.kv_v_bits = [int(b.shape[-1]) // 16 if b is not None else 0 for b in cache.kv_v_u8]
     else:
         for s in range(n_slots):
             is_sw = bool(cache.kv_is_sliding[s]) if s < len(cache.kv_is_sliding) else False
