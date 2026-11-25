@@ -15,7 +15,10 @@ Endpoints: `POST /v1/chat/completions` (streaming and not), `GET /v1/models`, `G
 * Prompts longer than `--context` are refused with llama.cpp's error wording, which agent clients
   (for example Pi) already treat as "compact the conversation and retry".
 
-One request is generated at a time. Concurrent generation requests receive HTTP 503.
+* By default (`--max-batch 32`), packed Inkling-2-Mini models on MLX use continuous batching with
+  paged KV pools, automatic zero-copy shared-prefix reuse, interleaved chunked prefill, and
+  load-adaptive DSpark (`--dspark-max-batch 4`). Pass `--max-batch 1` for single-stream serving
+  (concurrent requests receive HTTP 503 when all admission slots are full).
 
 With `--ui`, the chat page at `GET /` can send same-origin requests over loopback HTTP or
 through a Host-preserving HTTPS proxy in front of an authenticated network listener.
@@ -700,25 +703,42 @@ class OutputParser:
 
 
 class Engine:
-    """Loads the model once and generates for one request at a time."""
+    """Loads the model once and serves either continuous-batched (`--max-batch > 1`) or single-stream requests."""
 
     def __init__(self, args: argparse.Namespace):
         # MLX arrays carry stream handles that are local to their creating thread.
         # Load and execute on one persistent thread across all HTTP connections.
+        self.scheduler = None
+        self.max_concurrent = 1
+        self._sched_future = None
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lamq-mlx")
         try:
             self._executor.submit(self._load, args).result()
+            if self.scheduler is not None:
+                self._sched_future = self._executor.submit(self.scheduler.run_forever)
         except BaseException:
             self.close()
             raise
 
     def close(self) -> None:
-        self._executor.shutdown(wait=True, cancel_futures=True)
+        sched = getattr(self, "scheduler", None)
+        if sched is not None:
+            sched.stop()
+        sf = getattr(self, "_sched_future", None)
+        if sf is not None:
+            try:
+                sf.result(timeout=5.0)
+            except Exception:
+                pass
+            self._sched_future = None
+        ex = getattr(self, "_executor", None)
+        if ex is not None:
+            ex.shutdown(wait=True, cancel_futures=True)
 
     def _load(self, args: argparse.Namespace) -> None:
         import mlx.core as mx
 
-        from .inkling import PromptCache
+        from .inkling import ContinuousBatchScheduler, PromptCache
         from .inkling.generate import _unwrap_model
         from .runtime import Runtime, detect_format, resolve_path
 
@@ -740,19 +760,45 @@ class Engine:
                 raise SystemExit(f"tokenizer has no {s}; is this an Inkling-2 model?")
             self.ids[k] = i
         cache_dir = getattr(args, "prompt_cache_dir", None)
-        if cache_dir:
-            from .prompt_cache_disk import DiskPromptCache
-
-            self.prompt_cache = DiskPromptCache(
-                cache_dir,
-                max_entries=max(1, int(args.prompt_cache or 2)),
-                max_disk_gb=float(getattr(args, "prompt_cache_gb", 20.0)),
-            )
-        elif args.prompt_cache:
-            self.prompt_cache = PromptCache(max_entries=args.prompt_cache)
-        else:
+        req_max_batch = max(1, int(getattr(args, "max_batch", 32)))
+        if req_max_batch > 1 and cache_dir:
+            log("note: falling back to --max-batch 1 because --prompt-cache-dir is active")
+            req_max_batch = 1
+        if req_max_batch > 1 and self.m.cfg.use_fast_metal:
             self.prompt_cache = None
-        log(f"loaded {args.model} ({'with drafter' if self.drafter is not None else 'serial'}) in "
+            allow_pfx = (
+                not getattr(args, "no_prefix_cache", False)
+                and _is_loopback(getattr(args, "host", "127.0.0.1"))
+                and not os.environ.get("LAMQ_API_KEY")
+            )
+            self.scheduler = ContinuousBatchScheduler(
+                self.m,
+                drafter=self.drafter,
+                eos_id=self.ids["eos"],
+                max_batch=req_max_batch,
+                prefill_step=max(64, int(getattr(args, "prefill_step", 512))),
+                dspark_max_batch=max(0, int(getattr(args, "dspark_max_batch", 4))),
+                enable_prefix_cache=allow_pfx,
+                auto_start=False,
+            )
+            self.max_concurrent = req_max_batch * 2
+        else:
+            self.scheduler = None
+            self.max_concurrent = 1
+            if cache_dir:
+                from .prompt_cache_disk import DiskPromptCache
+
+                self.prompt_cache = DiskPromptCache(
+                    cache_dir,
+                    max_entries=max(1, int(args.prompt_cache or 2)),
+                    max_disk_gb=float(getattr(args, "prompt_cache_gb", 20.0)),
+                )
+            elif args.prompt_cache:
+                self.prompt_cache = PromptCache(max_entries=args.prompt_cache)
+            else:
+                self.prompt_cache = None
+        batch_note = f", max_batch={req_max_batch}" if self.scheduler is not None else ", single-stream"
+        log(f"loaded {args.model} ({'with drafter' if self.drafter is not None else 'serial'}{batch_note}) in "
             f"{time.perf_counter() - t:.1f}s, {mx.get_active_memory() / 1e9:.2f} GB")
 
     def _repeat_guard_enabled(self) -> bool:
@@ -819,7 +865,73 @@ class Engine:
 
     def run(self, job: dict, emit: Callable[[str, Any], None], gone: Callable[[], bool]) -> tuple[dict, str]:
         """Generate for a prepared request, sending parsed events to `emit`. Returns `(usage, finish_reason)`."""
+        if getattr(self, "scheduler", None) is not None:
+            return self._run_batched(job, emit, gone)
         return self._executor.submit(self._run, job, emit, gone).result()
+
+    def _run_batched(self, job: dict, emit: Callable[[str, Any], None], gone: Callable[[], bool]) -> tuple[dict, str]:
+        import queue as _queue
+
+        ids = job["ids"]
+        if gone():
+            raise ClientGone()
+        t0 = time.perf_counter()
+        aborted = threading.Event()
+
+        def _is_gone() -> bool:
+            if aborted.is_set():
+                return True
+            if gone():
+                aborted.set()
+                return True
+            return False
+
+        tok_q = self.scheduler.submit(job, _is_gone)
+        parser = OutputParser(self.hf, self.ids, job["tool_names"])
+        n_gen = 0
+        finish: str | None = None
+        reused = 0
+        prompt_s = 0.0
+        try:
+            while True:
+                try:
+                    kind, payload = tok_q.get(timeout=0.5)
+                except _queue.Empty:
+                    if _is_gone():
+                        raise ClientGone()
+                    continue
+                if kind == "err":
+                    raise payload
+                if kind == "meta":
+                    reused = int(payload.get("prompt_cached_tokens", 0) or 0)
+                    prompt_s = float(payload.get("prefill_s", 0.0) or 0.0)
+                    continue
+                if kind == "done":
+                    if payload.get("aborted"):
+                        raise ClientGone()
+                    if "prompt_cached_tokens" in payload:
+                        reused = int(payload.get("prompt_cached_tokens", 0) or 0)
+                    if "prefill_s" in payload:
+                        prompt_s = float(payload.get("prefill_s", 0.0) or 0.0)
+                    break
+                n_gen += 1
+                for ev in parser.feed(int(payload)):
+                    emit(*ev)
+                if parser.done or n_gen >= job["max_tokens"]:
+                    aborted.set()
+                    break
+            for ev in parser.close():
+                emit(*ev)
+            finish = parser.finish if parser.done else "length"
+        finally:
+            aborted.set()
+            elapsed = time.perf_counter() - t0
+            log(f"[batch] prompt {len(ids)} tok (cached {reused}, prefill {prompt_s:.1f}s) | gen {n_gen} tok "
+                f"({n_gen / max(elapsed - prompt_s, 1e-9):.1f} tok/s) | effort {job['effort']} temp {job['temp']} | "
+                f"{finish or 'aborted'}")
+        usage = {"prompt_tokens": len(ids), "completion_tokens": n_gen, "total_tokens": len(ids) + n_gen,
+                 "prompt_tokens_details": {"cached_tokens": reused}}
+        return usage, finish
 
     def _run(self, job: dict, emit: Callable[[str, Any], None], gone: Callable[[], bool]) -> tuple[dict, str]:
         import mlx.core as mx
@@ -887,8 +999,8 @@ class Engine:
 class BoundedHTTPServer(ThreadingHTTPServer):
     """Bound the number of HTTP worker threads, including connections still sending headers."""
 
-    def __init__(self, address, handler):
-        self._connections = threading.BoundedSemaphore(MAX_CONNECTIONS)
+    def __init__(self, address, handler, *, max_connections: int = MAX_CONNECTIONS):
+        self._connections = threading.BoundedSemaphore(max(MAX_CONNECTIONS, int(max_connections)))
         if ":" in address[0]:
             self.address_family = socket.AF_INET6
         super().__init__(address, handler)
@@ -918,7 +1030,8 @@ def make_handler(engine, model_id: str, *, api_key: str | None = None, loopback:
     if not loopback and not api_key:
         raise ValueError("network listening requires an API key")
     page = UI_PAGE.read_bytes() if ui else b""
-    generation = threading.BoundedSemaphore(1)
+    max_concurrent = max(1, int(getattr(engine, "max_concurrent", 1)))
+    generation = threading.BoundedSemaphore(max_concurrent)
     expected_auth = f"Bearer {api_key}".encode() if api_key else None
     expected_xkey = api_key.encode() if api_key else None
 
@@ -1598,6 +1711,14 @@ def add_serve_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--prompt-cache-gb", type=float, default=20.0, help="disk budget in GiB for --prompt-cache-dir (default 20)")
     p.add_argument("--no-repeat-guard", action="store_true", help="disable the stateless agent tool-loop repetition guard")
     p.add_argument("--prefill-chunk", type=int, default=-1, help="tokens per prefill chunk (-1 automatic, 0 one pass)")
+    p.add_argument("--max-batch", type=int, default=32,
+                   help="max concurrent batched Inkling MLX requests (default 32; 1 = legacy single-stream)")
+    p.add_argument("--prefill-step", type=int, default=512,
+                   help="tokens per interleaved prefill quantum in batched mode (default 512)")
+    p.add_argument("--dspark-max-batch", type=int, default=4,
+                   help="load-adaptive DSpark cutoff in batched mode: use DSpark up to B active requests (default 4)")
+    p.add_argument("--no-prefix-cache", action="store_true",
+                   help="disable automatic zero-copy shared-prefix KV reuse in batched mode")
     p.add_argument("--no-verify", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--no-warmup", action="store_true")
     p.add_argument("--ui", action="store_true",
@@ -1609,8 +1730,12 @@ def serve(args: argparse.Namespace) -> int:
     loopback = _is_loopback(args.host)
     if not loopback and not api_key:
         raise SystemExit("network listening requires LAMQ_API_KEY")
+    max_batch = getattr(args, "max_batch", 32)
+    prefill_step = getattr(args, "prefill_step", 512)
+    dspark_max_batch = getattr(args, "dspark_max_batch", 4)
     if not (0 <= args.prompt_cache <= 8 and args.context >= 2 and args.max_tokens > 0 and args.prefill_chunk >= -1
-            and 0 <= args.temp <= 2 and 0 <= args.top_p <= 1 and getattr(args, "prompt_cache_gb", 20.0) >= 0):
+            and 0 <= args.temp <= 2 and 0 <= args.top_p <= 1 and getattr(args, "prompt_cache_gb", 20.0) >= 0
+            and 1 <= max_batch <= 128 and prefill_step >= 64 and dspark_max_batch >= 0):
         raise SystemExit("invalid server limits or sampling defaults")
     if args.device == "mlx":
         if getattr(args, "no_thinking", False):
@@ -1632,12 +1757,14 @@ def serve(args: argparse.Namespace) -> int:
     model_id = args.model_id or str(args.model).rstrip("/").split("/")[-1]
     with closing(engine_class(args)) as engine:
         handler = make_handler(engine, model_id, api_key=api_key, loopback=loopback, ui=args.ui)
-        with BoundedHTTPServer((args.host, args.port), handler) as srv:
+        max_conns = max(MAX_CONNECTIONS, int(getattr(engine, "max_concurrent", 1)) + 16)
+        with BoundedHTTPServer((args.host, args.port), handler, max_connections=max_conns) as srv:
             if not args.no_warmup:
                 engine.warmup()
             address = f"[{args.host}]" if ":" in args.host else args.host
+            batch_note = f", max_batch {args.max_batch}" if getattr(engine, "scheduler", None) is not None else ""
             log(f"serving {model_id!r} on http://{address}:{srv.server_port}/v1 (context {args.context}, "
-                f"reasoning_effort {args.reasoning_effort}, temp {args.temp})")
+                f"reasoning_effort {args.reasoning_effort}, temp {args.temp}{batch_note})")
             if args.ui and loopback:
                 log(f"chat page on http://{address}:{srv.server_port}/")
             elif args.ui:

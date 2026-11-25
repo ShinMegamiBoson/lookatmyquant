@@ -931,6 +931,126 @@ def test_thinking_budget_cap_serial_and_dspark_parity() -> None:
             gen_mod.THINK_BREAK_TOKENS = old_brk
 
 
+def test_multitile_sg8_and_moe_grouped_t32() -> None:
+    """Verify multi-tile DenseStage sg8 and UnifiedMoESide grouped (plan_cap=256) for T = 9..32."""
+    from runtime_mlx.inkling.fast_kernels import DenseStage, UnifiedMoESide, build_fast_luts
+    from runtime_mlx.inkling.kernels import nvfp4_luts_mx
+
+    rng = np.random.default_rng(20261125)
+    e2m1_mx, e4m3_mx = nvfp4_luts_mx()
+    luts = {
+        "ht2": mx.array(rng.standard_normal((512, 4)).astype(np.float16) * 0.4),
+        "rtr2": mx.array(rng.standard_normal((4096,)).astype(np.float16) * 0.4),
+        "nvfp4_e2m1": e2m1_mx,
+        "nvfp4_e4m3": e4m3_mx,
+    }
+    fast_luts = build_fast_luts(luts)
+
+    n_cols = 2304
+    items = [
+        {"fmt": "ht2", "m": 128, "codes": _pack_u32_random(rng, (128, (n_cols * 2) // 32)), "scales": rng.uniform(0.01, 0.03, size=(128,)).astype(np.float16), "signs_in": rng.choice([-1, 1], size=(n_cols,)).astype(np.float32)},
+        {"fmt": "rtr2", "m": 128, "codes": _pack_u32_random(rng, (128, (n_cols * 2) // 32)), "scales": rng.uniform(0.01, 0.03, size=(128,)).astype(np.float16), "signs_in": rng.choice([-1, 1], size=(n_cols,)).astype(np.float32)},
+    ]
+    stage = DenseStage(items, n_cols, fast_luts)
+    W_ref = stage.dequant_f16().astype(mx.float32)
+    mx.eval(W_ref)
+    for T in (9, 12, 16, 24, 32):
+        x_rot = mx.array(rng.standard_normal((2, T, n_cols)).astype(np.float16) * 0.5)
+        y_sg = stage.matmul_rotated_f16(x_rot, T)
+        parts = stage.matmul_rotated_f16_parts(x_rot, T)
+        y_parts = mx.concatenate(parts, axis=-1)
+        y_ref = mx.concatenate([
+            x_rot[0].astype(mx.float32) @ W_ref[:128].T,
+            x_rot[1].astype(mx.float32) @ W_ref[128:].T,
+        ], axis=-1)
+        mx.eval(y_sg, y_parts, y_ref)
+        rel_sg = float(np.linalg.norm(np.array(y_sg) - np.array(y_ref)) / np.linalg.norm(np.array(y_ref)))
+        rel_pt = float(np.linalg.norm(np.array(y_parts) - np.array(y_ref)) / np.linalg.norm(np.array(y_ref)))
+        assert rel_sg < 1.5e-3, f"DenseStage multi-tile sg8 mismatch at T={T}: rel={rel_sg}"
+        assert rel_pt < 1.5e-3, f"DenseStage parts multi-tile sg8 mismatch at T={T}: rel={rel_pt}"
+
+    m_rows = 256
+    ht2_c = _pack_u32_random(rng, (128, m_rows, (n_cols * 2) // 32))
+    ht2_s = rng.uniform(0.01, 0.04, size=(128, m_rows)).astype(np.float16)
+    slabs = [(1, mx.array(ht2_c), mx.array(ht2_s), luts["ht2"], FMT_PARAMS["ht2"])]
+    umoe = UnifiedMoESide(slabs, mx.full((128,), 1, dtype=mx.int32), mx.arange(128, dtype=mx.uint32), m_rows, n_cols, fast_luts)
+    pool = np.arange(24, dtype=np.uint32)
+    for T in (12, 16, 24, 32):
+        x_rot = mx.array(rng.standard_normal((T, n_cols)).astype(np.float16) * 0.5)
+        eids_np = np.concatenate([rng.choice(pool, size=8, replace=False) for _ in range(T)]).astype(np.uint32)
+        y_fast = umoe(x_rot, mx.array(eids_np), x_div=8)
+        y_ref = trellis_matvec(
+            x_rot.astype(mx.float32), mx.array(ht2_c), mx.array(ht2_s), luts["ht2"],
+            mx.array(eids_np), m_rows, n_cols, *FMT_PARAMS["ht2"], x_div=8,
+        )
+        mx.eval(y_fast, y_ref)
+        rel = float(np.linalg.norm(np.array(y_fast) - np.array(y_ref)) / np.linalg.norm(np.array(y_ref)))
+        assert rel < 1.5e-3, f"UnifiedMoESide grouped T={T} (plan_cap=256) mismatch: rel={rel}"
+
+
+def test_paged_batch_and_trim_sliding() -> None:
+    """Verify Inkling2Cache.trim_sliding(), PagedInklingPool block/prefix lifecycle, and batch_kernels."""
+    from runtime_mlx.inkling.batch import BatchSequence, PagedInklingPool, _MAX_SLIDING_BLOCKS
+    from runtime_mlx.inkling.batch_kernels import PAGED_BLOCK_SIZE, _selftest as batch_kernels_selftest
+    from runtime_mlx.inkling.model import Inkling2Cache, Inkling2Config
+
+    cfg_sl = Inkling2Config(num_hidden_layers=2, loop_passes=1, local_layer_ids=(0,), sliding_window_size=1024)
+    cache = Inkling2Cache(cfg_sl)
+    rng = np.random.default_rng(321)
+    chunk1 = mx.array(rng.standard_normal((2, 8, 2048, 128)).astype(np.float16))
+    chunk2 = mx.array(rng.standard_normal((2, 8, 2048, 128)).astype(np.float16))
+    cache.update_kv_f16(0, chunk1, True)
+    cache.update_kv_f16(0, chunk2, True)
+    assert cache.kv_cap[0] > 1280, f"expected oversized sliding cap before trim, got {cache.kv_cap[0]}"
+    before_tail = np.array(cache.kv_f16[0][:, :, cache.kv_len[0] - 1024 : cache.kv_len[0], :])
+    cache.trim_sliding()
+    assert cache.kv_cap[0] == 1280 and cache.kv_len[0] == 1024 and cache.kv_start[0] == 3072
+    after_tail = np.array(cache.kv_f16[0][:, :, :1024, :])
+    np.testing.assert_array_equal(before_tail, after_tail)
+
+    cfg_pool = Inkling2Config(
+        num_hidden_layers=2, loop_passes=1, loop_start=0, loop_end=0,
+        local_layer_ids=(0,), sliding_window_size=1024,
+    )
+    pool = PagedInklingPool(
+        cfg_pool,
+        init_global_blocks=8,
+        init_sliding_blocks=8,
+        max_global_blocks=32,
+        max_sliding_blocks=32,
+        max_conv_slots=16,
+        enable_prefix_cache=True,
+    )
+    pfx = list(range(100, 100 + PAGED_BLOCK_SIZE * 2))
+    seq1 = BatchSequence(1, pfx + [901, 902], pool)
+    assert seq1.reused_tokens == 0
+    seq1.ensure_capacity_for(len(pfx))
+    seq1.commit_tokens(pfx)
+    assert len(seq1.g_blocks) == 2 and seq1.registered_blocks == 2
+    g_b0, g_b1 = seq1.g_blocks[0], seq1.g_blocks[1]
+
+    seq2 = BatchSequence(2, pfx + [999], pool)
+    assert seq2.reused_tokens == len(pfx) and seq2.g_blocks == [g_b0, g_b1]
+    assert pool.g_ref[g_b0] == 2 and pool.g_ref[g_b1] == 2
+
+    seq3 = BatchSequence(3, list(range(5000, 5000 + PAGED_BLOCK_SIZE * (_MAX_SLIDING_BLOCKS + 3))), pool, use_prefix_cache=False)
+    for bi in range(_MAX_SLIDING_BLOCKS + 3):
+        seq3.ensure_capacity_for(PAGED_BLOCK_SIZE)
+        seq3.commit_tokens(list(range(5000 + bi * PAGED_BLOCK_SIZE, 5000 + (bi + 1) * PAGED_BLOCK_SIZE)), register_prefix=False)
+    assert len(seq3.s_blocks) == _MAX_SLIDING_BLOCKS
+    assert seq3.sliding_start == 3 * PAGED_BLOCK_SIZE
+
+    seq1.release()
+    seq2.release()
+    seq3.release()
+    assert pool.g_ref[g_b0] == 0 and pool.g_ref[g_b1] == 0
+    assert len(pool._prefix_nodes) == 2
+    assert pool._evict_one_prefix_leaf() is True
+    assert len(pool._prefix_nodes) == 1
+
+    batch_kernels_selftest()
+
+
 def test_fast_kernels_suite() -> None:
     """Verify all H=2304 Apple Silicon fast Metal kernels against exact references."""
     from runtime_mlx.inkling.fast_kernels import _selftest
@@ -950,6 +1070,8 @@ def main() -> None:
     test_nvfp4_unified_moe_all_modes()
     test_row_group_moe_and_f16_signs_in()
     test_thinking_budget_cap_serial_and_dspark_parity()
+    test_multitile_sg8_and_moe_grouped_t32()
+    test_paged_batch_and_trim_sliding()
     test_fast_kernels_suite()
     print("ALL INKLING MLX RUNTIME TESTS PASSED!", flush=True)
 

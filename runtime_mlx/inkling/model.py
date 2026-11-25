@@ -346,16 +346,30 @@ class Inkling2Cache:
         if self._fast:
             self._spec_base_kv_len = list(self.kv_len)
 
-    def _compact_sliding_slot(self, slot: int, new_len: int):
+    def _compact_sliding_slot(self, slot: int, new_len: int, *, shrink: bool = False):
         W = self.cfg.sliding_window_size
-        if self.kv_is_sliding[slot] and new_len > W + 256 and self.kv_f16[slot] is not None:
-            shift = new_len - W
+        if not (self.kv_is_sliding[slot] and self.kv_f16[slot] is not None):
+            return
+        compact_cap = W + 256
+        if new_len > compact_cap or (shrink and self.kv_cap[slot] > compact_cap and new_len >= W):
+            keep = min(W, new_len)
+            shift = new_len - keep
             KV = self.kv_f16[slot]
-            KV_new = mx.zeros((2, 8, self.kv_cap[slot], 128), dtype=mx.float16)
-            KV_new[:, :, :W, :] = KV[:, :, shift:new_len, :]
+            new_cap = min(self.kv_cap[slot], compact_cap)
+            KV_new = mx.zeros((2, 8, new_cap, 128), dtype=mx.float16)
+            KV_new[:, :, :keep, :] = KV[:, :, shift:new_len, :]
             self.kv_f16[slot] = KV_new
+            self.kv_cap[slot] = new_cap
             self.kv_start[slot] += shift
-            self.kv_len[slot] = W
+            self.kv_len[slot] = keep
+
+    def trim_sliding(self) -> None:
+        """Reclaim oversized sliding-window prefill slabs down to `W + 256` after prefill finishes."""
+        if not self._fast:
+            return
+        for slot in range(len(self.kv_f16)):
+            if self.kv_is_sliding[slot]:
+                self._compact_sliding_slot(slot, self.kv_len[slot], shrink=True)
 
     def commit_spec_verify(self, k_accept: int, block_len: int):
         """Roll back KV & conv states after verifying `block_len` tokens and accepting the first `k_accept` (`1..block_len`)."""
@@ -713,7 +727,7 @@ class PackedMoE:
         """Full fast MoE taking pre-rotated `x_rot_gu_f16` + `h_mlp_f16` from fused BAR/MsgBlend+Norm+RHT."""
         logits_f16 = h_mlp_f16 @ self.router_w_f16.T
         dyn = (self.cfg.moe_k_max < 8) or (self.cfg.moe_ratio_thr > 0.0)
-        if 2 <= T <= 8:
+        if 2 <= T <= 32:
             if dyn:
                 eids_flat, w_norm, gu_plan, dn_plan = sigmoid_top8_norm_and_plan_fast(
                     logits_f16, self.router_bias, self.cfg.route_scale,
@@ -739,7 +753,7 @@ class PackedMoE:
             else:
                 eids_flat, w_norm = sigmoid_top8_norm_fast(logits_f16, self.router_bias, self.cfg.route_scale)
             gu_plan = dn_plan = None
-            sc = compute_moe_sorted_offsets(eids_flat) if T > 8 else None
+            sc = compute_moe_sorted_offsets(eids_flat) if T > 32 else None
         need_dn_raw = self.dn_unified.has_nvfp4
         if dyn:
             y_gu = self.gu_unified(x_rot_gu_f16, eids_flat, x_div=8, sorted_cache=sc, plan=gu_plan, dynamic_routing=True, x_raw_f16=h_mlp_f16)
@@ -1854,8 +1868,8 @@ class Inkling2LoopPackedMLX:
         pre_loop_blocks = blocks_cat
         num_pre = n_blocks
 
-        # For T >= 64 prefill, reuse dequantized FP16 QKV & O weights across the 3 loop passes of L6..17
-        cache_loop_w = (T >= 64) and (cfg.loop_passes > 1)
+        # For T >= 16, reuse dequantized FP16 QKV & O weights across the 3 loop passes of L6..17
+        cache_loop_w = (T >= 16) and (cfg.loop_passes > 1)
         loop_w_cache: dict[int, tuple[mx.array, mx.array]] = {}
 
         # 2. Pass 0 over loop layers (L6..17)

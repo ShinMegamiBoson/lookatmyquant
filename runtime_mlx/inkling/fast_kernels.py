@@ -1284,13 +1284,13 @@ def _make_dense_dequant_kernel(n: int, fids: tuple[int, ...], sg: int = 8, stage
 
 
 @lru_cache(maxsize=64)
-def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg: int = 32, stage_rtr: bool = False):
-    """DenseStage SIMD-group matrix multiply for T <= 8, with selectable RTR table layout."""
-    assert n % 32 == 0
+def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg: int = 32, stage_rtr: bool = False, nt: int = 1):
+    """DenseStage SIMD-group matrix multiply for `T <= 8 * nt` (`nt` tiles of 8 tokens, reading packed weights ONCE)."""
+    assert n % 32 == 0 and 1 <= nt <= 4
     steps = n // 32
     H = [
         "#include <metal_simdgroup_matrix>\n",
-        f"#define SG {sg}u\n#define RB {rb}u\n",
+        f"#define SG {sg}u\n#define RB {rb}u\n#define NT {nt}u\n",
         "#define ELEMS_H2 reinterpret_cast<thread half2&>\n",
         "#define ELEMS_F2 reinterpret_cast<thread float2&>\n",
     ]
@@ -1307,8 +1307,8 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
         ha("    const uint q = fn / 2u, xcol = 8u * (fm / 2u) + (fm % 2u), r0 = rbase + fm;")
         ha("    const device uint* p[RB];")
         ha("    for (uint i = 0; i < RB; i++) p[i] = mcodes + (ulong)min(r0 + 8u * i, m_rows - 1u) * wpr;")
-        ha("    simdgroup_float8x8 Acc[RB];")
-        ha("    for (uint i = 0; i < RB; i++) Acc[i] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);")
+        ha("    simdgroup_float8x8 Acc[RB][NT];")
+        ha("    for (uint i = 0; i < RB; i++) for (uint ti = 0; ti < NT; ti++) Acc[i][ti] = make_filled_simdgroup_matrix<float, 8, 8>(0.0f);")
         if fid in (0, 1, 2, 3, 4, 5, 6):
             k = {0: 1, 1: 2, 2: 3, 3: 1, 4: 2, 5: 3, 6: 4}[fid]
             wpr_c = (n * k) // 32
@@ -1321,10 +1321,13 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
         elif fid == 11:
             ha("    const uint w_first = 2u * q;")
         ha(f"    for (uint s = 0; s < {steps}u; s++) {{")
-        ha("        simdgroup_half8x8 Xm[4];")
-        ha("        const device half* xp = xin + (ulong)(32u * s + xcol) * 8u + fn;")
+        ha("        simdgroup_half8x8 Xm[NT][4];")
         ha("        #pragma unroll")
-        ha("        for (uint j = 0; j < 4u; j++) ELEMS_H2(Xm[j].thread_elements()) = half2(*(const device packed_half2*)(xp + j * 16u));")
+        ha("        for (uint ti = 0; ti < NT; ti++) {")
+        ha(f"            const device half* xp = xin + (ulong)(ti * {n}u + 32u * s + xcol) * 8u + fn;")
+        ha("            #pragma unroll")
+        ha("            for (uint j = 0; j < 4u; j++) ELEMS_H2(Xm[ti][j].thread_elements()) = half2(*(const device packed_half2*)(xp + j * 16u));")
+        ha("        }")
         if fid in (0, 1, 2, 3, 4, 5, 6):
             ha(f"        const uint wi = w_first - s * {k}u;")
         elif fid == 10:
@@ -1334,6 +1337,11 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
         ha("        #pragma unroll")
         ha("        for (uint i = 0; i < RB; i++) {")
         ha("            const device uint* pw = p[i] + wi; simdgroup_half8x8 Am;")
+        mac = lambda j_idx: (
+            f"simdgroup_multiply_accumulate(Acc[i][0], Am, Xm[0][{j_idx}], Acc[i][0]);"
+            if nt == 1
+            else " ".join(f"simdgroup_multiply_accumulate(Acc[i][{ti}], Am, Xm[{ti}][{j_idx}], Acc[i][{ti}]);" for ti in range(nt))
+        )
         if fid in (0, 1):
             tgn = "t_ht1" if fid == 0 else "t_ht2"
             if fid == 1:
@@ -1343,57 +1351,61 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
             ha(f"            const half4 v0 = {tgn}[((extract_bits(lo, {4*k}u, 12u)) * {HASH_MULT_HEX}) >> 23u];")
             ha(f"            const half4 v1 = {tgn}[((extract_bits(lo, 0u, 12u)) * {HASH_MULT_HEX}) >> 23u];")
             for j, expr in [(0, "v0.xy"), (1, "v0.zw"), (2, "v1.xy"), (3, "v1.zw")]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = {expr}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {expr}; {mac(j)}")
         elif fid == 2:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
             for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = t_ht3[(extract_bits(lo, {rb_b}u, 12u) * {HASH_MULT_HEX}) >> 22u]; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = t_ht3[(extract_bits(lo, {rb_b}u, 12u) * {HASH_MULT_HEX}) >> 22u]; {mac(j)}")
         elif fid == 3:
             ha("            const uint w0 = pw[0]; const uint lo = (off == 0u) ? w0 : ((w0 >> off) | (w_prev[i] << (32u - off))); w_prev[i] = w0;")
             for j, sh in [(0, 6), (1, 4), (2, 2), (3, 0)]:
-                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(3, 2, f'extract_bits(lo, {sh}u, 13u)', stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(3, 2, f'extract_bits(lo, {sh}u, 13u)', stage_rtr)}; {mac(j)}")
         elif fid in (4, 5):
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             if k == 2:
                 ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
                 for j, rb_b in [(0, 12), (1, 8), (2, 4), (3, 0)]:
-                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, f'extract_bits(lo, {rb_b}u, 14u)', stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, f'extract_bits(lo, {rb_b}u, 14u)', stage_rtr)}; {mac(j)}")
             else:
                 ha(f"            const uint w2 = (wi + 2u < {wpr_c}u) ? pw[2] : 0u;")
                 ha("            const uint lo = (w0 >> off) | (off == 0u ? 0u : (w1 << (32u - off)));")
                 ha("            const uint hi = (w1 >> off) | (off == 0u ? 0u : (w2 << (32u - off)));")
                 for j, rb_b in [(0, 18), (1, 12), (2, 6), (3, 0)]:
                     ex = f"extract_bits(lo, {rb_b}u, 15u)" if rb_b + 15 <= 32 else f"insert_bits(extract_bits(lo, {rb_b}u, {32-rb_b}u), hi, {32-rb_b}u, {15-(32-rb_b)}u)"
-                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, ex, stage_rtr)}; simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                    ha(f"            ELEMS_H2(Am.thread_elements()) = {_rtr_value(fid, 2, ex, stage_rtr)}; {mac(j)}")
         elif fid == 6:
             ha(f"            const uint w0 = pw[0], w1 = (wi + 1u < {wpr_c}u) ? pw[1] : 0u;")
             for j, (b0, b1) in [(0, (28, 24)), (1, (20, 16)), (2, (12, 8)), (3, (4, 0))]:
                 ex0 = f"extract_bits(w0, {b0}u, 12u)" if b0 + 12 <= 32 else f"insert_bits(extract_bits(w0, {b0}u, {32-b0}u), w1, {32-b0}u, {12-(32-b0)}u)"
                 ex1 = f"extract_bits(w0, {b1}u, 12u)" if b1 + 12 <= 32 else f"insert_bits(extract_bits(w0, {b1}u, {32-b1}u), w1, {32-b1}u, {12-(32-b1)}u)"
-                ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lut_rtr4[{ex0}], lut_rtr4[{ex1}]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[{j}], Acc[i]);")
+                ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lut_rtr4[{ex0}], lut_rtr4[{ex1}]); {mac(j)}")
         elif fid == 10:
             ha("            const uint w0 = pw[0], w1 = pw[1];")
             ha("            const uint lo = (off == 0u) ? w0 : ((w0 >> 16u) | (w1 << 16u)), hi = (off == 0u) ? w1 : (w1 >> 16u);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[lo & 63u], lv[(lo >> 6u) & 63u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[0], Acc[i]);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[(lo >> 12u) & 63u], lv[(lo >> 18u) & 63u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[1], Acc[i]);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[(lo >> 24u) & 63u], lv[((lo >> 30u) | (hi << 2u)) & 63u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[2], Acc[i]);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[(hi >> 4u) & 63u], lv[(hi >> 10u) & 63u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[3], Acc[i]);")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[lo & 63u], lv[(lo >> 6u) & 63u]); {mac(0)}")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[(lo >> 12u) & 63u], lv[(lo >> 18u) & 63u]); {mac(1)}")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[(lo >> 24u) & 63u], lv[((lo >> 30u) | (hi << 2u)) & 63u]); {mac(2)}")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[(hi >> 4u) & 63u], lv[(hi >> 10u) & 63u]); {mac(3)}")
         elif fid == 11:
             ha("            const uint w0 = pw[0], w1 = pw[1];")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[w0 & 255u], lv[(w0 >> 8u) & 255u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[0], Acc[i]);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[(w0 >> 16u) & 255u], lv[(w0 >> 24u) & 255u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[1], Acc[i]);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[w1 & 255u], lv[(w1 >> 8u) & 255u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[2], Acc[i]);")
-            ha("            ELEMS_H2(Am.thread_elements()) = half2(lv[(w1 >> 16u) & 255u], lv[(w1 >> 24u) & 255u]); simdgroup_multiply_accumulate(Acc[i], Am, Xm[3], Acc[i]);")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[w0 & 255u], lv[(w0 >> 8u) & 255u]); {mac(0)}")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[(w0 >> 16u) & 255u], lv[(w0 >> 24u) & 255u]); {mac(1)}")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[w1 & 255u], lv[(w1 >> 8u) & 255u]); {mac(2)}")
+            ha(f"            ELEMS_H2(Am.thread_elements()) = half2(lv[(w1 >> 16u) & 255u], lv[(w1 >> 24u) & 255u]); {mac(3)}")
         ha("        }")
         ha("    }")
         ha("    for (uint i = 0; i < RB; i++) {")
         ha("        const uint row = r0 + 8u * i;")
         ha("        if (row >= m_rows) continue;")
         ha("        const float sc = (float)mscales[row];")
-        ha("        const float2 d = ELEMS_F2(Acc[i].thread_elements()) * sc;")
-        ha("        if (fn < t_out) y[(ulong)fn * total_out + r_out_off + row] = d.x;")
-        ha("        if (fn + 1u < t_out) y[(ulong)(fn + 1u) * total_out + r_out_off + row] = d.y;")
+        ha("        #pragma unroll")
+        ha("        for (uint ti = 0; ti < NT; ti++) {")
+        ha("            const float2 d = ELEMS_F2(Acc[i][ti].thread_elements()) * sc;")
+        ha("            const uint t0 = ti * 8u + fn;")
+        ha("            if (t0 < t_out) y[(ulong)t0 * total_out + r_out_off + row] = d.x;")
+        ha("            if (t0 + 1u < t_out) y[(ulong)(t0 + 1u) * total_out + r_out_off + row] = d.y;")
+        ha("        }")
         ha("    }")
         ha("}")
 
@@ -1417,15 +1429,16 @@ def _make_sg8_dense_stage_kernel(n: int, fids: tuple[int, ...], rb: int = 2, sg:
     a("    const device uint* d = dims + mi * 8u;")
     a("    const uint fid = d[0], m_rows = d[1], wpr = d[2], c_off = d[3], s_off = d[4], l_off = d[5], r_out_off = d[6], in_idx = d[7];")
     a("    const uint rbase = (gb - blk_base) * (8u * RB);")
-    a(f"    const device half* xin = x + (ulong)in_idx * {n * 8}u;")
+    a(f"    const device half* xin = x + (ulong)in_idx * {nt * n * 8}u;")
     a("    switch (fid) {")
     for fid in fids:
         a(f"        case {fid}u: sg8_f{fid}(xin, codes+c_off, scales+s_off, levels+l_off, t_ht1, t_ht2, t_ht3, tv_rtr1, tv_rtr2, tv_rtr3, lut_rtr4, y, rbase, m_rows, wpr, r_out_off, total_out, t_out, lane); break;")
     a("    }")
     a("}")
     tag = "_".join(str(f) for f in fids)
+    nt_sfx = "" if nt == 1 else f"_nt{nt}"
     return mx.fast.metal_kernel(
-        name=f"ink_sg8_dstage_v2_n{n}_f{tag}_rb{rb}_sg{sg}_rtr{int(stage_rtr)}",
+        name=f"ink_sg8_dstage_v2_n{n}_f{tag}_rb{rb}_sg{sg}_rtr{int(stage_rtr)}{nt_sfx}",
         input_names=["x", "codes", "scales", "levels", "dims", "lut_ht1", "lut_ht2", "lut_ht3", "lut_rtr1", "lut_rtr2", "lut_rtr3", "lut_rtr4", "meta"],
         output_names=["y"],
         header="\n".join(H),
@@ -1507,6 +1520,13 @@ class DenseStage:
             output_dtypes=[mx.float16],
         )[0]
 
+    def _pack_x_for_sg8(self, x_rot_f16: mx.array, T: int, nt: int) -> mx.array:
+        x3 = x_rot_f16.reshape(self.n_mats, T, self.n)
+        pad = nt * 8 - T
+        if pad > 0:
+            x3 = mx.pad(x3, [(0, 0), (0, pad), (0, 0)])
+        return x3.reshape(self.n_mats, nt, 8, self.n).transpose(0, 1, 3, 2)
+
     def matmul_rotated_sg8_f16(
         self,
         x_rot_tr_f16: mx.array,
@@ -1514,15 +1534,16 @@ class DenseStage:
         rb: int | None = None,
         sg: int | None = None,
         ntg: int | None = None,
+        nt: int = 1,
     ) -> mx.array:
-        """Fast T=2..8 simdgroup_half8x8 path for QKV and 200K LM Head. Input layout: `[n_mats, n, 8]` half."""
+        """Fast T=2..32 simdgroup_half8x8 path for QKV, O, and 200K LM Head (`nt` 8-token tiles, zero FP16 weight dequant)."""
         m4 = _is_m4()
         sg_limit = 32 if _has_mpp() else 8
-        rb = 2 if rb is None else rb
+        rb = (2 if nt <= 2 else 1) if rb is None else rb
         sg = min(sg_limit, (8 if m4 else sg_limit) if sg is None else sg)
         if ntg is None:
             ntg = (20 if self.total_out > 10000 else 30) if m4 else 80
-        kern = _make_sg8_dense_stage_kernel(self.n, self.fids, rb=rb, sg=sg, stage_rtr=self._stage_rtr_sg8)
+        kern = _make_sg8_dense_stage_kernel(self.n, self.fids, rb=rb, sg=sg, stage_rtr=self._stage_rtr_sg8, nt=nt)
         mt = _u32(self.total_out, self.n_mats, ntg, T)
         return kern(
             inputs=[x_rot_tr_f16.reshape(-1), self.codes, self.scales, self.levels, self.dims, *self._lut_args_sg8, mt],
@@ -1564,7 +1585,10 @@ class DenseStage:
                 output_shapes=[(T, self.total_out)],
                 output_dtypes=[mx.float32],
             )[0]
-        # T > 8 prefill: fast GPU dequant to FP16 (or reuse W_cached across loop passes!) + Hardware GEMM
+        if W_cached is None and T <= 32:
+            nt = (T + 7) // 8
+            return self.matmul_rotated_sg8_f16(self._pack_x_for_sg8(x_rot_f16, T, nt), T=T, nt=nt)
+        # T > 32 prefill (or cached loop weights): GPU dequant to FP16 + Hardware GEMM
         W = W_cached if W_cached is not None else self.dequant_f16()
         if self.n_mats == 1:
             return (x_rot_f16.reshape(T, self.n) @ W.T).astype(mx.float32)
@@ -1580,7 +1604,7 @@ class DenseStage:
         out_dtype=mx.float32,
     ) -> tuple[mx.array, ...]:
         """Return separate per-matrix outputs without `mx.concatenate` + re-slicing copies (supports `W_cached` reuse)."""
-        if T <= 8:
+        if T <= 8 or (W_cached is None and T <= 32):
             full = self.matmul_rotated_f16(x_rot_f16, T)
             if out_dtype != mx.float32:
                 full = full.astype(out_dtype)
@@ -1598,7 +1622,7 @@ class DenseStage:
 # ----------------------------------------------------------------------------- Unified 1-Launch Multi-Format MoE
 
 @lru_cache(maxsize=64)
-def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, n_rg: int = 1, lpr: int | None = None, stage_rtr: bool = False):
+def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: int, sg: int, n_rg: int = 1, lpr: int | None = None, stage_rtr: bool = False, plan_cap: int = 64):
     """Unified 1-launch MoE kernel supporting ALL formats {ht1,ht2,ht3,rtr1..rtr4,nvfp4} and optional row-group splitting (`n_rg`).
 
     Modes:
@@ -1759,7 +1783,7 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         a(f"    const uint gb = rb_i * blocks_per_tg + simd * {groups_per_simd}u + hw;")
         a("    if (gb >= total_blocks) continue;")
         a("    const uint u = gb / blocks_per_u, r0 = (gb - u * blocks_per_u) * RPS;")
-        a("    const uint ec = plan[1u + u], eid = ec & 0xFFu, cnt = ec >> 8u, p0 = plan[65u + u];")
+        a(f"    const uint ec = plan[1u + u], eid = ec & 0xFFu, cnt = ec >> 8u, p0 = plan[{1 + plan_cap}u + u];")
         if n_rg > 1:
             a(f"    const uint rg = r0 / rg_sz, r_loc = r0 - rg * rg_sz, idx_rg = eid * {n_rg}u + rg;")
             a("    const uint fid = exp_fid[idx_rg], m_grp = rg_sz;")
@@ -1793,8 +1817,9 @@ def _make_unified_moe_kernel(n: int, fids: tuple[int, ...], t_mode: str, rps: in
         if has_nv:
             in_names += ["x_raw", "nv_scales", "exp_nv_scale_off", "nv_outer", "lut_e2m1", "lut_e4m3"]
         tag = "_".join(str(f) for f in fids)
+        pc_sfx = "" if plan_cap == 64 else f"_pc{plan_cap}"
         return mx.fast.metal_kernel(
-            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}_rtr{int(stage_rtr)}",
+            name=f"ink_umoe_pp_n{n}_f{tag}_r{rps}_s{sg}_l{lpr}_rg{n_rg}_rtr{int(stage_rtr)}{pc_sfx}",
             input_names=in_names,
             output_names=["y"],
             header="\n".join(H),
@@ -2660,20 +2685,22 @@ def compute_moe_sorted_offsets(eids_flat: mx.array) -> tuple[mx.array, mx.array]
     return offsets, order
 
 
-@lru_cache(maxsize=32)
-def _make_moe_plan_only_kernel(fids: tuple[int, ...]):
-    """Single-threadgroup parallel compaction of `eids[0..n_slots-1]` -> `plan[129]` (fallback when plan not fused with router)."""
+@lru_cache(maxsize=64)
+def _make_moe_plan_only_kernel(fids: tuple[int, ...], plan_cap: int = 64):
+    """Single-threadgroup parallel compaction of `eids[0..n_slots-1]` -> `plan[1 + 2 * plan_cap]`."""
+    max_per_exp = 8 if plan_cap == 64 else 32
     L = [
         "const uint tid = thread_position_in_threadgroup.x;",
         "const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup;",
         "const uint n_slots = meta[0];",
-        "threadgroup uint tg_eids[64], tg_wsum[8][4], tg_fbase[8];",
-        "if (tid < n_slots) tg_eids[tid] = expert_ids[tid];",
+        f"threadgroup uint tg_eids[{plan_cap}], tg_wsum[8][4], tg_fbase[8];",
+        "for (uint idx = tid; idx < n_slots; idx += 128u) tg_eids[idx] = expert_ids[idx];",
         "threadgroup_barrier(mem_flags::mem_threadgroup);",
-        "uint my_p0 = 0u, my_p1 = 0u, my_cnt = 0u, my_nu = 0u, my_fid = 99u;",
+        f"uint pk[{max_per_exp // 4}]; for (uint i = 0; i < {max_per_exp // 4}u; i++) pk[i] = 0u;",
+        "uint my_cnt = 0u, my_nu = 0u, my_fid = 99u;",
         "if (tid < 128u) {",
-        "    for (uint s = 0; s < n_slots; s++) { if (tg_eids[s] == tid && my_cnt < 8u) { if (my_cnt < 4u) my_p0 |= (s << (my_cnt * 8u)); else my_p1 |= (s << ((my_cnt - 4u) * 8u)); my_cnt++; } }",
-        "    my_nu = (my_cnt == 0u) ? 0u : ((my_cnt <= 4u) ? 1u : 2u);",
+        f"    for (uint s = 0; s < n_slots; s++) {{ if (tg_eids[s] == tid && my_cnt < {max_per_exp}u) {{ pk[my_cnt >> 2] |= (s << ((my_cnt & 3u) * 8u)); my_cnt++; }} }}",
+        "    my_nu = (my_cnt + 3u) >> 2;",
         "    if (my_cnt > 0u) my_fid = exp_fid[tid];",
         "}",
     ]
@@ -2690,12 +2717,15 @@ def _make_moe_plan_only_kernel(fids: tuple[int, ...]):
     a("if (tid < 128u && my_cnt > 0u) { uint dst = 0u;")
     for fi, fid in enumerate(fids):
         a(f"    if (my_fid == {fid}u) {{ uint wb = tg_fbase[{fi}]; for (uint w = 0; w < simd; w++) wb += tg_wsum[{fi}][w]; dst = wb + pfx_{fi}; }}")
-    a("    if (my_cnt <= 4u) { plan[1u + dst] = tid | (my_cnt << 8u); plan[65u + dst] = my_p0; }")
-    a("    else { plan[1u + dst] = tid | (4u << 8u); plan[65u + dst] = my_p0; plan[2u + dst] = tid | ((my_cnt - 4u) << 8u); plan[66u + dst] = my_p1; }")
+    a("    for (uint ui = 0; ui < my_nu; ui++) {")
+    a("        const uint c_u = min(4u, my_cnt - ui * 4u);")
+    a(f"        plan[1u + dst + ui] = tid | (c_u << 8u); plan[{1 + plan_cap}u + dst + ui] = pk[ui];")
+    a("    }")
     a("}")
     tag = "_".join(str(f) for f in fids)
+    pc_sfx = "" if plan_cap == 64 else f"_pc{plan_cap}"
     return mx.fast.metal_kernel(
-        name=f"ink_moe_plan_only_f{tag}",
+        name=f"ink_moe_plan_only_f{tag}{pc_sfx}",
         input_names=["expert_ids", "exp_fid", "meta"],
         output_names=["plan"],
         source="\n".join(L),
@@ -2831,14 +2861,15 @@ class UnifiedMoESide:
                 output_shapes=[(n_slots, self.m_rows)],
                 output_dtypes=[mx.float32],
             )[0]
-        if n_slots <= 64 and not sorted_in and not sorted_out:
-            # T=2..8 pre-planned lean half-warp mc=4 + low-reg c3/c4 + lpr=8 (sentinel-safe, zero compaction inside MoE!)
+        if n_slots <= 256 and not sorted_in and not sorted_out:
+            # T=2..32 pre-planned lean half-warp mc=4 + low-reg c3/c4 + lpr=8 (avoids 32-token MPP tile padding!)
+            plan_cap = 64 if n_slots <= 64 else 256
             if plan is None:
-                plan = _make_moe_plan_only_kernel(self.fids)(
+                plan = _make_moe_plan_only_kernel(self.fids, plan_cap=plan_cap)(
                     inputs=[eids_flat.astype(mx.uint32), self.exp_fid, _u32(n_slots)],
                     grid=(128, 1, 1),
                     threadgroup=(128, 1, 1),
-                    output_shapes=[(129,)],
+                    output_shapes=[(1 + 2 * plan_cap,)],
                     output_dtypes=[mx.uint32],
                 )[0]
             if _is_m4():
@@ -2847,7 +2878,7 @@ class UnifiedMoESide:
                 ntg_g = 120 if (self.n_cols == 2304 and 40 < n_slots <= 56) else 160
             else:
                 sg_g, rps_g, ntg_g, lpr_g = 8, 4, 160, 8
-            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, lpr=lpr_g, n_rg=self.n_rg, stage_rtr=self._stage_rtr)
+            kern = _make_unified_moe_kernel(self.n_cols, self.fids, "grouped", rps=rps_g, sg=sg_g, lpr=lpr_g, n_rg=self.n_rg, stage_rtr=self._stage_rtr, plan_cap=plan_cap)
             mt = _u32(self.m_rows, x_div, ntg_g)
             return kern(
                 inputs=[x_rot_f16.reshape(-1), self.codes, self.scales, self._kern_fid, self.exp_code_off, self.exp_scale_off, *self._lut_args, plan, mt, *nv_tail],
@@ -3063,8 +3094,15 @@ def sigmoid_top8_norm_fast(
 
 
 @lru_cache(maxsize=64)
-def _make_sigmoid_top8_plan_kernel(gu_fids: tuple[int, ...], dn_fids: tuple[int, ...], dynamic_routing: bool = False):
-    """Single-TG (256 threads) fused Router Top-8 (+ optional Dynamic Top-K) + BOTH `gu_plan[129]` and `dn_plan[129]` for `2 <= T <= 8`!"""
+def _make_sigmoid_top8_plan_kernel(
+    gu_fids: tuple[int, ...],
+    dn_fids: tuple[int, ...],
+    dynamic_routing: bool = False,
+    plan_cap: int = 64,
+):
+    """Single-TG (256 threads) fused Router Top-8 (+ optional Dynamic Top-K) + BOTH `gu_plan` and `dn_plan` for `2 <= T <= 32`!"""
+    max_per_exp = 8 if plan_cap == 64 else 32
+    n_pk = max_per_exp // 4
     L = [
         "const uint tid = thread_position_in_threadgroup.x;",
         "const uint simd = simdgroup_index_in_threadgroup, lane = thread_index_in_simdgroup;",
@@ -3075,9 +3113,9 @@ def _make_sigmoid_top8_plan_kernel(gu_fids: tuple[int, ...], dn_fids: tuple[int,
         L.append("const float ratio_thr = cfg[1];")
         L.append("const uint k_max = meta[1], k_min = meta[2], do_renorm = meta[3];")
     L += [
-        "threadgroup uint tg_eids[64], tg_wsum[8][4], tg_fbase[8];",
-        "if (simd < T) {",
-        "    const device half* lp = logits + (ulong)simd * 128u;",
+        f"threadgroup uint tg_eids[{plan_cap}], tg_wsum[8][4], tg_fbase[8];",
+        "for (uint tok = simd; tok < T; tok += 8u) {",
+        "    const device half* lp = logits + (ulong)tok * 128u;",
         "    float s[4], b[4];",
         "    #pragma unroll",
         "    for (uint j = 0; j < 4u; j++) { const uint e = lane + j * 32u; const float sc = 1.0f / (1.0f + metal::precise::exp(-(float)lp[e])); s[j] = sc; b[j] = sc + bias[e]; }",
@@ -3100,25 +3138,26 @@ def _make_sigmoid_top8_plan_kernel(gu_fids: tuple[int, ...], dn_fids: tuple[int,
     if dynamic_routing:
         L += [
             _DYN_TOP8_FILTER_BLOCK,
-            "        tg_eids[simd * 8u + lane] = out_e;",
-            "        eids_out[simd * 8u + lane] = out_e;",
-            "        w_out[simd * 8u + lane] = out_w;",
+            "        tg_eids[tok * 8u + lane] = out_e;",
+            "        eids_out[tok * 8u + lane] = out_e;",
+            "        w_out[tok * 8u + lane] = out_w;",
         ]
     else:
         L += [
             "        const float inv = route_scale / (sum_s + 1e-20f);",
-            "        tg_eids[simd * 8u + lane] = top_e[lane];",
-            "        eids_out[simd * 8u + lane] = top_e[lane];",
-            "        w_out[simd * 8u + lane] = top_s[lane] * inv;",
+            "        tg_eids[tok * 8u + lane] = top_e[lane];",
+            "        eids_out[tok * 8u + lane] = top_e[lane];",
+            "        w_out[tok * 8u + lane] = top_s[lane] * inv;",
         ]
     L += [
         "    }",
         "}",
         "threadgroup_barrier(mem_flags::mem_threadgroup);",
-        "uint my_p0 = 0u, my_p1 = 0u, my_cnt = 0u, my_nu = 0u;",
+        f"uint pk[{n_pk}]; for (uint i = 0; i < {n_pk}u; i++) pk[i] = 0u;",
+        "uint my_cnt = 0u, my_nu = 0u;",
         "if (tid < 128u) {",
-        "    for (uint s = 0; s < n_slots; s++) { if (tg_eids[s] == tid && my_cnt < 8u) { if (my_cnt < 4u) my_p0 |= (s << (my_cnt * 8u)); else my_p1 |= (s << ((my_cnt - 4u) * 8u)); my_cnt++; } }",
-        "    my_nu = (my_cnt == 0u) ? 0u : ((my_cnt <= 4u) ? 1u : 2u);",
+        f"    for (uint s = 0; s < n_slots; s++) {{ if (tg_eids[s] == tid && my_cnt < {max_per_exp}u) {{ pk[my_cnt >> 2] |= (s << ((my_cnt & 3u) * 8u)); my_cnt++; }} }}",
+        "    my_nu = (my_cnt + 3u) >> 2;",
         "}",
     ]
     a = L.append
@@ -3137,8 +3176,10 @@ def _make_sigmoid_top8_plan_kernel(gu_fids: tuple[int, ...], dn_fids: tuple[int,
         a("    if (tid < 128u && my_cnt > 0u) { uint dst = 0u;")
         for fi, fid in enumerate(fids_t):
             a(f"        if (my_fid == {fid}u) {{ uint wb = tg_fbase[{fi}]; for (uint w = 0; w < simd; w++) wb += tg_wsum[{fi}][w]; dst = wb + pfx_{fi}; }}")
-        a(f"        if (my_cnt <= 4u) {{ {side}_plan[1u + dst] = tid | (my_cnt << 8u); {side}_plan[65u + dst] = my_p0; }}")
-        a(f"        else {{ {side}_plan[1u + dst] = tid | (4u << 8u); {side}_plan[65u + dst] = my_p0; {side}_plan[2u + dst] = tid | ((my_cnt - 4u) << 8u); {side}_plan[66u + dst] = my_p1; }}")
+        a("        for (uint ui = 0; ui < my_nu; ui++) {")
+        a("            const uint c_u = min(4u, my_cnt - ui * 4u);")
+        a(f"            {side}_plan[1u + dst + ui] = tid | (c_u << 8u); {side}_plan[{1 + plan_cap}u + dst + ui] = pk[ui];")
+        a("        }")
         a("    }")
         a("    threadgroup_barrier(mem_flags::mem_threadgroup);")
         a("}")
@@ -3146,8 +3187,9 @@ def _make_sigmoid_top8_plan_kernel(gu_fids: tuple[int, ...], dn_fids: tuple[int,
     emit_plan("gu", gu_fids)
     emit_plan("dn", dn_fids)
     tag = "_".join(str(f) for f in gu_fids) + "__" + "_".join(str(f) for f in dn_fids)
+    pc_sfx = "" if plan_cap == 64 else f"_pc{plan_cap}"
     return mx.fast.metal_kernel(
-        name=f"ink_sig_top8_plan_{tag}{'_dyn' if dynamic_routing else ''}",
+        name=f"ink_sig_top8_plan_{tag}{pc_sfx}{'_dyn' if dynamic_routing else ''}",
         input_names=["logits", "bias", "gu_exp_fid", "dn_exp_fid", "meta", "cfg"],
         output_names=["eids_out", "w_out", "gu_plan", "dn_plan"],
         source="\n".join(L),
@@ -3167,20 +3209,22 @@ def sigmoid_top8_norm_and_plan_fast(
     ratio_thr: float = 0.0,
     renorm: bool = False,
 ) -> tuple[mx.array, mx.array, mx.array, mx.array]:
-    """Fused Router Top-8 (+ optional Dynamic Top-K) + BOTH pre-compacted `gu_plan` & `dn_plan` in ONE launch for `2 <= T <= 8`."""
+    """Fused Router Top-8 (+ optional Dynamic Top-K) + BOTH pre-compacted `gu_plan` & `dn_plan` in ONE launch for `2 <= T <= 32`."""
     T = int(logits_f16.shape[0])
+    plan_cap = 64 if T <= 8 else 256
+    plan_len = 1 + 2 * plan_cap
     dynamic_routing = (k_max < 8) or (ratio_thr > 0.0)
     if not dynamic_routing:
-        return _make_sigmoid_top8_plan_kernel(gu_fids, dn_fids, False)(
+        return _make_sigmoid_top8_plan_kernel(gu_fids, dn_fids, False, plan_cap=plan_cap)(
             inputs=[logits_f16.reshape(-1), router_bias.reshape(-1), gu_exp_fid, dn_exp_fid, _u32(T), _f32_arr(route_scale)],
             grid=(256, 1, 1),
             threadgroup=(256, 1, 1),
-            output_shapes=[(T * 8,), (T * 8,), (129,), (129,)],
+            output_shapes=[(T * 8,), (T * 8,), (plan_len,), (plan_len,)],
             output_dtypes=[mx.uint32, mx.float32, mx.uint32, mx.uint32],
         )
     k_max_c = max(1, min(8, int(k_max)))
     k_min_c = max(0, min(k_max_c, int(k_min)))
-    return _make_sigmoid_top8_plan_kernel(gu_fids, dn_fids, True)(
+    return _make_sigmoid_top8_plan_kernel(gu_fids, dn_fids, True, plan_cap=plan_cap)(
         inputs=[
             logits_f16.reshape(-1),
             router_bias.reshape(-1),
@@ -3191,7 +3235,7 @@ def sigmoid_top8_norm_and_plan_fast(
         ],
         grid=(256, 1, 1),
         threadgroup=(256, 1, 1),
-        output_shapes=[(T * 8,), (T * 8,), (129,), (129,)],
+        output_shapes=[(T * 8,), (T * 8,), (plan_len,), (plan_len,)],
         output_dtypes=[mx.uint32, mx.float32, mx.uint32, mx.uint32],
     )
 
@@ -5250,9 +5294,11 @@ def gqa_relpos_sinks_sdpa_fast(
         )[0]
         return h128_rows_f32(out.reshape(T, 24, 128)).reshape(T, 3072) if kv_q4 else out
     span = min(kv_len, 1024 + T) if is_sliding else kv_len
-    env_fused_raw = os.environ.get("LAMQ_FUSED_SDPA", "1" if _is_m4() else "0").strip().lower()
+    m4 = _is_m4()
+    env_fused_raw = os.environ.get("LAMQ_FUSED_SDPA", "1").strip().lower()
     force_fused = env_fused_raw in ("force", "2")
     env_fused = env_fused_raw != "0"
+    t8_span_min = 2048 if m4 else 8192
     use_fused = (
         kv_q4
         or (force_fused and 1 <= T <= 8)
@@ -5261,7 +5307,7 @@ def gqa_relpos_sinks_sdpa_fast(
             and (
                 (T == 1 and span >= 256)
                 or (2 <= T <= 4 and span >= 1024)
-                or (5 <= T <= 8 and not is_sliding and span >= 2048)
+                or (5 <= T <= 8 and not is_sliding and span >= t8_span_min)
             )
         )
     )

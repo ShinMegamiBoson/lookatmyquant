@@ -581,6 +581,99 @@ def test_disk_prompt_cache_delta_round_trip() -> None:
         assert float(mx.abs(rc.conv_states[0][0] - c2.conv_states[0][0]).max()) == 0.0
 
 
+def test_continuous_batch_server_wiring() -> None:
+    import argparse
+    import queue as _queue
+    from runtime_mlx.server import add_serve_args
+
+    ap = argparse.ArgumentParser()
+    add_serve_args(ap)
+    d0 = ap.parse_args(["fake_model"])
+    assert (d0.max_batch, d0.prefill_step, d0.dspark_max_batch, d0.no_prefix_cache) == (32, 512, 4, False)
+    d1 = ap.parse_args(["fake_model", "--max-batch", "16", "--prefill-step", "256", "--dspark-max-batch", "2", "--no-prefix-cache"])
+    assert (d1.max_batch, d1.prefill_step, d1.dspark_max_batch, d1.no_prefix_cache) == (16, 256, 2, True)
+
+    engine = Engine.__new__(Engine)
+    engine.args = SimpleNamespace(
+        context=128, max_tokens=32, reasoning_effort="medium",
+        temp=0.0, top_p=1.0, prefill_chunk=-1, no_repeat_guard=True,
+    )
+    engine.tok = SimpleNamespace(apply_chat_template=lambda *a, **kw: [1, 2, 3])
+    engine.hf = ByteTokenizer()
+    engine.ids = dict(IDS)
+    engine.m = SimpleNamespace(cfg=SimpleNamespace(loop_passes=3), lm_head=SimpleNamespace(order_mx=SimpleNamespace(size=1024)))
+    engine.drafter = None
+    engine.prompt_cache = None
+
+    class FakeScheduler:
+        def __init__(self):
+            self.submitted = []
+
+        def submit(self, job, gone):
+            self.submitted.append(job)
+            q: _queue.Queue = _queue.Queue()
+            q.put(("meta", {"prompt_cached_tokens": 64, "prefill_s": 0.01}))
+            for tok in engine.hf.encode(SPECIAL["model"] + SPECIAL["text"] + "batched" + SPECIAL["end"] + SPECIAL["eos"]):
+                q.put(("tok", tok))
+            q.put(("done", {"prompt_cached_tokens": 64, "prefill_s": 0.01, "aborted": False}))
+            return q
+
+    engine.scheduler = FakeScheduler()
+    job = engine.prepare({"messages": [{"role": "user", "content": "Hello."}]})
+    emitted: list[tuple] = []
+    usage, finish = engine.run(job, lambda k, v: emitted.append((k, v)), lambda: False)
+    assert finish == "stop" and "".join(v for k, v in emitted if k == "content") == "batched"
+    assert usage["prompt_tokens_details"]["cached_tokens"] == 64
+
+    # Concurrent HTTP admission: max_concurrent=4 admits 4 simultaneous requests with HTTP 200 and 503s the 5th
+    entered_count = [0]
+    all_entered = threading.Event()
+    release = threading.Event()
+    mu = threading.Lock()
+
+    class ConcurrentFakeEngine(FakeEngine):
+        max_concurrent = 4
+
+        def run(self, job, emit, gone):
+            with mu:
+                entered_count[0] += 1
+                if entered_count[0] == 4:
+                    all_entered.set()
+            if not release.wait(10):
+                raise RuntimeError("timed out waiting for concurrent barrier")
+            return super().run(job, emit, gone)
+
+    srv = BoundedHTTPServer(
+        ("127.0.0.1", 0),
+        make_handler(ConcurrentFakeEngine(), "inkling-batch"),
+        max_connections=24,
+    )
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_port
+    job_body = {"messages": [{"role": "user", "content": "hi"}]}
+    results: list[int] = [0] * 4
+    threads = []
+    try:
+        for i in range(4):
+            def _run_i(idx=i):
+                results[idx] = _call(port, "POST", "/v1/chat/completions", job_body)[0]
+            t = threading.Thread(target=_run_i)
+            t.start()
+            threads.append(t)
+        assert all_entered.wait(5), f"expected 4 concurrent requests admitted, got {entered_count[0]}"
+        assert _call(port, "POST", "/v1/chat/completions", job_body)[0] == 503
+        release.set()
+        for t in threads:
+            t.join()
+        assert results == [200, 200, 200, 200], results
+    finally:
+        release.set()
+        for t in threads:
+            t.join()
+        srv.shutdown()
+        srv.server_close()
+
+
 def main() -> None:
     test_output_parser()
     test_tool_calls_require_a_complete_declared_json_frame()
@@ -594,6 +687,7 @@ def main() -> None:
     test_openai_responses_endpoint()
     test_repetition_guard()
     test_disk_prompt_cache_delta_round_trip()
+    test_continuous_batch_server_wiring()
     print("ALL LAMQ SERVE TESTS PASSED!", flush=True)
 
 

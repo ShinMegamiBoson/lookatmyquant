@@ -144,6 +144,8 @@ def _prefill(
             out, cache = fwd(ids[start:end], cache=cache)
             taps = None
         if last:
+            if hasattr(cache, "trim_sliding"):
+                cache.trim_sliding()
             return out, cache, taps, pos0 + start
         pending = list(cache.state)
         if drafter is not None and taps is not None:
