@@ -15,6 +15,7 @@ import json
 import math
 import os
 from pathlib import Path
+from typing import Any
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -244,6 +245,74 @@ class DSparkDrafterMLX:
         self._ctx_cap: list[int] = [0] * self.num_layers
         self.ctx_len: int = 0
         self.f_rnn: mx.array | None = None
+
+    def new_context(self) -> dict[str, Any]:
+        """Allocate a fresh, empty mutable drafter context for one sequence."""
+        return {
+            "ctx_k": [None] * self.num_layers,
+            "ctx_v": [None] * self.num_layers,
+            "_ctx_cur": [0] * self.num_layers,
+            "_ctx_cap": [0] * self.num_layers,
+            "ctx_len": 0,
+            "f_rnn": None,
+        }
+
+    def bind_context(self, state: dict[str, Any]) -> None:
+        """Bind a mutable per-sequence context onto this drafter with zero array copies."""
+        self.ctx_k = state["ctx_k"]
+        self.ctx_v = state["ctx_v"]
+        self._ctx_cur = state["_ctx_cur"]
+        self._ctx_cap = state["_ctx_cap"]
+        self.ctx_len = int(state["ctx_len"])
+        self.f_rnn = state["f_rnn"]
+
+    def sync_context_back(self, state: dict[str, Any]) -> None:
+        """Persist scalar/rebound fields (`ctx_len`, `f_rnn`) back to a bound context dict."""
+        state["ctx_k"] = self.ctx_k
+        state["ctx_v"] = self.ctx_v
+        state["_ctx_cur"] = self._ctx_cur
+        state["_ctx_cap"] = self._ctx_cap
+        state["ctx_len"] = self.ctx_len
+        state["f_rnn"] = self.f_rnn
+
+    def snapshot_context(self) -> dict[str, Any]:
+        """Return a tightly trimmed, evaluated immutable snapshot of the current context for prefix caching."""
+        k_snaps = [
+            None if (a is None or cur <= 0) else mx.array(a[:, :, :cur, :])
+            for a, cur in zip(self.ctx_k, self._ctx_cur)
+        ]
+        v_snaps = [
+            None if (a is None or cur <= 0) else mx.array(a[:, :, :cur, :])
+            for a, cur in zip(self.ctx_v, self._ctx_cur)
+        ]
+        f_snap = None if self.f_rnn is None else mx.array(self.f_rnn)
+        eval_items = [x for x in (*k_snaps, *v_snaps, f_snap) if x is not None]
+        if eval_items:
+            mx.eval(*eval_items)
+        return {
+            "ctx_k": k_snaps,
+            "ctx_v": v_snaps,
+            "_ctx_cur": list(self._ctx_cur),
+            "_ctx_cap": list(self._ctx_cur),
+            "ctx_len": self.ctx_len,
+            "f_rnn": f_snap,
+        }
+
+    def clone_context(self, snap: dict[str, Any]) -> dict[str, Any]:
+        """Create an independent mutable context copy from an immutable snapshot."""
+        cp = lambda a: None if a is None else mx.array(a)  # noqa: E731
+        st = {
+            "ctx_k": [cp(a) for a in snap["ctx_k"]],
+            "ctx_v": [cp(a) for a in snap["ctx_v"]],
+            "_ctx_cur": list(snap["_ctx_cur"]),
+            "_ctx_cap": list(snap["_ctx_cap"]),
+            "ctx_len": int(snap["ctx_len"]),
+            "f_rnn": cp(snap["f_rnn"]),
+        }
+        eval_items = [x for x in (*st["ctx_k"], *st["ctx_v"], st["f_rnn"]) if x is not None]
+        if eval_items:
+            mx.eval(*eval_items)
+        return st
 
     def context_state(self) -> dict:
         """Evaluated copy of the ingested target context (see `push_context`), for `restore_context`."""

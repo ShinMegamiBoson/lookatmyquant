@@ -95,6 +95,8 @@ class _CachedBlockNode:
     conv_snap: list[list[mx.array]] | None  # [48][4] float32[3, C] at end of this block
     children: set[bytes] = field(default_factory=set)
     lru_tick: int = 0
+    drafter_snap: dict[str, Any] | None = None
+    drafter_tick: int = 0
 
 
 def _resolve_nested_opt_int(val: int | None, env_name: str) -> int | None:
@@ -119,6 +121,7 @@ class PagedInklingPool:
         max_sliding_blocks: int = 2048,
         max_conv_slots: int = 128,
         enable_prefix_cache: bool = True,
+        max_drafter_snaps: int = 12,
         nested_hot_blocks: int | None = None,
         nested_warm_blocks: int | None = None,
         nested_spill_to_host: bool | None = None,
@@ -131,6 +134,7 @@ class PagedInklingPool:
             raise ValueError(f"PagedInklingPool supports fp16, fp8, q4, or nested; got {self.global_kv_mode!r}")
         self.share_loop_kv = getattr(cfg, "shared_loop_kv", False) and (cfg.loop_passes > 1)
         self.enable_prefix_cache = enable_prefix_cache
+        self.max_drafter_snaps = max(0, int(max_drafter_snaps))
         self.max_global_blocks = max_global_blocks
         self.max_sliding_blocks = max_sliding_blocks
         self.nested_hot_blocks = _resolve_nested_opt_int(nested_hot_blocks, "LAMQ_NESTED_HOT_BLOCKS")
@@ -379,6 +383,7 @@ class PagedInklingPool:
         if best_h is None:
             return False
         node = self._prefix_nodes.pop(best_h)
+        node.drafter_snap = None
         parent = self._prefix_nodes.get(node.parent_hash)
         if parent is not None:
             parent.children.discard(best_h)
@@ -753,6 +758,42 @@ class PagedInklingPool:
             parent.children.add(nh)
         return nh, g_blk, s_blk
 
+    def attach_drafter_snap(self, block_hash: bytes, snap: dict[str, Any] | None) -> bool:
+        """Attach an evaluated DSpark drafter context snapshot to a prefix node, LRU-bounded."""
+        if not block_hash or snap is None or self.max_drafter_snaps <= 0:
+            return False
+        node = self._prefix_nodes.get(block_hash)
+        if node is None:
+            return False
+        self._lru_clock += 1
+        node.drafter_tick = self._lru_clock
+        if node.drafter_snap is not None:
+            return False
+        node.drafter_snap = snap
+        snap_nodes = [n for n in self._prefix_nodes.values() if n.drafter_snap is not None]
+        if len(snap_nodes) > self.max_drafter_snaps:
+            snap_nodes.sort(key=lambda n: n.drafter_tick)
+            for victim in snap_nodes[: len(snap_nodes) - self.max_drafter_snaps]:
+                victim.drafter_snap = None
+        return True
+
+    def drop_drafter_snap(self, block_hash: bytes) -> None:
+        """Release a prior intermediate drafter snapshot owned by the same prefill sequence."""
+        node = self._prefix_nodes.get(block_hash)
+        if node is not None:
+            node.drafter_snap = None
+
+    def get_drafter_snap(self, block_hash: bytes) -> dict[str, Any] | None:
+        """Look up a cached DSpark drafter snapshot for `block_hash`, refreshing its LRU tick."""
+        if not block_hash or self.max_drafter_snaps <= 0:
+            return None
+        node = self._prefix_nodes.get(block_hash)
+        if node is None or node.drafter_snap is None:
+            return None
+        self._lru_clock += 1
+        node.drafter_tick = self._lru_clock
+        return node.drafter_snap
+
     def write_and_attend(
         self,
         visit_slot: int,
@@ -962,6 +1003,8 @@ class BatchSequence:
         self._spec_base_len: int = 0
         self._spec_conv_prev: list[list[mx.array]] | None = None
         self._spec_conv_raw: list[list[mx.array]] | None = None
+        self._spec_batch_info: Any = None
+        self._last_drafter_snap_hash: bytes = b""
         self.drafter_state: dict[str, Any] | None = None
 
         # Zero-copy prefix cache match!
@@ -1039,7 +1082,18 @@ class BatchSequence:
     def rollback_spec(self, k_accept: int, K: int) -> None:
         """Roll back KV block tail and 4-tap conv states after verifying `K` tokens and accepting `k_accept` (`1..K`)."""
         drop = K - k_accept
-        if drop > 0 and self._spec_conv_prev is not None and self._spec_conv_raw is not None:
+        if drop > 0 and self._spec_batch_info is not None:
+            b, _K, sp_prev, sp_raw = self._spec_batch_info
+            cs = self.conv_slot
+            for v in range(len(self.pool.conv_pools)):
+                for ci in range(4):
+                    prev = sp_prev[v][ci][b]  # [3, C]
+                    raw = sp_raw[v][ci][b]    # [K, C]
+                    if k_accept >= 3:
+                        self.pool.conv_pools[v][ci][cs] = raw[k_accept - 3 : k_accept]
+                    else:
+                        self.pool.conv_pools[v][ci][cs] = mx.concatenate([prev[k_accept:], raw[:k_accept]], axis=0)
+        elif drop > 0 and self._spec_conv_prev is not None and self._spec_conv_raw is not None:
             cs = self.conv_slot
             for v in range(len(self.pool.conv_pools)):
                 for ci in range(4):
@@ -1049,18 +1103,20 @@ class BatchSequence:
                         self.pool.conv_pools[v][ci][cs] = raw[k_accept - 3 : k_accept]
                     else:
                         self.pool.conv_pools[v][ci][cs] = mx.concatenate([prev[k_accept:], raw[:k_accept]], axis=0)
+        self._spec_batch_info = None
         self._spec_conv_prev = None
         self._spec_conv_raw = None
 
         # Free any extra trailing blocks allocated purely for rejected tokens
-        bs = self.pool.block_size
-        target_len = self._spec_base_len + k_accept
-        need_g = (target_len + bs - 1) // bs
-        while len(self.g_blocks) > need_g:
-            self.pool.release_global_block(self.g_blocks.pop())
-        need_s = ((target_len - self.sliding_start) + bs - 1) // bs
-        while len(self.s_blocks) > need_s:
-            self.pool.release_sliding_block(self.s_blocks.pop())
+        if drop > 0:
+            bs = self.pool.block_size
+            target_len = self._spec_base_len + k_accept
+            need_g = (target_len + bs - 1) // bs
+            while len(self.g_blocks) > need_g:
+                self.pool.release_global_block(self.g_blocks.pop())
+            need_s = ((target_len - self.sliding_start) + bs - 1) // bs
+            while len(self.s_blocks) > need_s:
+                self.pool.release_sliding_block(self.s_blocks.pop())
 
     def release(self) -> None:
         if self.released:
@@ -1074,7 +1130,65 @@ class BatchSequence:
         self.s_blocks.clear()
         self.pool.release_conv_slot(self.conv_slot)
         self.conv_slot = -1
+        self._spec_batch_info = None
         self.drafter_state = None
+
+
+def _rollback_spec_batched(pool: PagedInklingPool, seqs: list[BatchSequence], k_commits: list[int], K: int) -> None:
+    """Vectorized speculative conv & trailing KV block rollback across all sequences in one step."""
+    miss_idx = [b for b, k_acc in enumerate(k_commits) if k_acc < K]
+    info = seqs[0]._spec_batch_info if seqs else None
+    if miss_idx and info is not None:
+        _b0, _K0, sp_prev, sp_raw = info
+        if len(miss_idx) == 1:
+            b = miss_idx[0]
+            k_acc = k_commits[b]
+            cs = seqs[b].conv_slot
+            for v in range(len(pool.conv_pools)):
+                for ci in range(4):
+                    raw = sp_raw[v][ci][b]
+                    if k_acc >= 3:
+                        pool.conv_pools[v][ci][cs] = raw[k_acc - 3 : k_acc]
+                    else:
+                        prev = sp_prev[v][ci][b]
+                        pool.conv_pools[v][ci][cs] = mx.concatenate([prev[k_acc:], raw[:k_acc]], axis=0)
+        else:
+            miss_slots_mx = mx.array(np.asarray([seqs[b].conv_slot for b in miss_idx], dtype=np.int32))
+            for v in range(len(pool.conv_pools)):
+                for ci in range(4):
+                    prev_b = sp_prev[v][ci]
+                    raw_b = sp_raw[v][ci]
+                    vals = [
+                        raw_b[b, k_commits[b] - 3 : k_commits[b]]
+                        if k_commits[b] >= 3
+                        else mx.concatenate([prev_b[b, k_commits[b] :], raw_b[b, : k_commits[b]]], axis=0)
+                        for b in miss_idx
+                    ]
+                    pool.conv_pools[v][ci][miss_slots_mx] = mx.stack(vals, axis=0)
+    elif miss_idx:
+        for b in miss_idx:
+            seqs[b].rollback_spec(k_commits[b], K)
+        for b, s in enumerate(seqs):
+            if b not in miss_idx:
+                s._spec_batch_info = None
+                s._spec_conv_prev = None
+                s._spec_conv_raw = None
+        return
+
+    bs = pool.block_size
+    for b in miss_idx:
+        s = seqs[b]
+        target_len = s._spec_base_len + k_commits[b]
+        need_g = (target_len + bs - 1) // bs
+        while len(s.g_blocks) > need_g:
+            pool.release_global_block(s.g_blocks.pop())
+        need_s = ((target_len - s.sliding_start) + bs - 1) // bs
+        while len(s.s_blocks) > need_s:
+            pool.release_sliding_block(s.s_blocks.pop())
+    for s in seqs:
+        s._spec_batch_info = None
+        s._spec_conv_prev = None
+        s._spec_conv_raw = None
 
 
 def _prepare_batch_meta(pool: PagedInklingPool, seqs: list[BatchSequence], K: int) -> _BatchStepMeta:
@@ -1172,11 +1286,16 @@ def forward_batched(
     meta = _prepare_batch_meta(pool, seqs, K)
 
     slot_ids_mx = mx.array(np.asarray([s.conv_slot for s in seqs], dtype=np.int32))
+    spec_prev_batch: list[list[mx.array | None]] | None = None
+    spec_raw_batch: list[list[mx.array | None]] | None = None
     if record_spec:
-        for s in seqs:
+        spec_prev_batch = [[None, None, None, None] for _ in range(cfg.total_visits)]
+        spec_raw_batch = [[None, None, None, None] for _ in range(cfg.total_visits)]
+        for b, s in enumerate(seqs):
             s._spec_base_len = s.seq_len
-            s._spec_conv_prev = [[mx.array(pool.conv_pools[v][ci][s.conv_slot]) for ci in range(4)] for v in range(cfg.total_visits)]
-            s._spec_conv_raw = [[None, None, None, None] for _ in range(cfg.total_visits)]
+            s._spec_conv_prev = None
+            s._spec_conv_raw = None
+            s._spec_batch_info = (b, K, spec_prev_batch, spec_raw_batch)
 
     h = model.embed(ids_mx)[0]  # [T, 2304]
     blocks_cat: mx.array | None = None
@@ -1186,14 +1305,15 @@ def forward_batched(
     visit = 0
 
     def _gather_conv(slot: int, ci: int) -> mx.array:
-        return pool.conv_pools[slot][ci][slot_ids_mx]  # [B, 3, C] in ONE GPU op!
+        prev_t = pool.conv_pools[slot][ci][slot_ids_mx]  # [B, 3, C] in ONE GPU op!
+        if record_spec and spec_prev_batch is not None:
+            spec_prev_batch[slot][ci] = prev_t
+        return prev_t
 
     def _scatter_conv(slot: int, ci: int, new_prev: mx.array, raw_tkc: mx.array | None = None) -> None:
         pool.conv_pools[slot][ci][slot_ids_mx] = new_prev
-        if record_spec and raw_tkc is not None:
-            for b, s in enumerate(seqs):
-                if s._spec_conv_raw is not None:
-                    s._spec_conv_raw[slot][ci] = raw_tkc[b]
+        if record_spec and raw_tkc is not None and spec_raw_batch is not None:
+            spec_raw_batch[slot][ci] = raw_tkc
 
     def _run_layer(L, h_in: mx.array, b_cat, n_b: int, c_slot: int, msgs=None, wq_c=None, wo_c=None) -> mx.array:
         block_residual = h_in
@@ -1535,12 +1655,17 @@ def _step_dspark_batched(
     proposals: list[list[int]] = []
 
     head_argmax_fn = model.lm_head.get_draft_head_argmax()
+    prop_mxs: list[mx.array] = []
     for s in seqs:
         if s.drafter_state is not None:
-            drafter.restore_context(s.drafter_state)
+            drafter.bind_context(s.drafter_state)
         else:
             drafter.reset()
-        prop_mx = drafter.propose_gpu(s.last_token, model.embed, head_argmax_fn, draft_len=K)
+        prop_mxs.append(drafter.propose_gpu(s.last_token, model.embed, head_argmax_fn, draft_len=K))
+        if s.drafter_state is not None:
+            drafter.sync_context_back(s.drafter_state)
+    mx.eval(*prop_mxs)
+    for prop_mx in prop_mxs:
         prop = [int(x) for x in np.asarray(prop_mx, dtype=np.int32).tolist()]
         proposals.append(prop)
         flat_tokens.extend(prop)
@@ -1555,6 +1680,9 @@ def _step_dspark_batched(
     order_np = model.lm_head.order_np
 
     total_acc = 0
+    k_commits: list[int] = []
+    accepted_batch: list[list[int]] = []
+    hit_stops: list[bool] = []
     for b, s in enumerate(seqs):
         prop = proposals[b]
         t_preds = [int(order_np[int(arg_np[b, j])]) for j in range(K)]
@@ -1581,21 +1709,30 @@ def _step_dspark_batched(
             elif s.th_state is not None and s.th_state.step(bonus, s.eos_ids):
                 s.pending_inject.extend(THINK_CLOSE_IDS)
                 hit_stop = True
+        k_commits.append(len(accepted))
+        accepted_batch.append(accepted)
+        hit_stops.append(hit_stop)
 
-        # k_commit = number of tokens in `prop` whose KV/taps we commit (`1..K`):
-        # When `len(accepted) == K` (all drafts matched + bonus), all K input tokens in `prop` are committed!
-        # Otherwise `accepted[:-1]` matched `prop[1 : len(accepted)]`, so we commit `prop[:len(accepted)]`!
-        k_commit = len(accepted)
-        s.rollback_spec(k_commit, K)
-        committed_in = prop[:k_commit]
+    # Single vectorized conv + trailing KV block rollback across the batch
+    _rollback_spec_batched(pool, seqs, k_commits, K)
+
+    eval_after: list[mx.array] = []
+    for b, s in enumerate(seqs):
+        k_commit = k_commits[b]
+        accepted = accepted_batch[b]
+        hit_stop = hit_stops[b]
+        committed_in = proposals[b][:k_commit]
         pos_before = s.seq_len
         s.commit_tokens(committed_in, register_prefix=False)
 
-        # Update drafter context with committed target taps
+        # Update per-sequence drafter context cleanly in-place with ZERO array copies
         if s.drafter_state is not None:
-            drafter.restore_context(s.drafter_state)
-        drafter.push_context(taps[b * K : b * K + k_commit], start_pos=pos_before)
-        s.drafter_state = drafter.context_state()
+            drafter.bind_context(s.drafter_state)
+            drafter.push_context(taps[b * K : b * K + k_commit], start_pos=pos_before)
+            drafter.sync_context_back(s.drafter_state)
+            if drafter.f_rnn is not None:
+                eval_after.append(drafter.f_rnn)
+            eval_after.extend(x for x in (*drafter.ctx_k, *drafter.ctx_v) if x is not None)
 
         s.generated.extend(accepted)
         s.last_token = accepted[-1]
@@ -1605,6 +1742,9 @@ def _step_dspark_batched(
         if hit_stop and not s.pending_inject:
             s.done = True
             s.finish_reason = "stop" if (accepted[-1] in s.eos_ids) else "length"
+
+    if eval_after:
+        mx.eval(*eval_after)
 
     return total_acc
 
@@ -1640,14 +1780,13 @@ def generate_batch(
         )
         for i, p in enumerate(prompts)
     ]
-    use_dspark_eligible = (
+    can_dspark_batch = (
         drafter is not None
         and temp <= 0.0
         and len(seqs) <= dspark_max_batch
     )
-    tap_visits = drafter.target_layer_ids if use_dspark_eligible else ()
 
-    # 1. Prefill each prompt (with automatic O(1) prefix sharing from earlier prompts in the batch!)
+    # 1. Prefill each prompt (with automatic O(1) prefix & drafter-snap sharing from earlier prompts in the batch!)
     t_pre0 = time.perf_counter()
     reused_total = 0
     for s in seqs:
@@ -1670,13 +1809,14 @@ def generate_batch(
                         for ci in range(4):
                             pool.conv_pools[v][ci][s.conv_slot] = conv_snap[v][ci]
         reused_total += s.reused_tokens
-        if use_dspark_eligible and s.reused_tokens > 0:
-            # DSpark drafter needs taps from token 0; disable drafter on this seq if prefix was skipped
-            use_dspark_eligible = False
-            tap_visits = ()
-
-        if use_dspark_eligible:
-            drafter.reset()
+        if can_dspark_batch:
+            if s.reused_tokens == 0:
+                s.drafter_state = drafter.new_context()
+            elif s.prefix_hash:
+                dsnap = pool.get_drafter_snap(s.prefix_hash)
+                if dsnap is not None:
+                    s.drafter_state = drafter.clone_context(dsnap)
+        tap_visits = drafter.target_layer_ids if s.drafter_state is not None else ()
 
         n = len(s.prompt_ids)
         while s.prefill_pos < n:
@@ -1690,20 +1830,37 @@ def generate_batch(
             pos_before = s.seq_len
             s.commit_tokens(chunk, register_prefix=True)
             s.prefill_pos = end
-            if use_dspark_eligible and taps is not None:
+            snapped_drafter = False
+            if s.drafter_state is not None and taps is not None:
+                drafter.bind_context(s.drafter_state)
                 drafter.push_context(taps, start_pos=pos_before)
+                drafter.sync_context_back(s.drafter_state)
+                if s.seq_len % pool.block_size == 0 and s.prefix_hash and (end + prefill_step >= n):
+                    if pool.get_drafter_snap(s.prefix_hash) is None:
+                        prev_h = s._last_drafter_snap_hash
+                        if pool.attach_drafter_snap(s.prefix_hash, drafter.snapshot_context()):
+                            if prev_h and prev_h != s.prefix_hash:
+                                pool.drop_drafter_snap(prev_h)
+                            s._last_drafter_snap_hash = s.prefix_hash
+                        snapped_drafter = True
             if is_last:
                 tok = _sample_slot_token(model, ord_l[0, 0], s)
                 s.generated.append(tok)
                 s.last_token = tok
-                if use_dspark_eligible:
-                    s.drafter_state = drafter.context_state()
+                if s.drafter_state is not None and not snapped_drafter:
+                    ev = [x for x in (*drafter.ctx_k, *drafter.ctx_v, drafter.f_rnn) if x is not None]
+                    if ev:
+                        mx.eval(*ev)
                 if tok in s.eos_ids or len(s.generated) >= s.max_tokens:
                     s.done = True
                 elif s.th_state is not None and s.th_state.step(tok, s.eos_ids):
                     s.pending_inject.extend(THINK_CLOSE_IDS)
             else:
                 pool.eval_state()
+                if s.drafter_state is not None and not snapped_drafter:
+                    ev = [x for x in (*drafter.ctx_k, *drafter.ctx_v, drafter.f_rnn) if x is not None]
+                    if ev:
+                        mx.eval(*ev)
     t_pre1 = time.perf_counter()
 
     # 2. Continuous batched decode loop (with load-adaptive DSpark when 1 <= active <= dspark_max_batch!)
@@ -1727,9 +1884,12 @@ def generate_batch(
             pos_before = s.seq_len
             s.commit_tokens(inj, register_prefix=False)
             if s.drafter_state is not None and taps is not None:
-                drafter.restore_context(s.drafter_state)
+                drafter.bind_context(s.drafter_state)
                 drafter.push_context(taps, start_pos=pos_before)
-                s.drafter_state = drafter.context_state()
+                drafter.sync_context_back(s.drafter_state)
+                ev = [x for x in (*drafter.ctx_k, *drafter.ctx_v, drafter.f_rnn) if x is not None]
+                if ev:
+                    mx.eval(*ev)
             # Emit bridge tokens + next sampled token
             for bt in inj[1:]:
                 s.generated.append(bt)
@@ -1951,15 +2111,19 @@ class ContinuousBatchScheduler:
                 use_prefix_cache=bool(job.get("use_cache", True)),
             )
             r.reused_tokens = r.seq.reused_tokens
-            # Enable drafter taps only when starting from pos 0 with low load & greedy
+            # Enable zero-copy DSpark across both cold starts and prefix-cache hits when greedy & load <= cutoff
             if (
                 self.dspark_max_batch > 0
-                and r.seq.reused_tokens == 0
+                and self.drafter is not None
                 and r.seq.temp <= 0.0
                 and (len(self._decoding) + len(self._prefilling)) <= self.dspark_max_batch
             ):
-                self.drafter.reset()
-                r.seq.drafter_state = self.drafter.context_state()
+                if r.seq.reused_tokens == 0:
+                    r.seq.drafter_state = self.drafter.new_context()
+                elif r.seq.prefix_hash:
+                    dsnap = self.pool.get_drafter_snap(r.seq.prefix_hash)
+                    if dsnap is not None:
+                        r.seq.drafter_state = self.drafter.clone_context(dsnap)
 
         s = r.seq
         n = len(s.prompt_ids)
@@ -1974,10 +2138,23 @@ class ContinuousBatchScheduler:
         pos_before = s.seq_len
         s.commit_tokens(chunk, register_prefix=True)
         s.prefill_pos = end
+        snapped_drafter = False
         if s.drafter_state is not None and taps is not None:
-            self.drafter.restore_context(s.drafter_state)
+            self.drafter.bind_context(s.drafter_state)
             self.drafter.push_context(taps, start_pos=pos_before)
-            s.drafter_state = self.drafter.context_state()
+            self.drafter.sync_context_back(s.drafter_state)
+            if s.seq_len % self.pool.block_size == 0 and s.prefix_hash and (end + self.prefill_step >= n):
+                if self.pool.get_drafter_snap(s.prefix_hash) is None:
+                    prev_h = s._last_drafter_snap_hash
+                    if self.pool.attach_drafter_snap(s.prefix_hash, self.drafter.snapshot_context()):
+                        if prev_h and prev_h != s.prefix_hash:
+                            self.pool.drop_drafter_snap(prev_h)
+                        s._last_drafter_snap_hash = s.prefix_hash
+                    snapped_drafter = True
+            if is_last and not snapped_drafter:
+                ev = [x for x in (*self.drafter.ctx_k, *self.drafter.ctx_v, self.drafter.f_rnn) if x is not None]
+                if ev:
+                    mx.eval(*ev)
 
         if is_last:
             r.t_prefill_done = time.perf_counter()
@@ -2003,6 +2180,10 @@ class ContinuousBatchScheduler:
                 self._decoding.append(r)
         else:
             self.pool.eval_state()
+            if s.drafter_state is not None and not snapped_drafter:
+                ev = [x for x in (*self.drafter.ctx_k, *self.drafter.ctx_v, self.drafter.f_rnn) if x is not None]
+                if ev:
+                    mx.eval(*ev)
         return len(chunk)
 
     def _run_decode_step(self) -> None:
@@ -2019,9 +2200,12 @@ class ContinuousBatchScheduler:
                 pos_before = s.seq_len
                 s.commit_tokens(inj, register_prefix=False)
                 if s.drafter_state is not None and taps is not None:
-                    self.drafter.restore_context(s.drafter_state)
+                    self.drafter.bind_context(s.drafter_state)
                     self.drafter.push_context(taps, start_pos=pos_before)
-                    s.drafter_state = self.drafter.context_state()
+                    self.drafter.sync_context_back(s.drafter_state)
+                    ev = [x for x in (*self.drafter.ctx_k, *self.drafter.ctx_v, self.drafter.f_rnn) if x is not None]
+                    if ev:
+                        mx.eval(*ev)
                 for bt in inj[1:]:
                     s.generated.append(bt)
                     r.token_queue.put(("tok", bt))

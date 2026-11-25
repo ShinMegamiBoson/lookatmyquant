@@ -557,16 +557,16 @@ def _paged_kv_load_snippet(kv_mode: str, pt_expr: str) -> str:
     )
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=32)
 def _make_gqa_paged_sdpa_kernel(kv_mode: str = "fp16", split_out: bool = True, kt_cap: int = 1):
-    """Paged-KV batched GQA+RelPos+Sinks SDPA kernel supporting `B` sequences x `K` tokens (`kt_cap` = 1 or 4).
+    """Paged-KV batched GQA+RelPos+Sinks SDPA kernel supporting `B` sequences x `K` tokens (`kt_cap` = 1..8).
 
     Grid: `(128, B * n_qt * 8 * n_splits, 1)` where `n_qt = (K + kt_cap - 1) / kt_cap`.
     When `split_out=True`, writes `(part_m, part_l, part_o)` shaped `[n_splits, T, 24(, 128)]`
     compatible with `_make_gqa_splitk_reduce_kernel`.
     When `split_out=False` (`n_splits == 1`, `kt_cap == 1`), merges sinks inline into `out[T, 3072]`.
     """
-    assert kt_cap in (1, 4)
+    assert 1 <= kt_cap <= 8
     in_names = ["q", "KV"]
     if kv_mode == "q4":
         in_names.append("KV_sc")
@@ -750,8 +750,8 @@ def _make_gqa_paged_sdpa_kernel(kv_mode: str = "fp16", split_out: bool = True, k
     {epilogue}
 """
     else:
-        # kt_cap == 4: each threadgroup processes up to 4 contiguous query tokens of one sequence `b`
-        # (reuses loaded tg_k/tg_v across all <= 4 tokens, always outputs split buffers for reduce kernel!)
+        # kt_cap > 1: each threadgroup processes up to `kt_cap` contiguous query tokens of one sequence `b`
+        # (reuses loaded tg_k/tg_v across all <= kt_cap tokens, always outputs split buffers for reduce kernel!)
         src = f"""
     // meta: [0]=T, [1]=K, [2]=max_blocks, [3]=is_sliding, [4]=n_splits, [5]=j_min_override, [6]=n_qt
     const uint T = meta[0], K = meta[1], max_blocks = meta[2], is_sliding = meta[3], n_splits = meta[4], j_min_ovr = meta[5], n_qt = meta[6];
@@ -763,8 +763,8 @@ def _make_gqa_paged_sdpa_kernel(kv_mode: str = "fp16", split_out: bool = True, k
     const uint split_id = rem - kvh * n_splits;
     const uint b = b_qt / n_qt;
     const uint qt = b_qt - b * n_qt;
-    const uint lt0 = qt * 4u;
-    const uint n_tok = min(4u, K - lt0);
+    const uint lt0 = qt * {kt_cap}u;
+    const uint n_tok = min({kt_cap}u, K - lt0);
     const uint t0_global = b * K + lt0;
 
     const uint simd = simdgroup_index_in_threadgroup;
@@ -774,8 +774,8 @@ def _make_gqa_paged_sdpa_kernel(kv_mode: str = "fp16", split_out: bool = True, k
     const uint qp_base = q_pos0[b];
     const ulong bt_off = (ulong)b * max_blocks;
 
-    float4 qv[4][3], rs0[4][3], rs1[4][3], rs2[4][3], rs3[4][3];
-    uint j_lo_t[4], j_hi_t[4], q_pos_t[4];
+    float4 qv[{kt_cap}][3], rs0[{kt_cap}][3], rs1[{kt_cap}][3], rs2[{kt_cap}][3], rs3[{kt_cap}][3];
+    uint j_lo_t[{kt_cap}], j_hi_t[{kt_cap}], q_pos_t[{kt_cap}];
     uint j_lo_all = kv_len, j_hi_all = 0u;
     for (uint u = 0u; u < n_tok; u++) {{
         const uint tg = t0_global + u;
@@ -802,9 +802,9 @@ def _make_gqa_paged_sdpa_kernel(kv_mode: str = "fp16", split_out: bool = True, k
     const uint sbeg = min(j_hi_all, j_lo_all + split_id * chunk);
     const uint send = min(j_hi_all, sbeg + chunk);
 
-    float m_loc[4][3], l_loc[4][3];
-    float4 acc[4][3];
-    for (uint u = 0u; u < 4u; u++) {{
+    float m_loc[{kt_cap}][3], l_loc[{kt_cap}][3];
+    float4 acc[{kt_cap}][3];
+    for (uint u = 0u; u < {kt_cap}u; u++) {{
         for (uint g = 0u; g < 3u; g++) {{
             m_loc[u][g] = -1e30f; l_loc[u][g] = 0.0f; acc[u][g] = float4(0.0f);
         }}
@@ -1240,7 +1240,8 @@ def gqa_paged_sdpa_fast(
         )[0]
         return h128_rows_f32(out.reshape(T, 24, 128)).reshape(T, 3072) if kv_q4 else out
 
-    kt_cap = 1 if K == 1 else 4
+    # kt_cap=1 avoids Metal register spills (`kt_cap=4..5`) and is 2.3x-6.5x faster on K<=15 decode/DSpark verify.
+    kt_cap = 1
     n_qt = (K + kt_cap - 1) // kt_cap
     eff_span = min(max_span, 1024 + K) if is_sliding else max_span
     n_splits = _choose_paged_splits(B, eff_span, n_qt)
